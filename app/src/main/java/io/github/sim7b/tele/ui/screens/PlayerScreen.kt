@@ -47,7 +47,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.StreamSource
-import io.github.sim7b.tele.playback.StreamAuth
+import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.playback.StreamInfo
 import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.ChannelListPanel
@@ -66,7 +66,7 @@ fun PlayerScreen(
     channel: Channel,
     channels: List<Channel>,
     playerManager: TvPlayerManager,
-    streamAuth: StreamAuth? = null,
+    streamAuth: ApiKeyAuth? = null,
     userAgent: String? = null,
     loadStreams: suspend () -> Result<List<StreamSource>>,
     onSelectStream: (StreamSource?) -> Unit,

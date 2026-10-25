@@ -29,9 +29,8 @@ import coil.request.ImageRequest
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.remote.ProgramPosterRepository
 import io.github.sim7b.tele.data.model.SourceType
-import io.github.sim7b.tele.playback.StreamAuth
+import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.playback.TvPlayerManager
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import io.github.sim7b.tele.ui.components.DISPATCHARR_AUTOMATIC
 import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.PlayerScreen
@@ -112,9 +111,7 @@ class MainActivity : ComponentActivity() {
             }
             // Dispatcharr API key reserved for the Dispatcharr server (never sent to stream providers)
             val streamAuth = remember(activeConfig) {
-                activeConfig?.takeIf { it.type == SourceType.DISPATCHARR && it.apiKey.isNotBlank() }?.let { config ->
-                    config.normalizedUrl.toHttpUrlOrNull()?.host?.let { host -> StreamAuth(host, config.apiKey) }
-                }
+                activeConfig?.takeIf { it.type == SourceType.DISPATCHARR }?.let { ApiKeyAuth.of(it) }
             }
 
             // Meaning of the "Automatic" stream choice mode depending on the active source

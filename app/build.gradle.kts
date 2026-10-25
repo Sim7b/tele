@@ -112,4 +112,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Real org.json implementation: the Android stub throws in local unit tests
     testImplementation("org.json:json:20260814")
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.0")
 }

@@ -20,26 +20,29 @@ import java.util.concurrent.ConcurrentHashMap
 class DispatcharrClient(
     @Volatile private var currentConfig: SourceConfig? = null
 ) {
+    // The API key travels as a request tag and is only added for the origin of its server
+    // (not on redirects to another host, nor for a request built before a source change).
+    private val apiKeyInterceptor = ApiKeyInterceptor { it.tag(ApiKeyAuth::class.java) }
+
     // Derived from the shared client: same connection pool as the player and the images
     private val client = HttpClients.base.newBuilder()
         .addInterceptor { chain ->
-            val original = chain.request()
-            val userAgent = currentConfig?.customUserAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT
+            val config = currentConfig
+            val userAgent = config?.customUserAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT
 
-            val requestBuilder = original.newBuilder()
+            val requestBuilder = chain.request().newBuilder()
                 .header("User-Agent", userAgent)
                 .header("Accept", "application/json")
-
-            currentConfig?.apiKey?.takeIf { it.isNotBlank() }?.let { key ->
-                requestBuilder.header("X-API-Key", key)
-            }
+            config?.let { ApiKeyAuth.of(it) }?.let { requestBuilder.tag(ApiKeyAuth::class.java, it) }
 
             chain.proceed(requestBuilder.build())
         }
+        .addNetworkInterceptor(apiKeyInterceptor)
         .build()
 
-    private val testClient = client.newBuilder()
-        .apply { interceptors().clear() }
+    // Without the application interceptor: the key of the active server must not replace the tested one
+    private val testClient = HttpClients.base.newBuilder()
+        .addNetworkInterceptor(apiKeyInterceptor)
         .build()
 
     private val groupsCache = ConcurrentHashMap<Int, String>()
@@ -69,12 +72,9 @@ class DispatcharrClient(
             .header("Accept", "application/json")
             .header("User-Agent", config.customUserAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT)
 
-        if (config.apiKey.isNotBlank()) {
-            requestBuilder.header("X-API-Key", config.apiKey)
-        }
+        ApiKeyAuth.of(config)?.let { requestBuilder.tag(ApiKeyAuth::class.java, it) }
 
         try {
-            // Client without interceptor: the key of the active server must not replace the tested one
             testClient.newCall(requestBuilder.build()).execute().use { response ->
                 if (!response.isSuccessful) {
                     val code = response.code
