@@ -21,6 +21,8 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UiText
+import io.github.sim7b.tele.data.remote.ApiKeyAuth
+import io.github.sim7b.tele.data.remote.ApiKeyInterceptor
 import io.github.sim7b.tele.data.remote.HttpClients
 import java.util.concurrent.TimeUnit
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -30,11 +32,6 @@ import androidx.media3.exoplayer.source.MediaSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-
-/**
- * Dispatcharr API key to attach to streams, only for requests to [host].
- */
-data class StreamAuth(val host: String, val apiKey: String)
 
 /**
  * Actual technical information of the stream (null until ExoPlayer knows it).
@@ -57,25 +54,17 @@ class TvPlayerManager(private val context: Context) {
     private var currentUrl: String? = null
     private var currentUserAgent: String? = null
     @Volatile
-    private var currentAuth: StreamAuth? = null
+    private var currentAuth: ApiKeyAuth? = null
 
     /**
      * Player HTTP client, derived from the shared client (TLS connections reused from one channel to the next).
      * The API key is added by a network interceptor, run on each redirect: it is only sent
-     * to the Dispatcharr server, never to the provider it redirects to.
+     * to the origin of the Dispatcharr server, never to the provider it redirects to.
      */
     private val streamHttpClient = HttpClients.base.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
-        .addNetworkInterceptor { chain ->
-            val request = chain.request()
-            val auth = currentAuth
-            if (auth != null && request.url.host.equals(auth.host, ignoreCase = true)) {
-                chain.proceed(request.newBuilder().header("X-API-Key", auth.apiKey).build())
-            } else {
-                chain.proceed(request)
-            }
-        }
+        .addNetworkInterceptor(ApiKeyInterceptor { currentAuth })
         .build()
 
     // TS: non-IDR keyframes (common in IPTV) are enough to show the first frame sooner
@@ -222,7 +211,7 @@ class TvPlayerManager(private val context: Context) {
         return mime.substringAfter('/').uppercase()
     }
 
-    fun playStream(url: String, customUserAgent: String? = null, auth: StreamAuth? = null) {
+    fun playStream(url: String, customUserAgent: String? = null, auth: ApiKeyAuth? = null) {
         zapStartedAt = SystemClock.elapsedRealtime()
         currentUrl = url
         currentUserAgent = customUserAgent
