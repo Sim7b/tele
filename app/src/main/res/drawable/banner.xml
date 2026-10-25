@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bannière du lanceur Android TV (16:9) : logo "TV" centré sur fond graphite -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <!-- Fond dégradé -->
+    <path android:pathData="M0,0h320v180h-320z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="320"
+                android:endY="180">
+                <item android:offset="0" android:color="#FF232833" />
+                <item android:offset="1" android:color="#FF0A0C10" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Halo discret derrière l'écran -->
+    <path android:pathData="M160,80 m-110,0 a110,70 0 1 1 220,0 a110,70 0 1 1 -220,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="160"
+                android:centerY="80"
+                android:gradientRadius="110">
+                <item android:offset="0" android:color="#1AFFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Écran -->
+    <path
+        android:pathData="M120,40 H200 A14,14 0 0 1 214,54 V106 A14,14 0 0 1 200,120 H120 A14,14 0 0 1 106,106 V54 A14,14 0 0 1 120,40 Z"
+        android:strokeColor="#F2FFFFFF"
+        android:strokeWidth="4.5"
+        android:fillColor="#00000000" />
+    <!-- Pied -->
+    <path
+        android:pathData="M140,134 H180"
+        android:strokeColor="#B3FFFFFF"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+    <!-- T -->
+    <path
+        android:pathData="M128,62 H154 M141,62 V98"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- V -->
+    <path
+        android:pathData="M166,62 L179,98 L192,62"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- Voyant -->
+    <path
+        android:pathData="M203,111 m-2.2,0 a2.2,2.2 0 1 1 4.4,0 a2.2,2.2 0 1 1 -4.4,0"
+        android:fillColor="#FF22D3EE" />
+</vector>

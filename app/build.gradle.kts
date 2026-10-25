@@ -1,0 +1,105 @@
+import java.util.Properties
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Signature de la version release : keystore.properties (non versionné) à la racine du projet,
+// avec storeFile, storePassword, keyAlias et keyPassword. Sans ce fichier, la release n'est pas signée.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+android {
+    namespace = "com.iptv.player"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.iptv.player"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.1"
+
+        vectorDrawables {
+            useSupportLibrary = true
+        }
+    }
+
+    signingConfigs {
+        if (keystoreProperties.containsKey("storeFile")) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        debug {
+            isMinifyEnabled = false
+            applicationIdSuffix = ".debug"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        compose = true
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+dependencies {
+    // Core Android & Lifecycle
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+    implementation("androidx.activity:activity-compose:1.9.1")
+
+    // Jetpack Compose for TV (Official modern TV UI)
+    implementation("androidx.tv:tv-foundation:1.0.0-alpha11")
+    implementation("androidx.tv:tv-material:1.0.0-rc01")
+    implementation("androidx.compose.material3:material3:1.2.1")
+    implementation("androidx.compose.material:material-icons-core:1.6.8")
+
+    // AndroidX Media3 (ExoPlayer - Modern Video Player engine)
+    val media3Version = "1.4.0"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-common:$media3Version")
+    // Transport HTTP du lecteur via OkHttp : connexions partagées avec l'API, en-têtes maîtrisés par hôte
+    implementation("androidx.media3:media3-datasource-okhttp:$media3Version")
+
+    // Image loading for Channel Logos (Coil)
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // Coroutines for background M3U streaming & network operations
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // HTTP Client (OkHttp for resilient IPTV streams)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}
