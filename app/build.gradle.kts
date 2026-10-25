@@ -88,7 +88,7 @@ dependencies {
     implementation("androidx.tv:tv-foundation:1.0.0-alpha11")
     implementation("androidx.tv:tv-material:1.0.0-rc01")
     implementation("androidx.compose.material3:material3:1.2.1")
-    implementation("androidx.compose.material:material-icons-core:1.6.8")
+    implementation("androidx.compose.material:material-icons-core:1.7.8")
 
     // AndroidX Media3 (ExoPlayer - Modern Video Player engine)
     val media3Version = "1.4.0"
