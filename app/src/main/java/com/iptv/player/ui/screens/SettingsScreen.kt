@@ -1,6 +1,6 @@
 package com.iptv.player.ui.screens
 
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.iptv.player.R
@@ -117,7 +117,7 @@ fun SettingsScreen(
         backButtonFocus.requestFocusWithRetry()
     }
 
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val themeBgColor = Color(currentTheme.backgroundColorHex)
     val accentColorObj = Color(currentAccent.colorHex)
 
@@ -177,7 +177,7 @@ fun SettingsScreen(
                                 icon = Icons.Filled.Refresh,
                                 onClick = {
                                     onRefreshPlaylist()
-                                    syncMessage = context.getString(R.string.settings_refresh_channels_started)
+                                    syncMessage = resources.getString(R.string.settings_refresh_channels_started)
                                 }
                             )
                             ActionButton(
@@ -185,7 +185,7 @@ fun SettingsScreen(
                                 icon = Icons.Filled.DateRange,
                                 onClick = {
                                     onRefreshEpg()
-                                    syncMessage = context.getString(R.string.settings_refresh_guide_started)
+                                    syncMessage = resources.getString(R.string.settings_refresh_guide_started)
                                 }
                             )
                             if (syncMessage != null) {
@@ -710,7 +710,7 @@ private fun ConfigEditDialog(
     var epgUrl by remember { mutableStateOf(initialConfig.epgUrl ?: "") }
     var userAgent by remember { mutableStateOf(initialConfig.customUserAgent ?: "") }
 
-    val context = LocalContext.current
+    val resources = LocalResources.current
     var testStatus by remember { mutableStateOf<String?>(null) }
     var isTesting by remember { mutableStateOf(false) }
     var isTestSuccess by remember { mutableStateOf(false) }
@@ -723,11 +723,11 @@ private fun ConfigEditDialog(
     /** Required fields depending on the source type; null if the form is complete. */
     fun missingField(): String? = when {
         serverUrl.isBlank() -> when (type) {
-            SourceType.M3U -> context.getString(R.string.settings_missing_playlist_url)
-            else -> context.getString(R.string.settings_missing_server_url)
+            SourceType.M3U -> resources.getString(R.string.settings_missing_playlist_url)
+            else -> resources.getString(R.string.settings_missing_server_url)
         }
         type == SourceType.XTREAM && (username.isBlank() || password.isBlank()) ->
-            context.getString(R.string.settings_missing_xtream_credentials)
+            resources.getString(R.string.settings_missing_xtream_credentials)
         else -> null
     }
 
@@ -926,16 +926,16 @@ private fun ConfigEditDialog(
                             if (formError != null) return@ActionButton
                             val tempConfig = buildConfig()
                             isTesting = true
-                            testStatus = context.getString(R.string.settings_checking)
+                            testStatus = resources.getString(R.string.settings_checking)
                             scope.launch {
                                 val result = onTestConnection(tempConfig)
                                 isTesting = false
                                 result.onSuccess { message ->
                                     isTestSuccess = true
-                                    testStatus = message.resolve(context)
+                                    testStatus = message.resolve(resources)
                                 }.onFailure { error ->
                                     isTestSuccess = false
-                                    testStatus = error.toUiText().resolve(context)
+                                    testStatus = error.toUiText().resolve(resources)
                                 }
                             }
                         }
