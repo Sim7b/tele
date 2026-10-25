@@ -86,7 +86,7 @@ dependencies {
 
     // Jetpack Compose for TV (Official modern TV UI)
     implementation("androidx.tv:tv-foundation:1.0.0-alpha11")
-    implementation("androidx.tv:tv-material:1.0.0-rc01")
+    implementation("androidx.tv:tv-material:1.1.0")
     implementation("androidx.compose.material3:material3:1.2.1")
     implementation("androidx.compose.material:material-icons-core:1.6.8")
 
