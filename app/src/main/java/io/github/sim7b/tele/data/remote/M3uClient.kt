@@ -83,7 +83,7 @@ object M3uClient {
                     }
                 )
             }
-            val body = response.body ?: throw UserFacingException(UiText.Res(R.string.error_empty_response))
+            val body = response.body
             return M3uParser.parse(body.byteStream())
         }
     }

@@ -78,4 +78,16 @@ class M3uParserTest {
         assertEquals(listOf("Arte", "Channel 2"), playlist.entries.map { it.name })
         assertNull(playlist.entries[1].tvgId)
     }
+
+    @Test
+    fun `stops at the maximum number of entries`() {
+        val text = "#EXTM3U\n" + (1..10).joinToString("\n") { "#EXTINF:-1,C$it\nhttp://stream.example/$it.ts" }
+
+        assertEquals(3, M3uParser.parse(text.byteInputStream(), maxEntries = 3).entries.size)
+    }
+
+    @Test(expected = io.github.sim7b.tele.data.UserFacingException::class)
+    fun `fails on playlists over the size limit`() {
+        M3uParser.parse(("#EXTINF:-1,C\nhttp://s/1.ts\n").repeat(1_000).byteInputStream(), maxBytes = 1_000)
+    }
 }

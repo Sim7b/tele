@@ -165,7 +165,7 @@ object XtreamClient {
                     }
                 )
             }
-            val body = response.body?.string().orEmpty()
+            val body = HttpClients.jsonString(response.body)
             if (body.isBlank()) throw UserFacingException(UiText.Res(R.string.error_empty_response))
             return body
         }
