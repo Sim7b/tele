@@ -1,7 +1,7 @@
 package com.iptv.player.data.model
 
 /**
- * Modèle représentant une chaîne issue de l'API Dispatcharr.
+ * Channel returned by the Dispatcharr API.
  */
 data class DispatcharrChannel(
     val id: String,
@@ -11,7 +11,7 @@ data class DispatcharrChannel(
     val group: String,
     val logoUrl: String? = null,
     val streamUrl: String,
-    // Clé EPG résolue : tvg_id de l'EPGData lié (epg_data_id) ou tvg_id de la chaîne
+    // Resolved EPG key: tvg_id of the linked EPGData (epg_data_id) or tvg_id of the channel
     val tvgId: String = "",
     val isRadio: Boolean = false,
     val isFavorite: Boolean = false
@@ -32,7 +32,7 @@ data class DispatcharrChannel(
 }
 
 /**
- * Entrée EPGData Dispatcharr (/api/epg/epgdata/) : relie l'epg_data_id d'une chaîne au tvg_id de la grille.
+ * Dispatcharr EPGData entry (/api/epg/epgdata/): links the epg_data_id of a channel to the tvg_id of the grid.
  */
 data class DispatcharrEpgData(
     val id: Int,
@@ -41,7 +41,7 @@ data class DispatcharrEpgData(
 )
 
 /**
- * Programme du guide EPG, issu de la grille Dispatcharr ou d'un guide XMLTV (Xtream / M3U).
+ * EPG guide program, from the Dispatcharr grid or an XMLTV guide (Xtream / M3U).
  */
 data class GuideProgram(
     val id: String,
@@ -58,7 +58,7 @@ data class GuideProgram(
 )
 
 /**
- * Visuel 16:9 et catégorie d'un programme (absents de la grille EPG, fournis par la recherche de programmes).
+ * 16:9 artwork and category of a program (missing from the EPG grid, provided by the program search).
  */
 data class ProgramArtwork(
     val imageUrl: String?,
@@ -66,11 +66,10 @@ data class ProgramArtwork(
 )
 
 /**
- * Grille EPG d'une chaîne pour l'affichage TV Guide.
+ * EPG grid of a channel.
  */
 data class DispatcharrEpgChannel(
     val channelUuid: String,
     val channelName: String,
     val programs: List<GuideProgram>
 )
-

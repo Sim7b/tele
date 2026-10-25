@@ -1,5 +1,9 @@
 package com.iptv.player.ui.components
 
+import com.iptv.player.R
+import com.iptv.player.data.toUiText
+import com.iptv.player.data.resolve
+import com.iptv.player.data.UiText
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -26,6 +30,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -49,12 +55,13 @@ import com.iptv.player.ui.theme.*
 
 private val FavoriteShape = RoundedCornerShape(10.dp)
 
-/** Sous-titre de l'option "Automatique" du choix de flux, selon le type de source. */
-const val DISPATCHARR_AUTOMATIC = "Dispatcharr choisit le flux et bascule en cas de panne"
+/** Subtitle of the "Automatic" option of the stream picker, depending on the source type. */
+val DISPATCHARR_AUTOMATIC: String
+    @Composable get() = stringResource(R.string.streams_automatic_dispatcharr)
 private val CompactShape = RoundedCornerShape(10.dp)
 
 /**
- * Vignette Favori : visuel 16:9 du programme en pleine carte, textes posés sur un voile dégradé.
+ * Favorite tile: full-card 16:9 program artwork, texts laid over a gradient scrim.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -69,7 +76,7 @@ fun FavoriteChannelCard(
     val isFocused by interactionSource.collectIsFocusedAsState()
     val program = channel.currentProgram
 
-    // Visuel EPG du serveur, sinon recherche externe (TVMaze) ; à défaut, le logo de la chaîne
+    // EPG artwork from the server, else external lookup (TVMaze); failing that, the channel logo
     val posterUrl by produceState(initialValue = program?.posterUrl, program?.title, program?.posterUrl) {
         value = program?.posterUrl
         val title = program?.title
@@ -88,7 +95,7 @@ fun FavoriteChannelCard(
             .aspectRatio(16f / 9f),
         shape = ClickableSurfaceDefaults.shape(shape = FavoriteShape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (isMoving) 1.1f else 1.06f),
-        // En déplacement : contour d'accent permanent pour distinguer la vignette "soulevée"
+        // While moving: permanent accent outline to set the "lifted" tile apart
         border = if (isMoving) {
             val movingBorder = Border(BorderStroke(3.dp, AccentCyan), shape = FavoriteShape)
             ClickableSurfaceDefaults.border(border = movingBorder, focusedBorder = movingBorder)
@@ -113,7 +120,7 @@ fun FavoriteChannelCard(
                 LogoBackdrop(channel = channel, modifier = Modifier.fillMaxSize())
             }
 
-            // Voile pour la lisibilité des textes (transparent en haut, sombre en bas)
+            // Scrim for text readability (transparent at the top, dark at the bottom)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -158,7 +165,7 @@ fun FavoriteChannelCard(
                     text = when {
                         program == null -> channel.group
                         !program.nextTitle.isNullOrBlank() ->
-                            "${program.startTime} – ${program.endTime}  ·  Puis ${program.nextTitle}"
+                            stringResource(R.string.card_time_range_then, program.startTime, program.endTime, program.nextTitle)
                         else -> "${program.startTime} – ${program.endTime}"
                     },
                     fontSize = 10.sp,
@@ -181,7 +188,7 @@ fun FavoriteChannelCard(
     }
 }
 
-/** Fond de vignette sans visuel : logo de la chaîne sur plaque, sur un dégradé sobre. */
+/** Tile background without artwork: channel logo on a plate, over a plain gradient. */
 @Composable
 private fun LogoBackdrop(channel: Channel, modifier: Modifier = Modifier) {
     Box(
@@ -203,7 +210,7 @@ private fun LogoBackdrop(channel: Channel, modifier: Modifier = Modifier) {
 }
 
 /**
- * Carte compacte de la grille : logo, chaîne, programme en cours et progression.
+ * Compact grid card: logo, channel, current program and progress.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -261,13 +268,13 @@ fun CompactChannelCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                // Programme et horaire sur la même ligne : le nom de la chaîne garde toute la largeur
+                // Program and time on the same line: the channel name keeps the full width
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = program?.title ?: "Aucune information",
+                        text = program?.title ?: stringResource(R.string.card_no_information),
                         fontSize = 11.sp,
                         color = TextSecondary,
                         maxLines = 1,
@@ -299,7 +306,7 @@ fun CompactChannelCard(
 }
 
 /**
- * Puce de catégorie : texte seul au repos, fond discret si sélectionnée, pleine au focus.
+ * Category chip: text only at rest, subtle background when selected, filled when focused.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -356,11 +363,10 @@ fun DiscreteCategoryChip(
 }
 
 /**
- * Panneau de dialogue commun : sombre, arrondi, limité en hauteur à l'écran.
+ * Shared dialog panel: dark, rounded, height capped to the screen.
  *
- * Le menu s'ouvre sur un appui long : les répétitions et le relâchement de cette touche OK arrivent
- * ensuite dans le dialogue et valideraient le premier élément. On les ignore tant qu'un nouvel appui
- * n'a pas commencé dans le dialogue.
+ * The menu opens on a long press: the repeats and the release of that OK key then reach the dialog
+ * and would confirm the first item. They are ignored until a new press has started in the dialog.
  */
 @Composable
 private fun DialogPanel(
@@ -434,8 +440,8 @@ private fun DialogHeader(channel: Channel, subtitle: String?) {
 }
 
 /**
- * Menu contextuel (appui long sur une chaîne) : favoris, masquage et choix du flux.
- * Fenêtre Dialog : le focus reste dans le menu et la touche Retour le ferme.
+ * Context menu (long press on a channel): favorites, hiding and stream selection.
+ * Dialog window: focus stays in the menu and the Back key closes it.
  */
 @Composable
 fun ChannelActionMenuDialog(
@@ -469,7 +475,7 @@ fun ChannelActionMenuDialog(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MenuRow(
-                    label = if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris",
+                    label = stringResource(if (isFavorite) R.string.card_remove_favorite else R.string.card_add_favorite),
                     icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                     onClick = {
                         onToggleFavorite()
@@ -480,7 +486,7 @@ fun ChannelActionMenuDialog(
                         .focusRequester(firstItemFocus)
                 )
                 MenuRow(
-                    label = "Masquer la chaîne",
+                    label = stringResource(R.string.card_hide_channel),
                     icon = Icons.Filled.Close,
                     onClick = {
                         onHideChannel()
@@ -492,7 +498,7 @@ fun ChannelActionMenuDialog(
 
             if (onMove != null) {
                 MenuRow(
-                    label = "Déplacer dans les favoris",
+                    label = stringResource(R.string.card_move_in_favorites),
                     icon = Icons.Filled.Menu,
                     onClick = {
                         onDismiss()
@@ -502,7 +508,7 @@ fun ChannelActionMenuDialog(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-            SectionLabel(text = "Flux", modifier = Modifier.padding(start = 14.dp, bottom = 6.dp))
+            SectionLabel(text = stringResource(R.string.streams_section), modifier = Modifier.padding(start = 14.dp, bottom = 6.dp))
 
             StreamList(
                 channel = channel,
@@ -519,7 +525,7 @@ fun ChannelActionMenuDialog(
 }
 
 /**
- * Sélecteur de flux ouvert depuis le lecteur (appui long sur OK ou touche Menu).
+ * Stream picker opened from the player (long press on OK or Menu key).
  */
 @Composable
 fun StreamPickerDialog(
@@ -534,7 +540,7 @@ fun StreamPickerDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         DialogPanel(width = 560.dp) {
-            DialogHeader(channel = channel, subtitle = "Choisir le flux de lecture")
+            DialogHeader(channel = channel, subtitle = stringResource(R.string.streams_picker_subtitle))
             Spacer(modifier = Modifier.height(14.dp))
             StreamList(
                 channel = channel,
@@ -554,11 +560,11 @@ fun StreamPickerDialog(
 private sealed class StreamsState {
     object Loading : StreamsState()
     data class Loaded(val streams: List<StreamSource>) : StreamsState()
-    data class Failed(val message: String) : StreamsState()
+    data class Failed(val message: UiText) : StreamsState()
 }
 
 /**
- * Liste des flux : "Automatique" (Dispatcharr choisit et bascule en cas de panne) puis les flux réels.
+ * Stream list: "Automatic" (Dispatcharr picks and switches over on failure) then the actual streams.
  */
 @Composable
 private fun StreamList(
@@ -572,14 +578,14 @@ private fun StreamList(
     val state by produceState<StreamsState>(StreamsState.Loading, channel.id) {
         value = loadStreams().fold(
             onSuccess = { StreamsState.Loaded(it) },
-            onFailure = { StreamsState.Failed(it.localizedMessage ?: "Flux indisponibles") }
+            onFailure = { StreamsState.Failed(it.toUiText()) }
         )
     }
     val selectedFocus = remember { FocusRequester() }
     val streams = (state as? StreamsState.Loaded)?.streams.orEmpty()
     val selectedIndex = streams.indexOfFirst { it.url == channel.selectedStreamUrl }
 
-    // Focus initial sur le flux actif (ou "Automatique")
+    // Initial focus on the active stream (or "Automatic")
     if (requestInitialFocus) {
         LaunchedEffect(state is StreamsState.Loading) {
             selectedFocus.requestFocusWithRetry()
@@ -593,7 +599,7 @@ private fun StreamList(
         item {
             val isSelected = channel.selectedStreamUrl == null
             MenuRow(
-                label = "Automatique",
+                label = stringResource(R.string.streams_automatic),
                 subtitle = automaticDescription,
                 onClick = { onSelect(null) },
                 leading = { focused -> SelectionDot(selected = isSelected, focused = focused) },
@@ -613,12 +619,12 @@ private fun StreamList(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text(text = "Recherche des flux…", fontSize = 13.sp, color = TextSecondary)
+                    Text(text = stringResource(R.string.streams_searching), fontSize = 13.sp, color = TextSecondary)
                 }
             }
             is StreamsState.Failed -> item {
                 Text(
-                    text = current.message,
+                    text = current.message.resolve(),
                     fontSize = 13.sp,
                     color = LiveRed,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
@@ -628,7 +634,7 @@ private fun StreamList(
                 if (current.streams.isEmpty()) {
                     item {
                         Text(
-                            text = "Aucun autre flux disponible pour cette chaîne",
+                            text = stringResource(R.string.streams_none_available),
                             fontSize = 13.sp,
                             color = TextSecondary,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
@@ -661,7 +667,7 @@ private fun StreamList(
 }
 
 /**
- * Menu d'une catégorie (appui long sur sa puce) : la masquer de l'accueil, du volet et du zapping.
+ * Category menu (long press on its chip): hide it from the home screen, the side panel and zapping.
  */
 @Composable
 fun CategoryActionDialog(
@@ -690,13 +696,13 @@ fun CategoryActionDialog(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "$channelCount chaîne(s)  ·  réaffichable dans les paramètres",
+                text = pluralStringResource(R.plurals.card_category_channel_count, channelCount, channelCount),
                 fontSize = 12.sp,
                 color = TextSecondary
             )
             Spacer(modifier = Modifier.height(16.dp))
             MenuRow(
-                label = "Masquer cette catégorie",
+                label = stringResource(R.string.card_hide_category),
                 icon = Icons.Filled.Close,
                 onClick = {
                     onHide()
@@ -704,7 +710,7 @@ fun CategoryActionDialog(
                 },
                 modifier = Modifier.focusRequester(firstItemFocus)
             )
-            MenuRow(label = "Annuler", onClick = onDismiss)
+            MenuRow(label = stringResource(R.string.common_cancel), onClick = onDismiss)
         }
     }
 }

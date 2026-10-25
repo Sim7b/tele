@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissions réseau requises pour les flux IPTV -->
+    <!-- Network permissions required for IPTV streams -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Configuration obligatoire pour Android TV -->
+    <!-- Mandatory configuration for Android TV -->
     <uses-feature
         android:name="android.software.leanback"
         android:required="true" />
@@ -33,7 +33,7 @@
             android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <!-- Lanceur dédié Android TV -->
+                <!-- Dedicated Android TV launcher -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>

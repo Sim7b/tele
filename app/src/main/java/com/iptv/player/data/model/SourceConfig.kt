@@ -1,27 +1,29 @@
 package com.iptv.player.data.model
 
+import androidx.annotation.StringRes
+import com.iptv.player.R
 import com.iptv.player.data.optStringOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import java.util.UUID
 
 /**
- * Type de source de chaînes.
+ * Channel source type.
  */
-enum class SourceType(val label: String) {
-    DISPATCHARR("Dispatcharr"),
-    XTREAM("Xtream Codes"),
-    M3U("Playlist M3U")
+enum class SourceType(@param:StringRes val labelRes: Int) {
+    DISPATCHARR(R.string.source_type_dispatcharr),
+    XTREAM(R.string.source_type_xtream),
+    M3U(R.string.source_type_m3u)
 }
 
 /**
- * Source de chaînes : serveur Dispatcharr (clé API), compte Xtream Codes (identifiant + mot de passe)
- * ou playlist M3U (lien, avec guide XMLTV facultatif).
+ * Channel source: Dispatcharr server (API key), Xtream Codes account (username + password)
+ * or M3U playlist (link, with an optional XMLTV guide).
  */
 data class SourceConfig(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
-    // Dispatcharr / Xtream : adresse du serveur ; M3U : lien complet de la playlist
+    // Dispatcharr / Xtream: server address; M3U: full playlist link
     val serverUrl: String,
     val apiKey: String = "",
     val isActive: Boolean = false,
@@ -29,12 +31,12 @@ data class SourceConfig(
     val type: SourceType = SourceType.DISPATCHARR,
     val username: String = "",
     val password: String = "",
-    // M3U : guide XMLTV facultatif (sinon celui annoncé par la playlist, url-tvg)
+    // M3U: optional XMLTV guide (else the one announced by the playlist, url-tvg)
     val epgUrl: String? = null
 ) {
     /**
-     * URL absolue et normalisée. Sans schéma, https:// est ajouté (http:// pour Xtream, rarement en HTTPS).
-     * La playlist M3U est conservée telle quelle (paramètres de requête compris).
+     * Absolute, normalized URL. Without a scheme, https:// is added (http:// for Xtream, rarely served over HTTPS).
+     * The M3U playlist link is kept as is (query parameters included).
      */
     val normalizedUrl: String
         get() {
@@ -45,7 +47,7 @@ data class SourceConfig(
             return if (type == SourceType.M3U) url else url.trimEnd('/')
         }
 
-    /** Adresse affichable, sans identifiants ni paramètres (les liens M3U contiennent souvent le mot de passe). */
+    /** Displayable address, without credentials or parameters (M3U links often contain the password). */
     val displayUrl: String
         get() {
             val parsed = normalizedUrl.toHttpUrlOrNull() ?: return normalizedUrl.substringBefore('?')
@@ -77,12 +79,12 @@ data class SourceConfig(
         fun fromJson(json: JSONObject): SourceConfig {
             return SourceConfig(
                 id = json.optString("id", UUID.randomUUID().toString()),
-                name = json.optString("name", "Serveur Dispatcharr"),
+                name = json.optString("name", "Dispatcharr"),
                 serverUrl = json.optString("serverUrl", ""),
                 apiKey = json.optString("apiKey", ""),
                 isActive = json.optBoolean("isActive", false),
                 customUserAgent = json.optString("customUserAgent").takeIf { it.isNotBlank() },
-                // Configurations enregistrées avant l'ajout des types : Dispatcharr
+                // Configurations saved before source types existed: Dispatcharr
                 type = runCatching { SourceType.valueOf(json.optString("type")) }.getOrDefault(SourceType.DISPATCHARR),
                 username = json.optString("username", ""),
                 password = json.optString("password", ""),

@@ -1,5 +1,8 @@
 package com.iptv.player.ui.screens
 
+import com.iptv.player.data.resolve
+import com.iptv.player.data.UiText
+import com.iptv.player.R
 import android.view.KeyEvent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -17,6 +20,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,16 +48,16 @@ import com.iptv.player.ui.theme.*
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
-private const val ALL_CATEGORIES = "Toutes"
+/** Sentinel of the "all categories" chip; its label comes from the resources. */
+private const val ALL_CATEGORIES = "__all__"
 
 private const val FAVORITE_SLOTS = 8
 private const val FAVORITE_COLUMNS = 4
 
 /**
- * Les 8 vignettes du haut : les favoris dans l'ordre choisi (même si leur catégorie est masquée),
- * complétés par les premières chaînes visibles.
+ * The 8 top tiles: the favorites in the chosen order (even if their category is hidden),
+ * filled up with the first visible channels.
  */
 fun pickFavoriteChannels(
     allChannels: List<Channel>,
@@ -66,9 +71,9 @@ fun pickFavoriteChannels(
 }
 
 /**
- * Accueil : favoris, catégories et grille de chaînes.
- * [channels] ne contient que les chaînes visibles (chaînes et catégories masquées filtrées en amont),
- * [favorites] les 8 vignettes du haut (voir [pickFavoriteChannels]).
+ * Home: favorites, categories and channel grid.
+ * [channels] only contains the visible channels (hidden channels and categories filtered upstream),
+ * [favorites] the 8 top tiles (see [pickFavoriteChannels]).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -78,7 +83,7 @@ fun HomeScreen(
     activeConfig: SourceConfig?,
     favoriteIds: List<String> = emptyList(),
     isLoading: Boolean,
-    loadError: String? = null,
+    loadError: UiText? = null,
     onChannelSelected: (Channel) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onHideChannel: (String) -> Unit,
@@ -91,7 +96,7 @@ fun HomeScreen(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // États sauvegardés : restaurés au retour du lecteur ou des paramètres
+    // Saved states: restored when coming back from the player or the settings
     var selectedCategory by rememberSaveable { mutableStateOf(ALL_CATEGORIES) }
     var lastFocusedKey by rememberSaveable { mutableStateOf<String?>(null) }
     val listState = rememberTvLazyListState()
@@ -103,12 +108,12 @@ fun HomeScreen(
     val emptyStateFocusRequester = remember { FocusRequester() }
     var focusRestoreRequest by remember { mutableIntStateOf(0) }
 
-    // Favoris réels en tête de grille (les vignettes suivantes ne font que compléter les 8 places)
+    // Actual favorites at the top of the grid (the following tiles only fill up the 8 slots)
     val favoriteChannels = favorites
     val movableCount = remember(favorites, favoriteIds) { favorites.takeWhile { it.id in favoriteIds }.size }
     val hasFavorites = movableCount > 0
 
-    // Mode "déplacer" : la vignette choisie suit les flèches, OK ou Retour valide
+    // "Move" mode: the chosen tile follows the arrows, OK or Back confirms
     var movingChannelId by remember { mutableStateOf<String?>(null) }
     val movingFocus = remember { FocusRequester() }
     LaunchedEffect(movingChannelId, favorites) {
@@ -123,22 +128,22 @@ fun HomeScreen(
         onMoveFavorite(movingId, favoriteIds.indexOf(favorites[to].id))
     }
 
-    // Catégories
+    // Categories
     val categories = remember(channels) {
         listOf(ALL_CATEGORIES) + channels.map { it.group }.distinct()
     }
 
-    // Une catégorie disparue (chaînes masquées, changement de serveur) ne doit pas laisser une liste vide
+    // A category that disappeared (hidden channels, server change) must not leave an empty list
     val effectiveCategory = selectedCategory.takeIf { it in categories } ?: ALL_CATEGORIES
 
-    // Chaînes filtrées
+    // Filtered channels
     val filteredChannels = remember(channels, effectiveCategory) {
         if (effectiveCategory == ALL_CATEGORIES) channels else channels.filter { it.group == effectiveCategory }
     }
-    // Rangées de 4 calculées une fois par changement de liste (et non à chaque recomposition de la grille)
+    // Rows of 4 computed once per list change (and not on every grid recomposition)
     val channelRows = remember(filteredChannels) { filteredChannels.chunked(4) }
 
-    // Élément qui reçoit le focus à l'affichage : le dernier focalisé, sinon le premier favori
+    // Item that gets the focus when shown: the last focused one, otherwise the first favorite
     val focusTargetKey = remember(favoriteChannels, filteredChannels, lastFocusedKey) {
         val keys = favoriteChannels.map { "fav:${it.id}" } + filteredChannels.map { "list:${it.id}" }
         lastFocusedKey?.takeIf { it in keys } ?: keys.firstOrNull()
@@ -146,7 +151,7 @@ fun HomeScreen(
     val hasContent = channels.isNotEmpty() || favorites.isNotEmpty()
 
     LaunchedEffect(focusRestoreRequest, hasContent) {
-        // En déplacement, c'est la vignette déplacée qui garde le focus
+        // While moving, the moved tile keeps the focus
         if (movingChannelId != null) return@LaunchedEffect
         if (hasContent) {
             restoreFocusRequester.requestFocusWithRetry()
@@ -163,7 +168,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
-                // En mode déplacement, les flèches déplacent la vignette au lieu de déplacer le focus
+                // In move mode, the arrows move the tile instead of moving the focus
                 if (movingChannelId == null) return@onPreviewKeyEvent false
                 val keyCode = event.nativeKeyEvent.keyCode
                 val isConfirm = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
@@ -186,7 +191,7 @@ fun HomeScreen(
             .padding(start = 48.dp, end = 48.dp, top = 22.dp, bottom = 8.dp) // TV Safe Area
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // En-tête : heure et date, état de synchronisation, paramètres
+            // Header: time and date, sync status, settings
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -204,11 +209,11 @@ fun HomeScreen(
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Synchronisation", fontSize = 12.sp, color = TextSecondary)
+                    Text(text = stringResource(R.string.home_syncing), fontSize = 12.sp, color = TextSecondary)
                     Spacer(modifier = Modifier.width(18.dp))
                 } else if (loadError != null && hasContent) {
                     Text(
-                        text = loadError,
+                        text = loadError.resolve(),
                         fontSize = 12.sp,
                         color = LiveRed.copy(alpha = 0.85f),
                         maxLines = 1,
@@ -220,7 +225,7 @@ fun HomeScreen(
 
                 RoundIconButton(
                     icon = Icons.Filled.Settings,
-                    contentDescription = "Paramètres",
+                    contentDescription = stringResource(R.string.home_settings),
                     onClick = onOpenSettings
                 )
             }
@@ -238,7 +243,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(18.dp))
                         Text(
-                            text = "Chargement des chaînes et du guide…",
+                            text = stringResource(R.string.home_loading),
                             fontSize = 15.sp,
                             color = TextSecondary
                         )
@@ -254,7 +259,7 @@ fun HomeScreen(
                         modifier = Modifier.width(460.dp)
                     ) {
                         Text(
-                            text = if (activeConfig == null) "Bienvenue" else "Aucune chaîne disponible",
+                            text = if (activeConfig == null) stringResource(R.string.home_welcome) else stringResource(R.string.home_no_channels),
                             fontSize = 24.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextPrimary
@@ -262,9 +267,9 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = when {
-                                activeConfig == null -> "Ajoutez une source (Dispatcharr, Xtream Codes ou playlist M3U) pour commencer."
-                                loadError != null -> loadError
-                                else -> "Vérifiez vos paramètres ou réaffichez les chaînes masquées."
+                                activeConfig == null -> stringResource(R.string.home_add_source_hint)
+                                loadError != null -> loadError.resolve()
+                                else -> stringResource(R.string.home_no_channels_hint)
                             },
                             fontSize = 14.sp,
                             color = TextSecondary,
@@ -272,14 +277,14 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         MenuRow(
-                            label = "Ouvrir les paramètres",
+                            label = stringResource(R.string.home_open_settings),
                             icon = Icons.Filled.Settings,
                             onClick = onOpenSettings,
                             modifier = Modifier.focusRequester(emptyStateFocusRequester)
                         )
                         if (activeConfig != null) {
                             MenuRow(
-                                label = "Réessayer",
+                                label = stringResource(R.string.home_retry),
                                 icon = Icons.Filled.Refresh,
                                 onClick = onRefresh
                             )
@@ -293,18 +298,18 @@ fun HomeScreen(
                     contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // SECTION 1 : FAVORIS (2 lignes x 4 colonnes)
+                    // SECTION 1: FAVORITES (2 rows x 4 columns)
                     item {
                         Column {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(bottom = 10.dp)
                             ) {
-                                SectionLabel(text = if (hasFavorites) "Favoris" else "À la une")
+                                SectionLabel(text = if (hasFavorites) stringResource(R.string.home_favorites) else stringResource(R.string.home_featured))
                                 if (movingChannelId != null) {
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Text(
-                                        text = "◀ ▶ ▲ ▼  Déplacer      OK  Valider",
+                                        text = stringResource(R.string.home_move_hint),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = AccentCyan
@@ -322,7 +327,7 @@ fun HomeScreen(
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    // Les autres vignettes s'estompent pendant un déplacement
+                                                    // The other tiles fade out during a move
                                                     .alpha(if (movingChannelId != null && !isMoving) 0.45f else 1f)
                                             ) {
                                                 FavoriteChannelCard(
@@ -345,7 +350,7 @@ fun HomeScreen(
                         }
                     }
 
-                    // SECTION 2 : CATÉGORIES
+                    // SECTION 2: CATEGORIES
                     item {
                         TvLazyRow(
                             state = categoriesState,
@@ -357,7 +362,7 @@ fun HomeScreen(
                         ) {
                             items(categories) { category ->
                                 DiscreteCategoryChip(
-                                    text = category,
+                                    text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else category,
                                     isSelected = category == effectiveCategory,
                                     onClick = { selectedCategory = category },
                                     onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category })
@@ -366,10 +371,10 @@ fun HomeScreen(
                         }
                     }
 
-                    // SECTION 3 : GRILLE DES CHAÎNES (4 colonnes)
+                    // SECTION 3: CHANNEL GRID (4 columns)
                     items(
                         channelRows,
-                        // Clé stable : les rangées déjà composées sont réutilisées lors des mises à jour du guide
+                        // Stable key: already composed rows are reused on guide updates
                         key = { row -> "row:${row.first().id}" },
                         contentType = { "channelRow" }
                     ) { rowChannels ->
@@ -396,10 +401,10 @@ fun HomeScreen(
             }
         }
 
-        // Menu contextuel sur appui long
+        // Context menu on long press
         actionMenuChannel?.let { ch ->
             val isFav = favoriteIds.contains(ch.id) || ch.isFavorite
-            // Déplaçable s'il occupe une des places de favori de la grille et qu'il y a au moins deux favoris
+            // Movable if it holds one of the favorite slots of the grid and there are at least two favorites
             val canMove = movableCount > 1 && favorites.take(movableCount).any { it.id == ch.id }
             ChannelActionMenuDialog(
                 channel = ch,
@@ -412,13 +417,13 @@ fun HomeScreen(
                 automaticDescription = automaticStreamDescription,
                 onDismiss = {
                     actionMenuChannel = null
-                    // Rendre le focus à la grille (la carte d'origine a pu disparaître si la chaîne a été masquée)
+                    // Give the focus back to the grid (the original card may have disappeared if the channel was hidden)
                     focusRestoreRequest++
                 }
             )
         }
 
-        // Menu d'une catégorie (appui long sur sa puce)
+        // Category menu (long press on its chip)
         categoryMenu?.let { category ->
             CategoryActionDialog(
                 category = category,
@@ -433,7 +438,7 @@ fun HomeScreen(
     }
 }
 
-/** Heure et date discrètes en haut de l'accueil. */
+/** Discreet time and date at the top of the home screen. */
 @Composable
 private fun HeaderClock() {
     val now by produceState(initialValue = LocalDateTime.now()) {
@@ -443,9 +448,11 @@ private fun HeaderClock() {
         }
     }
     val time = remember(now.hour, now.minute) { now.format(DateTimeFormatter.ofPattern("HH:mm")) }
-    val date = remember(now.toLocalDate()) {
-        now.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.FRENCH))
-            .replaceFirstChar { it.titlecase(Locale.FRENCH) }
+    val locale = LocalConfiguration.current.locales[0]
+    val datePattern = stringResource(R.string.home_date_pattern)
+    val date = remember(now.toLocalDate(), locale, datePattern) {
+        now.format(DateTimeFormatter.ofPattern(datePattern, locale))
+            .replaceFirstChar { it.titlecase(locale) }
     }
 
     Row(verticalAlignment = Alignment.Bottom) {

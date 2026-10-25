@@ -5,7 +5,9 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.iptv.player.data.UiText
 import com.iptv.player.data.epg.EpgResolver
+import com.iptv.player.data.failure
 import com.iptv.player.data.model.Channel
 import com.iptv.player.data.model.GuideProgram
 import com.iptv.player.data.model.ProgramArtwork
@@ -18,6 +20,7 @@ import com.iptv.player.data.remote.HttpClients
 import com.iptv.player.data.remote.M3uClient
 import com.iptv.player.data.remote.XtreamClient
 import com.iptv.player.data.storage.SettingsRepository
+import com.iptv.player.data.toUiText
 import com.iptv.player.playback.TvPlayerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,14 +33,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * État principal de l'application : chargement des chaînes et du guide depuis la source active
- * (Dispatcharr, Xtream Codes ou M3U), programme en cours rafraîchi toutes les 30 s, flux choisis
- * et cache local pour un affichage immédiat au démarrage.
+ * Main app state: loads channels and guide from the active source (Dispatcharr, Xtream Codes or M3U),
+ * refreshes the current program every 30 s, keeps the selected streams and a local cache
+ * for an immediate display at startup.
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -54,20 +57,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoading = MutableStateFlow(_channels.value.isEmpty())
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _loadError = MutableStateFlow<String?>(null)
-    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+    private val _loadError = MutableStateFlow<UiText?>(null)
+    val loadError: StateFlow<UiText?> = _loadError.asStateFlow()
 
-    // Prénom du compte (message d'accueil), connu dès le démarrage s'il a été mémorisé
+    // Account first name (welcome message), known at startup when it was saved
     private val _userName = MutableStateFlow(
         configRepository.activeConfig.value?.let { configRepository.getUserDisplayName(it.id) }
     )
     val userName: StateFlow<String?> = _userName.asStateFlow()
 
-    // Vrai une fois la première synchronisation terminée (chaînes, guide et visuels), même en cas d'échec
+    // True once the first sync is over (channels, guide and artwork), even when it failed
     private val _initialSyncDone = MutableStateFlow(false)
     val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
 
-    // Programmes EPG par identifiant de chaîne, conservés pour faire avancer le "programme en cours"
+    // EPG programs by channel id, kept to move the "current program" forward
     @Volatile
     private var programsByChannelId: Map<String, List<GuideProgram>> = emptyMap()
     private var loadJob: Job? = null
@@ -84,9 +87,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 refreshCurrentPrograms()
                 ticks++
                 when (configRepository.activeConfig.value?.type) {
-                    // Les visuels ne couvrent que les prochaines heures : on les renouvelle régulièrement
+                    // Artwork only covers the next hours: renew it regularly
                     SourceType.DISPATCHARR -> if (ticks % ARTWORK_REFRESH_TICKS == 0) refreshArtwork()
-                    // Le guide XMLTV n'est conservé que sur une fenêtre limitée : rechargement périodique
+                    // The XMLTV guide is only kept over a limited window: reload it periodically
                     SourceType.XTREAM, SourceType.M3U -> if (ticks % GUIDE_RELOAD_TICKS == 0) refresh()
                     null -> Unit
                 }
@@ -98,35 +101,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadChannels(configRepository.activeConfig.value)
     }
 
-    /** Flux disponibles pour une chaîne (chargés à la demande, à l'ouverture du menu). */
+    /** Streams available for a channel (loaded on demand, when the menu opens). */
     suspend fun loadStreams(channel: Channel): Result<List<StreamSource>> {
-        // Xtream : variantes TS / HLS déjà connues
+        // Xtream: TS / HLS variants already known
         if (channel.availableStreams.isNotEmpty()) return Result.success(channel.availableStreams)
-        // M3U : un seul flux par entrée de playlist
+        // M3U: a single stream per playlist entry
         if (configRepository.activeConfig.value?.type != SourceType.DISPATCHARR) return Result.success(emptyList())
         val serverId = channel.serverId
-            ?: return Result.failure(IllegalStateException("Synchronisez les chaînes pour afficher leurs flux"))
+            ?: return failure(R.string.error_sync_channels_for_streams)
         return dispatcharrClient.getChannelStreams(serverId)
     }
 
     /**
-     * Choix du flux d'une chaîne, mémorisé entre les sessions. [stream] null (ou sans id) = mode automatique.
+     * Stream selection of a channel, kept across sessions. Null [stream] (or without id) = automatic mode.
      */
     fun selectStream(channel: Channel, stream: StreamSource?) {
         configRepository.setSelectedStream(channel.id, stream?.takeIf { it.id != null })
         _channels.value = withSelectedStreams(_channels.value)
     }
 
-    /** Test de connexion depuis le formulaire d'une source (message de réussite ou erreur lisible). */
-    suspend fun testConnection(config: SourceConfig): Result<String> = when (config.type) {
+    /** Connection test from a source form (success message or readable error). */
+    suspend fun testConnection(config: SourceConfig): Result<UiText> = when (config.type) {
         SourceType.DISPATCHARR -> dispatcharrClient.testConnection(config)
-            .map { count -> "Connexion réussie · $count chaînes détectées" }
+            .map { count -> UiText.Plural(R.plurals.test_dispatcharr_success, count, count) }
         SourceType.XTREAM -> XtreamClient.authenticate(config).map { account ->
-            listOfNotNull(
-                "Compte actif",
-                account.expiresAtMillis?.let { "expire le " + SimpleDateFormat("dd/MM/yyyy", Locale.FRENCH).format(Date(it)) },
-                account.maxConnections?.let { "$it connexion(s) simultanée(s)" }
-            ).joinToString(" · ")
+            val resources = getApplication<Application>().resources
+            UiText.Raw(
+                listOfNotNull(
+                    resources.getString(R.string.test_xtream_account_active),
+                    account.expiresAtMillis?.let {
+                        resources.getString(R.string.test_xtream_expires, DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it)))
+                    },
+                    account.maxConnections?.let { resources.getQuantityString(R.plurals.test_xtream_max_connections, it, it) }
+                ).joinToString(" · ")
+            )
         }
         SourceType.M3U -> M3uClient.probe(config)
     }
@@ -144,11 +152,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadChannels(config: SourceConfig?) {
-        // Un nouveau chargement remplace le précédent (évite qu'une réponse ancienne écrase la plus récente)
+        // A new load replaces the previous one (prevents an old response from overwriting the latest one)
         loadJob?.cancel()
 
         if (config?.id != loadedConfigId) {
-            // Changement de source : ne pas afficher les chaînes de l'ancienne
+            // Source change: do not show the channels of the previous one
             loadedConfigId = config?.id
             programsByChannelId = emptyMap()
             _channels.value = config?.let { withSelectedStreams(configRepository.getCachedChannels(it.id)) } ?: emptyList()
@@ -181,20 +189,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadDispatcharr(config: SourceConfig, startedAt: Long) = coroutineScope {
-        // Prénom du compte, en parallèle : ne retarde pas le chargement des chaînes
+        // Account first name, in parallel: does not delay the channel load
         launch {
             dispatcharrClient.getCurrentUser()?.let { (firstName, username) ->
                 displayFirstName(firstName, username)?.let { saveUserName(config, it) }
             }
         }
 
-        // Visuels des programmes en parallèle des chaînes et du guide : ils ne dépendent que de l'heure
+        // Program artwork in parallel with channels and guide: it only depends on the time
         val now = System.currentTimeMillis()
         val artworkDeferred = async { dispatcharrClient.getProgramArtwork(now, now + ARTWORK_WINDOW_MS) }
         val epgDeferred = async { dispatcharrClient.getEpgGrid() }
         val channelsResult = dispatcharrClient.getChannels()
         val epgResult = epgDeferred.await()
-        Log.i(TvPlayerManager.PERF_TAG, "Chargement : chaînes + guide en ${SystemClock.elapsedRealtime() - startedAt} ms")
+        Log.i(TvPlayerManager.PERF_TAG, "Load: channels + guide in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
         channelsResult.onSuccess { dChannels ->
             val (channels, programs) = withContext(Dispatchers.Default) {
@@ -213,20 +221,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 result to programsMap
             }
-            publish(channels, programs, epgResult.exceptionOrNull()?.let { "Guide EPG indisponible : ${it.localizedMessage}" })
+            publish(channels, programs, epgResult.exceptionOrNull()?.let { UiText.Res(R.string.error_guide_unavailable, it.toUiText()) })
             _isLoading.value = false
 
             applyArtwork(artworkDeferred.await())
-            Log.i(TvPlayerManager.PERF_TAG, "Chargement : visuels inclus en ${SystemClock.elapsedRealtime() - startedAt} ms")
+            Log.i(TvPlayerManager.PERF_TAG, "Load: artwork included in ${SystemClock.elapsedRealtime() - startedAt} ms")
             saveCache(config)
         }.onFailure { error ->
             artworkDeferred.cancel()
-            _loadError.value = "Impossible de charger les chaînes : ${error.localizedMessage ?: "erreur réseau"}"
+            _loadError.value = UiText.Res(R.string.error_load_channels, error.toUiText())
         }
     }
 
     /**
-     * Xtream Codes et M3U : chaînes affichées dès réception, puis guide XMLTV (souvent volumineux).
+     * Xtream Codes and M3U: channels shown as soon as received, then the XMLTV guide (often large).
      */
     private suspend fun loadPlaylistSource(config: SourceConfig, startedAt: Long) {
         val result = when (config.type) {
@@ -237,7 +245,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             source.userName?.let { displayFirstName(null, it) }?.let { saveUserName(config, it) }
             publish(source.channels, emptyMap(), null)
             _isLoading.value = false
-            Log.i(TvPlayerManager.PERF_TAG, "Chargement : ${source.channels.size} chaînes en ${SystemClock.elapsedRealtime() - startedAt} ms")
+            Log.i(TvPlayerManager.PERF_TAG, "Load: ${source.channels.size} channels in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
             val userAgent = config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT
             val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent)
@@ -246,16 +254,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _loadError.value = guide.error
             Log.i(
                 TvPlayerManager.PERF_TAG,
-                "Chargement : guide de ${guide.programs.size} chaînes en ${SystemClock.elapsedRealtime() - startedAt} ms"
+                "Load: guide of ${guide.programs.size} channels in ${SystemClock.elapsedRealtime() - startedAt} ms"
             )
             saveCache(config)
         }.onFailure { error ->
-            _loadError.value = "Impossible de charger les chaînes : ${error.localizedMessage ?: "erreur réseau"}"
+            _loadError.value = UiText.Res(R.string.error_load_channels, error.toUiText())
         }
     }
 
-    /** Publie les chaînes avec leur programme en cours et le flux choisi par l'utilisateur. */
-    private fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: String?) {
+    /** Publishes the channels with their current program and the stream selected by the user. */
+    private fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: UiText?) {
         programsByChannelId = programs
         val now = System.currentTimeMillis()
         val withPrograms = channels.map { channel ->
@@ -276,7 +284,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Renouvelle les visuels 16:9 et catégories des programmes diffusés dans les prochaines heures (Dispatcharr).
+     * Renews the 16:9 artwork and categories of the programs aired in the next hours (Dispatcharr).
      */
     private suspend fun refreshArtwork() {
         if (programsByChannelId.isEmpty()) return
@@ -303,8 +311,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Index nom normalisé -> clé EPG, pour les chaînes sans epg_data_id ni tvg_id
-     * (ex: "France 2" <-> "France2.fr"). Correspondance exacte uniquement, jamais partielle.
+     * Normalized name -> EPG key index, for channels without epg_data_id or tvg_id
+     * (e.g. "France 2" <-> "France2.fr"). Exact match only, never partial.
      */
     private suspend fun buildNameIndex(epgKeys: Set<String>): Map<String, String> {
         val index = mutableMapOf<String, String>()
@@ -319,7 +327,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Fait avancer les barres de progression et bascule sur le programme suivant quand l'actuel se termine.
+     * Moves the progress bars forward and switches to the next program when the current one ends.
      */
     private fun refreshCurrentPrograms() {
         val now = System.currentTimeMillis()
@@ -336,9 +344,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Prénom à afficher : first_name du compte, sinon début de l'identifiant ("jean.dupont" -> "Jean").
-     * Un identifiant technique (chiffres, une seule lettre : "a8f3k2", "user123") n'est pas affiché.
-     * Chaque partie commence toujours par une majuscule, même si l'API renvoie tout en minuscules.
+     * First name to display: account first_name, else the start of the username ("jean.dupont" -> "Jean").
+     * A technical username (digits, a single letter: "a8f3k2", "user123") is not displayed.
+     * Each part always starts with an uppercase letter, even when the API returns everything in lowercase.
      */
     private fun displayFirstName(firstName: String?, username: String?): String? {
         val base = firstName?.trim()?.takeIf { it.isNotEmpty() }
@@ -349,7 +357,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?: return null
         return base.split(" ").filter { it.isNotBlank() }.joinToString(" ") { word ->
             word.split("-").joinToString("-") { part ->
-                part.replaceFirstChar { it.titlecase(Locale.FRENCH) }
+                part.replaceFirstChar { it.titlecase(Locale.getDefault()) }
             }
         }
     }
@@ -357,7 +365,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val EPG_TICK_MS = 30_000L
         private const val ARTWORK_WINDOW_MS = 4 * 60 * 60 * 1000L
-        private const val ARTWORK_REFRESH_TICKS = 120 // toutes les heures
-        private const val GUIDE_RELOAD_TICKS = 720 // toutes les 6 heures
+        private const val ARTWORK_REFRESH_TICKS = 120 // every hour
+        private const val GUIDE_RELOAD_TICKS = 720 // every 6 hours
     }
 }

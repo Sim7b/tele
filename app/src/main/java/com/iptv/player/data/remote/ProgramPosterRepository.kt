@@ -11,8 +11,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
- * Service d'enrichissement EPG externe (TVMaze API - Widescreen Backgrounds & Banners).
- * Récupère prioritairement des visuels au format HORIZONTAL (16:9 / Banner) adaptés aux vignettes TV.
+ * External EPG enrichment (TVMaze API: widescreen backgrounds and banners).
+ * Prefers LANDSCAPE artwork (16:9 / banner), suited to TV tiles.
  */
 object ProgramPosterRepository {
 
@@ -21,19 +21,19 @@ object ProgramPosterRepository {
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
 
-    // Cache mémoire (y compris des absences de résultat, valeur vide) pour éviter les requêtes répétées
+    // In-memory cache (including missing results, as an empty value) to avoid repeated requests
     private val posterCache = ConcurrentHashMap<String, String>()
 
     /**
-     * Récupère l'URL d'un visuel horizontal (16:9 / Backdrop) pour un titre de programme donné.
+     * URL of a landscape artwork (16:9 / backdrop) for a program title.
      */
     suspend fun getPosterUrl(rawTitle: String): String? = withContext(Dispatchers.IO) {
-        if (rawTitle.isBlank() || rawTitle == "Programme") return@withContext null
+        if (rawTitle.isBlank() || rawTitle == "Program") return@withContext null
 
         val cleanTitle = cleanProgramTitle(rawTitle)
         if (cleanTitle.isBlank()) return@withContext null
 
-        // Vérification dans le cache
+        // Cache lookup
         posterCache[cleanTitle]?.let { return@withContext it.ifBlank { null } }
 
         var result: String? = null
@@ -54,12 +54,12 @@ object ProgramPosterRepository {
                         val body = response.body?.string()
                         if (body != null) result = extractLandscapeImage(JSONObject(body), cleanTitle)
                     }
-                    // 404 = aucune émission correspondante ; les autres codes (429, 5xx) sont transitoires
+                    // 404 = no matching show; other codes (429, 5xx) are transient
                     response.code != 404 -> definitive = false
                 }
             }
         } catch (e: Exception) {
-            // Erreur réseau : ne pas mémoriser l'absence de résultat
+            // Network error: do not cache the missing result
             definitive = false
         }
 
@@ -70,12 +70,12 @@ object ProgramPosterRepository {
     }
 
     private fun extractLandscapeImage(json: JSONObject, cleanTitle: String): String? {
-        // TVMaze renvoie toujours "le plus proche" : on refuse une émission dont le nom ne correspond pas,
-        // sinon des visuels sans rapport s'affichent sur les vignettes.
+        // TVMaze always returns the "closest" show: reject a show whose name does not match,
+        // otherwise unrelated artwork shows up on the tiles.
         val showName = json.optString("name", "")
         if (EpgResolver.normalizeName(showName) != EpgResolver.normalizeName(cleanTitle)) return null
 
-        // 1. Recherche prioritaire d'une image HORIZONTALE (background / banner 16:9)
+        // 1. Look for a LANDSCAPE image first (background / 16:9 banner)
         val imagesArray = json.optJSONObject("_embedded")?.optJSONArray("images")
         if (imagesArray != null) {
             for (i in 0 until imagesArray.length()) {
@@ -90,7 +90,7 @@ object ProgramPosterRepository {
             }
         }
 
-        // 2. Fallback sur l'image standard si aucun fond 16:9 disponible
+        // 2. Fall back to the standard image when no 16:9 background is available
         val imageObj = json.optJSONObject("image")
         return imageObj?.optString("medium", "")?.takeIf { it.isNotBlank() }
             ?: imageObj?.optString("original", "")?.takeIf { it.isNotBlank() }

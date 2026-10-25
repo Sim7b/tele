@@ -1,7 +1,7 @@
 package com.iptv.player.data.model
 
 /**
- * Flux sélectionnable d'une chaîne. [id] null = mode automatique (Dispatcharr choisit et bascule en cas de panne).
+ * Selectable stream of a channel. Null [id] = automatic mode (Dispatcharr picks one and fails over on outage).
  */
 data class StreamSource(
     val name: String,
@@ -22,7 +22,7 @@ data class EpgProgram(
     val posterUrl: String? = null,
     val nextTitle: String? = null,
     val nextStartTime: String? = null,
-    // Horodatages réels (epoch ms) pour recalculer la progression et détecter la fin du programme
+    // Actual timestamps (epoch ms) to recompute the progress and detect the end of the program
     val startMillis: Long = 0L,
     val endMillis: Long = 0L
 )
@@ -39,7 +39,7 @@ data class Channel(
     val availableStreams: List<StreamSource> = emptyList(),
     val selectedStreamUrl: String? = null,
     val selectedStreamName: String? = null,
-    // Identifiant numérique Dispatcharr (requis pour lister les flux de la chaîne)
+    // Dispatcharr numeric id (required to list the channel streams)
     val serverId: String? = null,
     val number: Int? = null
 ) {

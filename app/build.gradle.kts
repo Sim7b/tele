@@ -5,8 +5,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Signature de la version release : keystore.properties (non versionné) à la racine du projet,
-// avec storeFile, storePassword, keyAlias et keyPassword. Sans ce fichier, la release n'est pas signée.
+// Release signing: keystore.properties (not versioned) at the project root,
+// with storeFile, storePassword, keyAlias and keyPassword. Without this file, the release is not signed.
 val keystoreProperties = Properties().apply {
     val file = rootProject.file("keystore.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -91,7 +91,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-common:$media3Version")
-    // Transport HTTP du lecteur via OkHttp : connexions partagées avec l'API, en-têtes maîtrisés par hôte
+    // Player HTTP transport through OkHttp: connections shared with the API, headers controlled per host
     implementation("androidx.media3:media3-datasource-okhttp:$media3Version")
 
     // Image loading for Channel Logos (Coil)

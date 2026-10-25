@@ -4,8 +4,8 @@ import androidx.compose.ui.focus.FocusRequester
 import kotlinx.coroutines.delay
 
 /**
- * Demande le focus en réessayant brièvement : l'élément ciblé peut ne pas être encore attaché
- * (Dialog composé dans sa propre fenêtre, item de liste paresseuse pas encore mesuré).
+ * Requests focus, retrying briefly: the target element may not be attached yet
+ * (Dialog composed in its own window, lazy list item not measured yet).
  */
 suspend fun FocusRequester.requestFocusWithRetry(attempts: Int = 10, delayMs: Long = 50L): Boolean {
     repeat(attempts) {

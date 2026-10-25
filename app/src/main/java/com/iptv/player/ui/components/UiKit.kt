@@ -47,7 +47,7 @@ import com.iptv.player.ui.theme.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Petits éléments visuels partagés : palette sobre, accent réservé aux indicateurs, focus en blanc.
+ * Small shared visual elements: understated palette, accent reserved for indicators, white focus.
  */
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -57,7 +57,7 @@ fun focusRing(shape: Shape, width: Dp = 2.dp): ClickableSurfaceBorder =
         focusedBorder = Border(BorderStroke(width, FocusBorderColor), shape = shape)
     )
 
-/** Image réseau avec fondu enchaîné à l'apparition. */
+/** Network image with a crossfade when it appears. */
 @Composable
 fun FadeInImage(
     url: String?,
@@ -80,8 +80,8 @@ fun FadeInImage(
 }
 
 /**
- * Teinte des logos déjà analysés (true = logo clair, à poser sur une plaque sombre), conservée d'une
- * session à l'autre : un logo connu est chargé en bitmap matériel, sans nouvelle analyse.
+ * Tone of the logos already analyzed (true = light logo, to put on a dark plate), kept from one
+ * session to the next: a known logo is loaded as a hardware bitmap, without a new analysis.
  */
 private object LogoTones {
     private const val PREFS = "logo_tones"
@@ -112,8 +112,8 @@ private val LightPlate = Color(0xFFF1F3F5)
 private val DarkPlate = Color(0xFF2B303B)
 
 /**
- * Logo de chaîne sur plaque : claire pour les logos sombres (France 2, TF1…), sombre pour les logos
- * blancs sur fond transparent (France Info…), sinon ils disparaissent. Initiales si le logo manque.
+ * Channel logo on a plate: light for dark logos (France 2, TF1…), dark for white logos on a
+ * transparent background (France Info…), otherwise they vanish. Initials if the logo is missing.
  */
 @Composable
 fun LogoPlate(
@@ -129,7 +129,7 @@ fun LogoPlate(
     val knownTone = remember(logoUrl) { logoUrl?.let { LogoTones.get(context, it) } }
     var isLightLogo by remember(logoUrl) { mutableStateOf(knownTone ?: false) }
     val request = remember(logoUrl) {
-        // Bitmap logiciel uniquement si le logo doit être analysé ; sinon bitmap matériel, plus rapide à dessiner
+        // Software bitmap only if the logo must be analyzed; otherwise hardware bitmap, faster to draw
         ImageRequest.Builder(context).data(logoUrl).allowHardware(knownTone != null).crossfade(200).build()
     }
 
@@ -149,7 +149,7 @@ fun LogoPlate(
                 contentScale = ContentScale.Fit,
                 onSuccess = { state ->
                     if (knownTone == null) {
-                        // Analyse hors du fil d'affichage : ne ralentit pas le défilement
+                        // Analysis off the UI thread: does not slow down scrolling
                         val drawable = state.result.drawable
                         scope.launch(Dispatchers.Default) {
                             val light = isMostlyLight(drawable)
@@ -171,7 +171,7 @@ fun LogoPlate(
     }
 }
 
-/** Vrai si les pixels visibles du logo sont majoritairement clairs (logo blanc sur fond transparent). */
+/** True if the visible pixels of the logo are mostly light (white logo on a transparent background). */
 private fun isMostlyLight(drawable: Drawable): Boolean {
     val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: return false
     val sample = try {
@@ -192,12 +192,12 @@ private fun isMostlyLight(drawable: Drawable): Boolean {
         }
     }
     val total = sample.width * sample.height
-    // Logo sur fond opaque : il porte son propre fond, la plaque claire convient
+    // Logo on an opaque background: it carries its own background, the light plate fits
     if (opaque == 0 || opaque > total * 0.9) return false
     return luminanceSum / opaque > 0.78
 }
 
-/** Fine barre de progression du programme en cours. */
+/** Thin progress bar of the current program. */
 @Composable
 fun ProgressLine(
     progress: Float,
@@ -222,7 +222,7 @@ fun ProgressLine(
     }
 }
 
-/** Intitulé de section discret (petites capitales espacées). */
+/** Subtle section heading (spaced small caps). */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(
@@ -235,7 +235,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** Étiquette technique (FHD, HEVC, fournisseur…). */
+/** Technical tag (FHD, HEVC, provider…). */
 @Composable
 fun Tag(text: String, color: Color = TextSecondary, modifier: Modifier = Modifier) {
     Box(
@@ -249,7 +249,7 @@ fun Tag(text: String, color: Color = TextSecondary, modifier: Modifier = Modifie
 }
 
 /**
- * Ligne de menu : transparente au repos, pleine (couleur du texte principal) au focus.
+ * Menu row: transparent at rest, filled (primary text color) when focused.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -317,7 +317,7 @@ fun MenuRow(
     }
 }
 
-/** Indicateur de sélection (bouton radio) pour les listes de choix. */
+/** Selection indicator (radio button) for choice lists. */
 @Composable
 fun SelectionDot(selected: Boolean, focused: Boolean) {
     val ring = if (focused) LocalAppColors.current.background.copy(alpha = 0.6f) else TextSecondary.copy(alpha = 0.6f)
@@ -339,7 +339,7 @@ fun SelectionDot(selected: Boolean, focused: Boolean) {
     }
 }
 
-/** Bouton icône rond (paramètres, retour…). */
+/** Round icon button (settings, back…). */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun RoundIconButton(

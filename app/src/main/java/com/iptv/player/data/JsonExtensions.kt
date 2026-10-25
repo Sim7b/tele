@@ -3,8 +3,8 @@ package com.iptv.player.data
 import org.json.JSONObject
 
 /**
- * Lecture sûre d'une chaîne JSON : org.json renvoie la chaîne littérale "null"
- * pour une valeur JSON null avec optString(), ce qui polluait les tvg_id, logos et descriptions.
+ * Safe read of a JSON string: org.json optString() returns the literal string "null"
+ * for a JSON null value, which polluted tvg_ids, logos and descriptions.
  */
 fun JSONObject.optStringOrNull(name: String): String? {
     if (isNull(name)) return null

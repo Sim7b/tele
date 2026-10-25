@@ -23,6 +23,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.iptv.player.data.model.Channel
@@ -45,7 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Écran affiché (navigation simple, sans bibliothèque de navigation). */
+/** Displayed screen (simple navigation, without a navigation library). */
 sealed class CurrentScreen {
     object Home : CurrentScreen()
     object Settings : CurrentScreen()
@@ -56,8 +57,8 @@ private const val WELCOME_MIN_MS = 1_800L
 private const val WELCOME_MAX_MS = 15_000L
 
 /**
- * Activité unique de l'application : héberge l'interface Compose (accueil, lecteur, paramètres),
- * l'écran d'accueil "Bonjour/Bonsoir" du démarrage et le lecteur ExoPlayer partagé entre les chaînes.
+ * The app's single activity: hosts the Compose UI (home, player, settings),
+ * the startup "Good morning/Good evening" welcome screen and the ExoPlayer instance shared across channels.
  */
 class MainActivity : ComponentActivity() {
 
@@ -86,10 +87,10 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
 
             var currentScreen by remember { mutableStateOf<CurrentScreen>(CurrentScreen.Home) }
-            // Accueil "Bonjour/Bonsoir" affiché une seule fois par lancement de l'application
+            // "Good morning/Good evening" welcome shown only once per app launch
             var showWelcome by rememberSaveable { mutableStateOf(true) }
 
-            // L'accueil reste jusqu'au chargement du guide et des visuels des favoris (borné dans le temps)
+            // The welcome stays until the guide and the favorites' artwork are loaded (time-bounded)
             LaunchedEffect(Unit) {
                 if (!showWelcome) return@LaunchedEffect
                 val startedAt = SystemClock.elapsedRealtime()
@@ -109,40 +110,40 @@ class MainActivity : ComponentActivity() {
                 if (remaining > 0) delay(remaining)
                 showWelcome = false
             }
-            // Clé API Dispatcharr réservée au serveur Dispatcharr (jamais transmise aux fournisseurs de flux)
+            // Dispatcharr API key reserved for the Dispatcharr server (never sent to stream providers)
             val streamAuth = remember(activeConfig) {
                 activeConfig?.takeIf { it.type == SourceType.DISPATCHARR && it.apiKey.isNotBlank() }?.let { config ->
                     config.normalizedUrl.toHttpUrlOrNull()?.host?.let { host -> StreamAuth(host, config.apiKey) }
                 }
             }
 
-            // Signification du mode "Automatique" du choix de flux selon la source active
+            // Meaning of the "Automatic" stream choice mode depending on the active source
             val automaticStreamDescription = when (activeConfig?.type) {
-                SourceType.XTREAM -> "Format par défaut du fournisseur"
-                SourceType.M3U -> "Lien indiqué dans la playlist"
+                SourceType.XTREAM -> stringResource(R.string.main_stream_auto_xtream)
+                SourceType.M3U -> stringResource(R.string.main_stream_auto_m3u)
                 else -> DISPATCHARR_AUTOMATIC
             }
 
-            // Conserve l'état de l'accueil (catégorie, défilement, focus) pendant la lecture / les paramètres
+            // Keeps the home screen state (category, scroll, focus) during playback / settings
             val saveableStateHolder = rememberSaveableStateHolder()
 
-            // Chaînes non masquées individuellement : les favoris y sont pris, même si leur catégorie est masquée
+            // Channels not individually hidden: favorites are taken from them, even if their category is hidden
             val unhiddenChannels = remember(channels, hiddenIds) {
                 channels.filterNot { hiddenIds.contains(it.id) }
             }
-            // Chaînes de la grille, du volet et du zapping : sans les catégories masquées
+            // Channels of the grid, the panel and zapping: without the hidden categories
             val visibleChannels = remember(unhiddenChannels, hiddenGroups) {
                 unhiddenChannels.filterNot { hiddenGroups.contains(it.group) }
             }
             val favoriteChannels = remember(unhiddenChannels, visibleChannels, favoriteIds) {
                 pickFavoriteChannels(unhiddenChannels, visibleChannels, favoriteIds)
             }
-            // Catégories et nombre de chaînes, dans l'ordre des chaînes (pour les paramètres)
+            // Categories and channel counts, in channel order (for the settings)
             val categoryCounts = remember(unhiddenChannels) {
                 unhiddenChannels.groupingBy { it.group }.eachCount().toList()
             }
 
-            // Zapping par identifiant (et non par égalité d'objet, qui change à chaque mise à jour EPG)
+            // Zapping by id (not by object equality, which changes on every EPG update)
             fun zap(from: Channel, step: Int) {
                 if (visibleChannels.isEmpty()) return
                 val index = visibleChannels.indexOfFirst { it.id == from.id }
@@ -163,7 +164,7 @@ class MainActivity : ComponentActivity() {
                             if (!showWelcome) return@onPreviewKeyEvent false
                             val keyCode = event.nativeKeyEvent.keyCode
                             if (keyCode == KeyEvent.KEYCODE_BACK) return@onPreviewKeyEvent false
-                            // Pendant l'accueil, l'écran d'accueil caché ne doit pas réagir ; OK permet de passer
+                            // During the welcome, the hidden home screen must not react; OK skips it
                             if ((keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) &&
                                 event.type == KeyEventType.KeyUp
                             ) {
@@ -193,7 +194,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     loadStreams = { ch -> viewModel.loadStreams(ch) },
                                     onSelectStream = { ch, stream ->
-                                        // Choisir un flux lance directement la chaîne avec ce flux
+                                        // Choosing a stream starts the channel directly with that stream
                                         viewModel.selectStream(ch, stream)
                                         currentScreen = CurrentScreen.Player(ch)
                                     },
@@ -226,7 +227,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         is CurrentScreen.Player -> {
-                            // Version à jour de la chaîne (programme EPG courant, flux choisi)
+                            // Up-to-date version of the channel (current EPG program, chosen stream)
                             val liveChannel = channels.firstOrNull { it.id == screen.channel.id } ?: screen.channel
                             PlayerScreen(
                                 channel = liveChannel,
@@ -259,7 +260,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Télécharge les visuels des vignettes favorites pour qu'elles soient prêtes à la fin de l'accueil. */
+    /** Downloads the artwork of the favorite tiles so they are ready when the welcome ends. */
     private suspend fun preloadPosters(context: Context, channels: List<Channel>) = coroutineScope {
         channels.map { channel ->
             async {
