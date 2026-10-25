@@ -11,7 +11,7 @@ For each modification to the project, perform the following checks and adjustmen
 ### 1. Tests
 
 - Write JVM unit tests (`app/src/test`) for the modified logic: parsers, EPG resolution, URL handling, clients' pure helpers
-- Run only the tests related to the change (e.g. `./gradlew testDebugUnitTest --tests 'com.iptv.player.data.parser.*'`); the CI runs the full suite
+- Run only the tests related to the change (e.g. `./gradlew testDebugUnitTest --tests 'io.github.sim7b.tele.data.parser.*'`); the CI runs the full suite
 - Android framework classes are stubbed in unit tests: keep logic testable by isolating it from `Context`, `android.util.*` and Compose
 
 ### 2. Security Audit

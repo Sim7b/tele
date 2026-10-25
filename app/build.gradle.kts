@@ -19,11 +19,11 @@ val appVersionCode = appVersion.split(".").map { it.toInt() }.let { (major, mino
 }.coerceAtLeast(1)
 
 android {
-    namespace = "com.iptv.player"
+    namespace = "io.github.sim7b.tele"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.iptv.player"
+        applicationId = "io.github.sim7b.tele"
         minSdk = 26
         targetSdk = 34
         versionCode = appVersionCode

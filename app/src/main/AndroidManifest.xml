@@ -24,7 +24,7 @@
         android:banner="@drawable/banner"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.IPTVPlayer">
+        android:theme="@style/Theme.Tele">
 
         <activity
             android:name=".MainActivity"
