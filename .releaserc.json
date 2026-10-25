@@ -1,0 +1,27 @@
+{
+  "branches": ["main"],
+  "tagFormat": "v${version}",
+  "plugins": [
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/changelog",
+      { "changelogFile": "CHANGELOG.md", "changelogTitle": "# Changelog" }
+    ],
+    [
+      "@semantic-release/exec",
+      { "prepareCmd": "scripts/build-release-apk.sh ${nextRelease.version}" }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md", "gradle.properties"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      { "assets": [{ "path": "dist/*.apk" }] }
+    ]
+  ]
+}
