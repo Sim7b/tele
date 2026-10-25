@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.IPTVPlayer" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">#0B0E14</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
