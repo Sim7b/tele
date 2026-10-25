@@ -12,6 +12,12 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+// Version set by semantic-release in gradle.properties; versionCode = MAJOR * 1000000 + MINOR * 1000 + PATCH.
+val appVersion = providers.gradleProperty("appVersion").get()
+val appVersionCode = appVersion.split(".").map { it.toInt() }.let { (major, minor, patch) ->
+    major * 1_000_000 + minor * 1_000 + patch
+}.coerceAtLeast(1)
+
 android {
     namespace = "com.iptv.player"
     compileSdk = 34
@@ -20,8 +26,8 @@ android {
         applicationId = "com.iptv.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = appVersionCode
+        versionName = appVersion
 
         vectorDrawables {
             useSupportLibrary = true
