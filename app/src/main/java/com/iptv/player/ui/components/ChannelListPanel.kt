@@ -29,6 +29,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,22 +42,24 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.iptv.player.R
 import com.iptv.player.data.model.Channel
 import com.iptv.player.ui.theme.AccentCyan
 import kotlinx.coroutines.delay
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-private const val ALL_CHANNELS = "Toutes les chaînes"
+/** Sentinel of the "all channels" category; its label comes from the resources. */
+private const val ALL_CHANNELS = "__all__"
 private const val AUTO_HIDE_MS = 20_000L
 private val PanelWidth = 430.dp
 private val FadeWidth = 140.dp
 
 /**
- * Volet des chaînes affiché par-dessus le direct (flèche gauche dans le lecteur), à la manière de TiviMate :
- * la vidéo continue derrière un dégradé transparent, chaque ligne montre le programme en cours et sa
- * progression, la chaîne focalisée déplie sa catégorie et le programme suivant.
- * ◀ ▶ change de catégorie, OK zappe, Retour ou l'inactivité referment le volet.
+ * Channel panel shown over the live stream (left arrow in the player), TiviMate style:
+ * the video keeps playing behind a transparent gradient, each row shows the current program and its
+ * progress, the focused channel expands its category and the next program.
+ * ◀ ▶ changes the category, OK switches channel, Back or inactivity closes the panel.
  */
 @Composable
 fun ChannelListPanel(
@@ -73,7 +76,7 @@ fun ChannelListPanel(
         if (category == ALL_CHANNELS) channels else channels.filter { it.group == category }
     }
 
-    // La chaîne en cours (ou la première de la catégorie) reçoit le focus à l'ouverture
+    // The playing channel (or the first one of the category) gets the focus on opening
     val focusTargetId = shown.firstOrNull { it.id == playingChannelId }?.id ?: shown.firstOrNull()?.id
     val focusTargetIndex = shown.indexOfFirst { it.id == focusTargetId }.coerceAtLeast(0)
     val listState = rememberTvLazyListState(initialFirstVisibleItemIndex = (focusTargetIndex - 2).coerceAtLeast(0))
@@ -81,7 +84,7 @@ fun ChannelListPanel(
     var focusedIndex by remember { mutableIntStateOf(focusTargetIndex) }
     var interactions by remember { mutableIntStateOf(0) }
 
-    // Retour automatique au plein écran après quelques secondes sans action
+    // Automatic return to full screen after a few seconds without action
     LaunchedEffect(interactions) {
         delay(AUTO_HIDE_MS)
         onDismiss()
@@ -105,8 +108,8 @@ fun ChannelListPanel(
             )
             .onPreviewKeyEvent { event ->
                 interactions++
-                // Retour ferme le volet. Sans cela, Compose l'utilise d'abord pour sortir le focus
-                // de la liste vers le lecteur, et il faut appuyer deux fois.
+                // Back closes the panel. Without this, Compose first uses it to move the focus
+                // out of the list to the player, and it takes two presses.
                 if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK) {
                     if (event.type == KeyEventType.KeyUp) onDismiss()
                     true
@@ -125,7 +128,7 @@ fun ChannelListPanel(
                         categoryIndex = Math.floorMod(categoryIndex + 1, categories.size)
                         true
                     }
-                    // Le focus ne doit pas quitter le volet par le haut ou le bas de la liste
+                    // The focus must not leave the panel through the top or bottom of the list
                     KeyEvent.KEYCODE_DPAD_UP -> focusedIndex <= 0
                     KeyEvent.KEYCODE_DPAD_DOWN -> focusedIndex >= shown.lastIndex
                     else -> false
@@ -137,7 +140,10 @@ fun ChannelListPanel(
                 .width(PanelWidth)
                 .fillMaxHeight()
         ) {
-            PanelHeader(category = category, count = shown.size)
+            PanelHeader(
+                category = if (category == ALL_CHANNELS) stringResource(R.string.panel_all_channels) else category,
+                count = shown.size
+            )
 
             TvLazyColumn(
                 state = listState,
@@ -158,7 +164,7 @@ fun ChannelListPanel(
             }
 
             Text(
-                text = "◀ ▶  Catégorie      OK  Regarder      Retour  Fermer",
+                text = stringResource(R.string.panel_keys_hint),
                 fontSize = 11.sp,
                 color = Color.White.copy(alpha = 0.38f),
                 modifier = Modifier.padding(start = 30.dp, bottom = 22.dp, top = 6.dp)
@@ -179,7 +185,7 @@ private fun PanelHeader(category: String, count: Int) {
     Column(modifier = Modifier.padding(start = 30.dp, end = 22.dp, top = 30.dp, bottom = 14.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = "Chaînes",
+                text = stringResource(R.string.panel_title),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
@@ -302,7 +308,7 @@ private fun PanelChannelRow(
                 }
 
                 Text(
-                    text = program?.title ?: "Aucune information",
+                    text = program?.title ?: stringResource(R.string.panel_no_information),
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.72f),
                     maxLines = 1,
@@ -318,7 +324,7 @@ private fun PanelChannelRow(
                     )
                 }
 
-                // Détails dépliés sur la chaîne focalisée : catégorie et programme suivant (sans résumé)
+                // Details expanded on the focused channel: category and next program (no synopsis)
                 AnimatedVisibility(
                     visible = isFocused && program != null &&
                         (!program.category.isNullOrBlank() || !program.nextTitle.isNullOrBlank()),
@@ -337,7 +343,7 @@ private fun PanelChannelRow(
                         }
                         if (!program?.nextTitle.isNullOrBlank()) {
                             Text(
-                                text = "Puis ${program?.nextStartTime.orEmpty()}  ·  ${program?.nextTitle}",
+                                text = stringResource(R.string.panel_next_program, program?.nextStartTime.orEmpty(), program?.nextTitle.orEmpty()),
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.5f),
                                 maxLines = 1,

@@ -1,0 +1,223 @@
+<resources>
+    <!-- Source types -->
+    <string name="source_type_m3u">Playlist M3U</string>
+
+    <!-- Appearance -->
+    <string name="density_compact">Compact</string>
+    <string name="density_compact_description">Affiche plus d\'éléments simultanément</string>
+    <string name="density_normal">Normal</string>
+    <string name="density_normal_description">Taille d\'affichage standard recommandée</string>
+    <string name="density_large">Grand</string>
+    <string name="density_large_description">Éléments plus grands et très lisibles de loin</string>
+    <string name="theme_original">Original</string>
+    <string name="theme_oled_black">Noir OLED</string>
+    <string name="theme_midnight_blue">Minuit</string>
+    <string name="theme_dark_purple">Nuit violette</string>
+    <string name="theme_anthracite">Anthracite</string>
+    <string name="theme_light">Clair</string>
+    <string name="accent_cyan">Cyan</string>
+    <string name="accent_blue">Bleu</string>
+    <string name="accent_purple">Violet</string>
+    <string name="accent_emerald">Émeraude</string>
+    <string name="accent_rose">Rose</string>
+    <string name="accent_amber">Ambre</string>
+
+    <!-- Network and source errors -->
+    <string name="error_unknown_host">Nom de domaine introuvable : vérifiez l\'adresse saisie.</string>
+    <string name="error_connection_refused">Connexion refusée : vérifiez que le serveur et le port sont ouverts.</string>
+    <string name="error_timeout">Délai d\'attente dépassé : le serveur ne répond pas.</string>
+    <string name="error_invalid_address">Adresse du serveur invalide.</string>
+    <string name="error_network_unknown">Erreur réseau inconnue</string>
+    <string name="error_empty_response">Réponse vide du serveur</string>
+    <string name="error_server_http">Erreur serveur : HTTP %1$d</string>
+    <string name="error_dispatcharr_api_key_invalid">Clé API non valide ou non autorisée (HTTP %1$d)</string>
+    <string name="error_dispatcharr_api_key_refused">Clé API refusée par le serveur (HTTP %1$d)</string>
+    <string name="error_dispatcharr_not_found">Serveur introuvable ou chemin API incorrect (HTTP 404)</string>
+    <string name="error_not_dispatcharr_api">Réponse inattendue : ce serveur n\'est pas une API Dispatcharr</string>
+    <string name="error_dispatcharr_not_configured">Aucun serveur Dispatcharr configuré</string>
+    <string name="error_channel_streams">Impossible de récupérer les flux de la chaîne</string>
+    <string name="error_not_xtream_api">Réponse inattendue : ce serveur n\'est pas une API Xtream Codes</string>
+    <string name="error_xtream_credentials_refused">Identifiant ou mot de passe refusé par le serveur</string>
+    <string name="error_xtream_credentials_refused_http">Identifiant ou mot de passe refusé (HTTP %1$d)</string>
+    <string name="error_xtream_account_status">Compte %1$s</string>
+    <string name="error_xtream_not_found">API Xtream introuvable à cette adresse (HTTP 404)</string>
+    <string name="error_playlist_no_live_channel">Aucune chaîne en direct dans cette playlist</string>
+    <string name="error_playlist_access_refused">Accès à la playlist refusé (HTTP %1$d)</string>
+    <string name="error_playlist_not_found">Playlist introuvable (HTTP 404)</string>
+    <string name="error_guide_unavailable">Guide EPG indisponible : %1$s</string>
+    <string name="error_load_channels">Impossible de charger les chaînes : %1$s</string>
+    <string name="error_sync_channels_for_streams">Synchronisez les chaînes pour afficher leurs flux</string>
+
+    <!-- Connection test -->
+    <plurals name="test_dispatcharr_success">
+        <item quantity="one">Connexion réussie · %1$d chaîne détectée</item>
+        <item quantity="many">Connexion réussie · %1$d chaînes détectées</item>
+        <item quantity="other">Connexion réussie · %1$d chaînes détectées</item>
+    </plurals>
+    <string name="test_xtream_account_active">Compte actif</string>
+    <string name="test_xtream_expires">expire le %1$s</string>
+    <plurals name="test_xtream_max_connections">
+        <item quantity="one">%1$d connexion simultanée</item>
+        <item quantity="many">%1$d connexions simultanées</item>
+        <item quantity="other">%1$d connexions simultanées</item>
+    </plurals>
+    <plurals name="playlist_valid">
+        <item quantity="one">Playlist valide · %1$d chaîne · %2$s</item>
+        <item quantity="many">Playlist valide · %1$d chaînes · %2$s</item>
+        <item quantity="other">Playlist valide · %1$d chaînes · %2$s</item>
+    </plurals>
+    <string name="playlist_guide_entered">guide XMLTV renseigné</string>
+    <string name="playlist_guide_from_playlist">guide fourni par la playlist</string>
+    <string name="playlist_guide_none">sans guide EPG</string>
+
+    <!-- Player errors -->
+    <string name="player_error_access_denied">Accès refusé par le fournisseur (HTTP %1$d)</string>
+    <string name="player_error_stream_not_found">Flux introuvable chez le fournisseur (HTTP %1$d)</string>
+    <string name="player_error_connection_limit">Limite de connexions du fournisseur atteinte (HTTP %1$d)</string>
+    <string name="player_error_http">Le serveur du flux a répondu HTTP %1$d</string>
+    <string name="player_error_connection_failed">Connexion au flux impossible</string>
+    <string name="player_error_unsupported_format">Format du flux non pris en charge</string>
+    <string name="player_error_generic">Erreur de lecture (%1$s)</string>
+
+    <!-- Settings, welcome and main screens -->
+    <!-- Settings screen -->
+    <string name="settings_title">Paramètres</string>
+    <string name="settings_subtitle">Apparence, synchronisation et sources de chaînes</string>
+    <string name="settings_back">Retour</string>
+
+    <string name="settings_sync_title">Synchronisation</string>
+    <string name="settings_sync_description">Mettre à jour manuellement les chaînes et le guide depuis la source active</string>
+    <string name="settings_refresh_channels">Actualiser les chaînes</string>
+    <string name="settings_refresh_channels_started">Actualisation des chaînes lancée</string>
+    <string name="settings_refresh_guide">Actualiser le guide</string>
+    <string name="settings_refresh_guide_started">Actualisation du guide lancée</string>
+
+    <string name="settings_appearance_title">Apparence</string>
+    <string name="settings_appearance_description">Fond de l\'application et couleur des indicateurs (progression, sélection)</string>
+    <string name="settings_background">Fond</string>
+    <string name="settings_accent_color">Couleur d\'accentuation</string>
+
+    <string name="settings_density_title">Densité de l\'interface</string>
+    <string name="settings_density_description">Taille des éléments à l\'écran</string>
+
+    <string name="settings_hidden_channels_title">Chaînes masquées</string>
+    <plurals name="settings_hidden_channels_description">
+        <item quantity="one">%1$d chaîne masquée de l\'accueil</item>
+        <item quantity="many">%1$d chaînes masquées de l\'accueil</item>
+        <item quantity="other">%1$d chaînes masquées de l\'accueil</item>
+    </plurals>
+    <string name="settings_unhide_all">Tout réafficher</string>
+
+    <string name="settings_categories_title">Catégories</string>
+    <string name="settings_categories_description">Catégories affichées sur l\'accueil, dans le volet des chaînes et au zapping. Vos favoris restent visibles.</string>
+    <string name="settings_category_hidden">Masquée</string>
+    <string name="settings_selected">Sélectionné</string>
+
+    <!-- Channel sources -->
+    <string name="settings_sources_title">Sources de chaînes</string>
+    <string name="settings_add_source">Ajouter une source</string>
+    <string name="settings_edit_source">Modifier la source</string>
+    <string name="settings_unnamed">Sans nom</string>
+    <string name="settings_active">Actif</string>
+    <string name="settings_activate">Activer</string>
+    <string name="settings_edit">Modifier</string>
+    <string name="settings_delete">Supprimer</string>
+
+    <!-- Source form -->
+    <string name="settings_missing_playlist_url">Saisissez le lien de la playlist.</string>
+    <string name="settings_missing_server_url">Saisissez l\'adresse du serveur.</string>
+    <string name="settings_missing_xtream_credentials">Saisissez l\'identifiant et le mot de passe du compte Xtream.</string>
+    <string name="settings_profile_name">Nom du profil</string>
+    <string name="settings_profile_name_hint_dispatcharr">Serveur maison</string>
+    <string name="settings_profile_name_hint_xtream">Mon abonnement</string>
+    <string name="settings_profile_name_hint_m3u">Ma playlist</string>
+    <string name="settings_server_address">Adresse du serveur</string>
+    <string name="settings_dispatcharr_url_hint">dispatcharr.mondomaine.fr (ou https://…)</string>
+    <string name="settings_api_key">Clé API (X-API-Key)</string>
+    <string name="settings_api_key_hint">Entrez votre clé API</string>
+    <string name="settings_xtream_url_hint">http://fournisseur.tv:8080 (ou lien get.php complet)</string>
+    <string name="settings_username">Nom d\'utilisateur</string>
+    <string name="settings_username_hint">Identifiant</string>
+    <string name="settings_password">Mot de passe</string>
+    <string name="settings_playlist_url">Lien de la playlist (M3U / M3U8)</string>
+    <string name="settings_playlist_url_hint">https://fournisseur.tv/playlist.m3u</string>
+    <string name="settings_epg_url">Guide EPG XMLTV (facultatif)</string>
+    <string name="settings_epg_url_hint">https://…/guide.xml.gz · sinon celui annoncé par la playlist</string>
+    <string name="settings_user_agent">User-Agent personnalisé (facultatif)</string>
+    <string name="settings_test_connection">Tester la connexion</string>
+    <string name="settings_testing">Test en cours…</string>
+    <string name="settings_checking">Vérification en cours…</string>
+    <string name="settings_cancel">Annuler</string>
+    <string name="settings_save">Enregistrer</string>
+
+    <!-- Welcome screen. The "_name" variants must start with the plain greeting: the name part is animated separately. -->
+    <string name="welcome_good_morning">Bonjour</string>
+    <string name="welcome_good_evening">Bonsoir</string>
+    <string name="welcome_good_morning_name">Bonjour %1$s</string>
+    <string name="welcome_good_evening_name">Bonsoir %1$s</string>
+    <string name="welcome_preparing_guide">Préparation de votre guide</string>
+
+    <!-- Meaning of the "Automatic" stream choice, per source type -->
+    <string name="main_stream_auto_xtream">Format par défaut du fournisseur</string>
+    <string name="main_stream_auto_m3u">Lien indiqué dans la playlist</string>
+
+    <!-- Home, player and channel panel -->
+    <!-- Home screen -->
+    <string name="home_syncing">Synchronisation</string>
+    <string name="home_settings">Paramètres</string>
+    <string name="home_loading">Chargement des chaînes et du guide…</string>
+    <string name="home_welcome">Bienvenue</string>
+    <string name="home_no_channels">Aucune chaîne disponible</string>
+    <string name="home_add_source_hint">Ajoutez une source (Dispatcharr, Xtream Codes ou playlist M3U) pour commencer.</string>
+    <string name="home_no_channels_hint">Vérifiez vos paramètres ou réaffichez les chaînes masquées.</string>
+    <string name="home_open_settings">Ouvrir les paramètres</string>
+    <string name="home_retry">Réessayer</string>
+    <string name="home_favorites">Favoris</string>
+    <string name="home_featured">À la une</string>
+    <string name="home_move_hint">"◀ ▶ ▲ ▼  Déplacer      OK  Valider"</string>
+    <string name="home_category_all">Toutes</string>
+    <!-- java.time pattern of the date shown next to the clock -->
+    <string name="home_date_pattern">EEEE d MMMM</string>
+
+    <!-- Player -->
+    <string name="player_playback_failed">Lecture impossible</string>
+    <string name="player_other_stream_hint">Maintenez OK pour choisir un autre flux</string>
+    <string name="player_live">DIRECT</string>
+    <string name="player_next_program">"Ensuite %1$s  ·  %2$s"</string>
+    <string name="player_stream_name">Flux : %1$s</string>
+    <string name="player_stream_automatic">Flux automatique</string>
+    <string name="player_change_stream_hint">Maintenir OK : changer de flux</string>
+
+    <!-- Channel panel in the player -->
+    <string name="panel_all_channels">Toutes les chaînes</string>
+    <string name="panel_title">Chaînes</string>
+    <string name="panel_keys_hint">"◀ ▶  Catégorie      OK  Regarder      Retour  Fermer"</string>
+    <string name="panel_no_information">Aucune information</string>
+    <string name="panel_next_program">"Puis %1$s  ·  %2$s"</string>
+
+    <!-- Channel cards and stream picker -->
+    <!-- Channel cards and context menus -->
+    <string name="card_time_range_then">%1$s – %2$s  ·  Puis %3$s</string>
+    <string name="card_no_information">Aucune information</string>
+    <string name="card_add_favorite">Ajouter aux favoris</string>
+    <string name="card_remove_favorite">Retirer des favoris</string>
+    <string name="card_hide_channel">Masquer la chaîne</string>
+    <string name="card_move_in_favorites">Déplacer dans les favoris</string>
+    <string name="card_hide_category">Masquer cette catégorie</string>
+    <plurals name="card_category_channel_count">
+        <item quantity="one">%1$d chaîne  ·  réaffichable dans les paramètres</item>
+        <item quantity="many">%1$d chaînes  ·  réaffichable dans les paramètres</item>
+        <item quantity="other">%1$d chaînes  ·  réaffichable dans les paramètres</item>
+    </plurals>
+
+    <!-- Stream picker -->
+    <string name="streams_section">Flux</string>
+    <string name="streams_picker_subtitle">Choisir le flux de lecture</string>
+    <string name="streams_automatic">Automatique</string>
+    <string name="streams_automatic_dispatcharr">Dispatcharr choisit le flux et bascule en cas de panne</string>
+    <string name="streams_searching">Recherche des flux…</string>
+    <string name="streams_none_available">Aucun autre flux disponible pour cette chaîne</string>
+
+    <!-- Common -->
+    <string name="common_cancel">Annuler</string>
+</resources>

@@ -9,15 +9,15 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Calcul du programme en cours / suivant à partir de la grille EPG Dispatcharr.
+ * Computes the current / next program from an EPG grid.
  */
 object EpgResolver {
 
     private val clockFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
     /**
-     * Parse un horodatage ISO-8601 en epoch ms. Accepte "Z" et les décalages "+00:00"
-     * (Instant.parse d'Android 8-11 refuse les décalages, utilisés par les programmes "dummy" Dispatcharr).
+     * Parses an ISO-8601 timestamp to epoch ms. Accepts "Z" and "+00:00" offsets
+     * (Instant.parse of Android 8-11 rejects offsets, used by Dispatcharr "dummy" programs).
      */
     fun parseIsoToMillis(iso: String?): Long {
         if (iso.isNullOrBlank()) return 0L
@@ -32,7 +32,7 @@ object EpgResolver {
         }
     }
 
-    /** Heure locale de l'appareil (et non l'heure UTC brute de la chaîne ISO). */
+    /** Device local time (not the raw UTC time of the ISO string). */
     fun formatClock(millis: Long): String {
         if (millis <= 0L) return ""
         return Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(clockFormatter)
@@ -44,8 +44,8 @@ object EpgResolver {
     }
 
     /**
-     * Retourne le programme diffusé à [now] (avec le suivant), ou null si aucun programme ne couvre cet instant.
-     * [programs] doit être trié par heure de début.
+     * Program aired at [now] (with the next one), or null when no program covers that instant.
+     * [programs] must be sorted by start time.
      */
     fun currentProgram(programs: List<GuideProgram>, now: Long): EpgProgram? {
         val currentIndex = programs.indexOfFirst { now >= it.startMillis && now < it.endMillis }
@@ -68,13 +68,13 @@ object EpgResolver {
         )
     }
 
-    /** Met à jour la progression d'un programme mis en cache, ou null s'il est terminé. */
+    /** Updates the progress of a cached program, or null when it has ended. */
     fun refreshCached(program: EpgProgram, now: Long): EpgProgram? {
         if (program.endMillis <= 0L || now >= program.endMillis) return null
         return program.copy(progress = progress(program.startMillis, program.endMillis, now))
     }
 
-    /** Normalisation pour la correspondance par nom ("France 2" == "France2.fr" == "FRANCE 2"). */
+    /** Normalization for name matching ("France 2" == "France2.fr" == "FRANCE 2"). */
     fun normalizeName(name: String): String {
         val withoutCountry = name.trim().replace(Regex("""\.[a-z]{2,3}$""", RegexOption.IGNORE_CASE), "")
         return Normalizer.normalize(withoutCountry, Normalizer.Form.NFD)

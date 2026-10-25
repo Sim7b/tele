@@ -11,17 +11,17 @@
 .cxx
 .DS_Store
 
-# Paquets compilés
+# Build outputs
 *.apk
 *.aab
 
-# Clés de signature et secrets : ne jamais publier
+# Signing keys and secrets: never publish
 *.jks
 *.keystore
 keystore.properties
 signing.properties
 
-# Notes de travail locales (assistant IA, exports de serveur personnels)
+# Local working notes (AI assistant, personal server exports)
 GEMINI.md
 .agents/
 channels_sample.json

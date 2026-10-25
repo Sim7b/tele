@@ -2,6 +2,8 @@ package com.iptv.player.data.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.annotation.StringRes
+import com.iptv.player.R
 import com.iptv.player.data.epg.EpgResolver
 import com.iptv.player.data.model.Channel
 import com.iptv.player.data.model.SourceConfig
@@ -14,48 +16,47 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Densité de l'interface : facteur appliqué à toutes les dimensions (dp/sp). */
-enum class UiDensity(val label: String, val scaleFactor: Float, val description: String) {
-    COMPACT("Compact", 0.85f, "Affiche plus d'éléments simultanément"),
-    NORMAL("Normal", 1.0f, "Taille d'affichage standard recommandée"),
-    LARGE("Grand", 1.15f, "Éléments plus grands et très lisibles de loin")
+/** Interface density: factor applied to every dimension (dp/sp). */
+enum class UiDensity(@param:StringRes val labelRes: Int, val scaleFactor: Float, @param:StringRes val descriptionRes: Int) {
+    COMPACT(R.string.density_compact, 0.85f, R.string.density_compact_description),
+    NORMAL(R.string.density_normal, 1.0f, R.string.density_normal_description),
+    LARGE(R.string.density_large, 1.15f, R.string.density_large_description)
 }
 
-/** Fond de l'application (couleurs de fond, surface et cartes). */
+/** App background (background, surface and card colors). */
 enum class AppThemeBackground(
-    val label: String,
+    @param:StringRes val labelRes: Int,
     val backgroundColorHex: Long,
     val surfaceColorHex: Long,
     val surfaceCardColorHex: Long,
     val isLight: Boolean = false
 ) {
-    ORIGINAL("Original", 0xFF0B0D12, 0xFF151821, 0xFF1F232D),
-    OLED_BLACK("Noir OLED", 0xFF000000, 0xFF0B0B0C, 0xFF161618),
-    MIDNIGHT_BLUE("Minuit", 0xFF0F172A, 0xFF1E293B, 0xFF334155),
-    DARK_PURPLE("Nuit violette", 0xFF130D24, 0xFF1E1538, 0xFF2E2152),
-    ANTHRACITE("Anthracite", 0xFF18181B, 0xFF27272A, 0xFF3F3F46),
-    LIGHT("Clair", 0xFFF8FAFC, 0xFFFFFFFF, 0xFFE2E8F0, isLight = true)
+    ORIGINAL(R.string.theme_original, 0xFF0B0D12, 0xFF151821, 0xFF1F232D),
+    OLED_BLACK(R.string.theme_oled_black, 0xFF000000, 0xFF0B0B0C, 0xFF161618),
+    MIDNIGHT_BLUE(R.string.theme_midnight_blue, 0xFF0F172A, 0xFF1E293B, 0xFF334155),
+    DARK_PURPLE(R.string.theme_dark_purple, 0xFF130D24, 0xFF1E1538, 0xFF2E2152),
+    ANTHRACITE(R.string.theme_anthracite, 0xFF18181B, 0xFF27272A, 0xFF3F3F46),
+    LIGHT(R.string.theme_light, 0xFFF8FAFC, 0xFFFFFFFF, 0xFFE2E8F0, isLight = true)
 }
 
-/** Couleur d'accentuation, réservée aux indicateurs (progression, sélection). */
+/** Accent color, reserved for indicators (progress, selection). */
 enum class AppAccentColor(
-    val label: String,
+    @param:StringRes val labelRes: Int,
     val colorHex: Long
 ) {
-    CYAN("Cyan", 0xFF00E5FF),
-    NEON_BLUE("Bleu", 0xFF3B82F6),
-    ELECTRIC_PURPLE("Violet", 0xFFA855F7),
-    EMERALD("Émeraude", 0xFF10B981),
-    ROSE("Rose", 0xFFF43F5E),
-    AMBER("Ambre", 0xFFF59E0B)
+    CYAN(R.string.accent_cyan, 0xFF00E5FF),
+    NEON_BLUE(R.string.accent_blue, 0xFF3B82F6),
+    ELECTRIC_PURPLE(R.string.accent_purple, 0xFFA855F7),
+    EMERALD(R.string.accent_emerald, 0xFF10B981),
+    ROSE(R.string.accent_rose, 0xFFF43F5E),
+    AMBER(R.string.accent_amber, 0xFFF59E0B)
 }
 
 /**
- * Réglages persistants (SharedPreferences) : sources de chaînes, apparence, favoris ordonnés,
- * chaînes et catégories masquées, flux choisis par chaîne et cache des chaînes de la source active.
+ * Persistent settings (SharedPreferences): channel sources, appearance, ordered favorites,
+ * hidden channels and categories, streams selected per channel and channel cache of the active source.
  *
- * Les clés et le nom du fichier de préférences sont conservés tels quels pour ne pas perdre
- * les réglages des installations existantes.
+ * The keys and the preferences file name are kept as is so that existing installs keep their settings.
  */
 class SettingsRepository(context: Context) {
 
@@ -76,22 +77,22 @@ class SettingsRepository(context: Context) {
     private val _accentColor = MutableStateFlow<AppAccentColor>(AppAccentColor.CYAN)
     val accentColor: StateFlow<AppAccentColor> = _accentColor.asStateFlow()
 
-    // Favoris dans l'ordre choisi par l'utilisateur (réorganisables sur la grille de l'accueil)
+    // Favorites in the order chosen by the user (reorderable on the home grid)
     private val _favoriteIds = MutableStateFlow<List<String>>(emptyList())
     val favoriteIds: StateFlow<List<String>> = _favoriteIds.asStateFlow()
 
     private val _hiddenIds = MutableStateFlow<Set<String>>(emptySet())
     val hiddenIds: StateFlow<Set<String>> = _hiddenIds.asStateFlow()
 
-    // Catégories (groupes Dispatcharr) masquées de l'accueil, du volet des chaînes et du zapping
+    // Categories (source groups) hidden from the home screen, the channel panel and channel switching
     private val _hiddenGroups = MutableStateFlow<Set<String>>(emptySet())
     val hiddenGroups: StateFlow<Set<String>> = _hiddenGroups.asStateFlow()
 
-    // Favoris repris de l'ancien stockage (ensemble sans ordre) : à classer une fois selon l'ordre des chaînes.
-    // Déclaré avant init {} pour ne pas être réinitialisé après le chargement des préférences.
+    // Favorites migrated from the legacy storage (unordered set): to be sorted once by channel order.
+    // Declared before init {} so that it is not reset after the preferences are loaded.
     private var legacyFavoritesUnordered = false
 
-    // Flux choisi manuellement par chaîne (absent = mode automatique Dispatcharr)
+    // Stream selected manually per channel (absent = Dispatcharr automatic mode)
     private val _selectedStreams = MutableStateFlow<Map<String, StreamSource>>(emptyMap())
     val selectedStreams: StateFlow<Map<String, StreamSource>> = _selectedStreams.asStateFlow()
 
@@ -144,7 +145,7 @@ class SettingsRepository(context: Context) {
                 val obj = root.optJSONObject(channelId) ?: return@mapNotNull null
                 val url = obj.optStringOrNull("url") ?: return@mapNotNull null
                 channelId to StreamSource(
-                    name = obj.optString("name", "Flux"),
+                    name = obj.optString("name", "Stream"),
                     url = url,
                     id = obj.optStringOrNull("id"),
                     provider = obj.optStringOrNull("provider")
@@ -156,7 +157,7 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    /** Prénom affiché dans le message d'accueil, mémorisé par serveur pour un affichage immédiat au démarrage. */
+    /** First name shown in the welcome message, saved per server to show it right away at startup. */
     fun getUserDisplayName(configId: String): String? =
         prefs.getString(KEY_USER_NAME_PREFIX + configId, null)?.takeIf { it.isNotBlank() }
 
@@ -164,7 +165,7 @@ class SettingsRepository(context: Context) {
         prefs.edit().putString(KEY_USER_NAME_PREFIX + configId, name).apply()
     }
 
-    /** Mémorise le flux choisi pour une chaîne ([stream] null = retour au mode automatique). */
+    /** Saves the stream selected for a channel (null [stream] = back to automatic mode). */
     fun setSelectedStream(channelId: String, stream: StreamSource?) {
         val current = _selectedStreams.value.toMutableMap()
         if (stream == null) current.remove(channelId) else current[channelId] = stream
@@ -197,7 +198,7 @@ class SettingsRepository(context: Context) {
         _accentColor.value = accent
     }
 
-    /** Ordre des favoris ; reprend l'ancien stockage non ordonné s'il n'existe pas encore. */
+    /** Favorites order; migrates the legacy unordered storage when it does not exist yet. */
     private fun loadFavoriteOrder(): List<String> {
         val raw = prefs.getString(KEY_FAVORITE_ORDER, null)
         if (raw == null) {
@@ -221,7 +222,7 @@ class SettingsRepository(context: Context) {
         _favoriteIds.value = order
     }
 
-    /** Classe une seule fois les favoris migrés dans l'ordre des chaînes (comme ils s'affichaient avant). */
+    /** Sorts the migrated favorites once in channel order (as they were displayed before). */
     fun applyLegacyFavoriteOrder(channelOrder: List<String>) {
         if (!legacyFavoritesUnordered) return
         legacyFavoritesUnordered = false
@@ -229,13 +230,13 @@ class SettingsRepository(context: Context) {
         persistFavorites(_favoriteIds.value.sortedBy { rank[it] ?: Int.MAX_VALUE })
     }
 
-    /** Ajoute la chaîne en fin de favoris, ou la retire. */
+    /** Appends the channel to the favorites, or removes it. */
     fun toggleFavoriteChannel(channelId: String) {
         val current = _favoriteIds.value
         persistFavorites(if (channelId in current) current - channelId else current + channelId)
     }
 
-    /** Déplace un favori à la position [toIndex] (bornée à la liste des favoris). */
+    /** Moves a favorite to position [toIndex] (clamped to the favorites list). */
     fun moveFavorite(channelId: String, toIndex: Int) {
         val current = _favoriteIds.value.toMutableList()
         val fromIndex = current.indexOf(channelId)
@@ -273,7 +274,7 @@ class SettingsRepository(context: Context) {
     }
 
     /**
-     * Stockage hors-ligne en dur des chaînes & EPG pour un démarrage instantané sans spinner.
+     * Offline storage of channels and current programs for an instant startup without a spinner.
      */
     fun saveCachedChannels(configId: String, channels: List<Channel>) {
         try {
@@ -320,8 +321,8 @@ class SettingsRepository(context: Context) {
     }
 
     /**
-     * Chaînes en cache du serveur [configId] (vide si le cache appartient à un autre serveur).
-     * Les programmes terminés depuis la mise en cache sont écartés.
+     * Cached channels of server [configId] (empty when the cache belongs to another server).
+     * Programs that ended since caching are dropped.
      */
     fun getCachedChannels(configId: String, now: Long = System.currentTimeMillis()): List<Channel> {
         val rawJson = prefs.getString(KEY_CACHED_CHANNELS, null) ?: return emptyList()
@@ -422,8 +423,8 @@ class SettingsRepository(context: Context) {
     }
 
     /**
-     * Efface ce qui appartient à une source supprimée : prénom mémorisé, et pour Xtream / M3U les favoris
-     * et flux choisis de ses chaînes (identifiants préfixés par la source ; ceux de Dispatcharr sont des UUID).
+     * Clears what belongs to a deleted source: saved first name and, for Xtream / M3U, the favorites
+     * and selected streams of its channels (ids prefixed by the source; Dispatcharr ones are UUIDs).
      */
     private fun forgetSourceData(configId: String) {
         prefs.edit().remove(KEY_USER_NAME_PREFIX + configId).apply()

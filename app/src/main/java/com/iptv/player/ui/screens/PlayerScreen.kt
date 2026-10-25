@@ -1,5 +1,7 @@
 package com.iptv.player.ui.screens
 
+import com.iptv.player.data.resolve
+import com.iptv.player.R
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -30,6 +32,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,7 +59,8 @@ import com.iptv.player.ui.components.requestFocusWithRetry
 import com.iptv.player.ui.theme.*
 import kotlinx.coroutines.delay
 
-@OptIn(UnstableApi::class, ExperimentalTvMaterial3Api::class)
+@androidx.annotation.OptIn(UnstableApi::class)
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun PlayerScreen(
     channel: Channel,
@@ -78,7 +82,7 @@ fun PlayerScreen(
     val streamInfo by playerManager.streamInfo.collectAsState()
 
     var showOverlay by remember { mutableStateOf(true) }
-    // Incrémenté à chaque affichage demandé pour relancer le délai de masquage
+    // Incremented on every requested display to restart the hide delay
     var overlayToken by remember { mutableIntStateOf(0) }
     var showStreamPicker by remember { mutableStateOf(false) }
     var showChannelPanel by remember { mutableStateOf(false) }
@@ -95,13 +99,13 @@ fun PlayerScreen(
         overlayToken++
     }
 
-    // Démarrage de la chaîne (et à chaque zapping / changement de flux)
+    // Channel start (and on every channel switch / stream change)
     LaunchedEffect(streamUrl, streamAuth, userAgent) {
         playerManager.playStream(streamUrl, customUserAgent = userAgent, auth = streamAuth)
         revealOverlay()
     }
 
-    // Masquage automatique de l'overlay au bout de 5 secondes
+    // Automatically hide the overlay after 5 seconds
     LaunchedEffect(showOverlay, overlayToken) {
         if (showOverlay) {
             delay(5000)
@@ -109,12 +113,12 @@ fun PlayerScreen(
         }
     }
 
-    // Arrêt du flux en quittant le lecteur : sinon le son continue derrière l'accueil
+    // Stop the stream when leaving the player: otherwise the sound keeps playing behind the home screen
     DisposableEffect(Unit) {
         onDispose { playerManager.stop() }
     }
 
-    // Application en arrière-plan (touche Home, mise en veille) : couper le flux, le reprendre au retour
+    // App in the background (Home key, standby): stop the stream, resume it on return
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         var stoppedInBackground = false
@@ -136,7 +140,7 @@ fun PlayerScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Le lecteur capte les touches de la télécommande (zapping, OSD, lecture/pause, choix du flux)
+    // The player captures the remote keys (channel switching, OSD, play/pause, stream choice)
     LaunchedEffect(refocusToken) {
         focusRequester.requestFocusWithRetry()
     }
@@ -145,7 +149,7 @@ fun PlayerScreen(
         onBack()
     }
 
-    // Déclaré après : prioritaire tant que le volet des chaînes est ouvert
+    // Declared after: takes priority while the channel panel is open
     BackHandler(enabled = showChannelPanel) {
         showChannelPanel = false
         refocusToken++
@@ -158,12 +162,12 @@ fun PlayerScreen(
             .focusRequester(focusRequester)
             .focusable()
             .onKeyEvent { keyEvent ->
-                // Volet ouvert : ses lignes gèrent la navigation (haut/bas ne doivent plus zapper)
+                // Panel open: its rows handle navigation (up/down must no longer switch channels)
                 if (showChannelPanel) return@onKeyEvent false
                 if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
                 val repeatCount = keyEvent.nativeKeyEvent.repeatCount
                 when (keyEvent.nativeKeyEvent.keyCode) {
-                    // Zapping direct (CH+ = chaîne suivante, CH- = chaîne précédente)
+                    // Direct channel switching (CH+ = next channel, CH- = previous channel)
                     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_UP -> {
                         onNextChannel()
                         true
@@ -172,7 +176,7 @@ fun PlayerScreen(
                         onPreviousChannel()
                         true
                     }
-                    // OK : affiche le bandeau ; appui long : choix du flux
+                    // OK: shows the banner; long press: stream choice
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                         if (repeatCount == 1) showStreamPicker = true else if (repeatCount == 0) revealOverlay()
                         true
@@ -181,7 +185,7 @@ fun PlayerScreen(
                         showStreamPicker = true
                         true
                     }
-                    // Flèche gauche : volet des chaînes avec le guide, par-dessus le direct
+                    // Left arrow: channel panel with the guide, over the live stream
                     KeyEvent.KEYCODE_DPAD_LEFT -> {
                         if (repeatCount == 0) {
                             showOverlay = false
@@ -202,13 +206,13 @@ fun PlayerScreen(
                 }
             }
     ) {
-        // Vue vidéo ExoPlayer native (SurfaceView accélérée matériellement)
+        // Native ExoPlayer video view (hardware-accelerated SurfaceView)
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     player = playerManager.getPlayer()
                     useController = false
-                    // Empêche l'écran de veille Android TV de recouvrir le direct
+                    // Prevents the Android TV screensaver from covering the live stream
                     keepScreenOn = true
                     isFocusable = false
                     layoutParams = FrameLayout.LayoutParams(
@@ -221,7 +225,7 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Spinner de chargement (mise en mémoire tampon / zapping)
+        // Loading spinner (buffering / channel switching)
         if (isLoading && errorMessage == null) {
             CircularProgressIndicator(
                 color = Color.White.copy(alpha = 0.85f),
@@ -232,7 +236,7 @@ fun PlayerScreen(
             )
         }
 
-        // Erreur de lecture : message et piste pour en sortir
+        // Playback error: message and a hint to get out of it
         if (errorMessage != null) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -244,14 +248,14 @@ fun PlayerScreen(
                     .padding(horizontal = 28.dp, vertical = 22.dp)
             ) {
                 Text(
-                    text = "Lecture impossible",
+                    text = stringResource(R.string.player_playback_failed),
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = errorMessage ?: "",
+                    text = errorMessage?.resolve() ?: "",
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
@@ -260,7 +264,7 @@ fun PlayerScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Maintenez OK pour choisir un autre flux",
+                    text = stringResource(R.string.player_other_stream_hint),
                     color = Color.White.copy(alpha = 0.85f),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
@@ -268,7 +272,7 @@ fun PlayerScreen(
             }
         }
 
-        // Bandeau d'informations (OSD)
+        // Information banner (OSD)
         AnimatedVisibility(
             visible = showOverlay && !showChannelPanel,
             enter = fadeIn() + slideInVertically { it / 6 },
@@ -278,7 +282,7 @@ fun PlayerScreen(
             PlayerOverlay(channel = channel, streamInfo = streamInfo)
         }
 
-        // Volet des chaînes (flèche gauche) : la vidéo continue derrière
+        // Channel panel (left arrow): the video keeps playing behind
         AnimatedVisibility(
             visible = showChannelPanel,
             enter = fadeIn() + slideInHorizontally { -it / 4 },
@@ -353,7 +357,7 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                     )
                     Spacer(modifier = Modifier.width(7.dp))
                     Text(
-                        text = "DIRECT",
+                        text = stringResource(R.string.player_live),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = 1.4.sp,
@@ -406,7 +410,7 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                     if (!program.nextTitle.isNullOrBlank()) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Ensuite ${program.nextStartTime ?: ""}  ·  ${program.nextTitle}",
+                            text = stringResource(R.string.player_next_program, program.nextStartTime ?: "", program.nextTitle),
                             fontSize = 13.sp,
                             color = Color.White.copy(alpha = 0.55f),
                             maxLines = 1,
@@ -418,21 +422,21 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
 
             Spacer(modifier = Modifier.width(24.dp))
 
-            // Informations techniques réelles et flux actif
+            // Actual technical information and active stream
             Column(horizontalAlignment = Alignment.End) {
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     val badgeColor = Color.White.copy(alpha = 0.75f)
                     streamInfo.resolution?.let { Tag(text = it, color = badgeColor) }
-                    streamInfo.fps?.let { Tag(text = "${Math.round(it)} FPS", color = badgeColor) }
+                    streamInfo.fps?.let { Tag(text = stringResource(R.string.player_fps, Math.round(it)), color = badgeColor) }
                     streamInfo.videoCodec?.let { Tag(text = it, color = badgeColor) }
                     streamInfo.audioCodec?.let { codec ->
                         val channels = streamInfo.audioChannels
-                        Tag(text = if (channels != null && channels > 2) "$codec ${channels}ch" else codec, color = badgeColor)
+                        Tag(text = if (channels != null && channels > 2) stringResource(R.string.player_audio_channels, codec, channels) else codec, color = badgeColor)
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = channel.selectedStreamName?.let { "Flux : $it" } ?: "Flux automatique",
+                    text = channel.selectedStreamName?.let { stringResource(R.string.player_stream_name, it) } ?: stringResource(R.string.player_stream_automatic),
                     fontSize = 11.sp,
                     color = Color.White.copy(alpha = 0.55f),
                     maxLines = 1,
@@ -440,7 +444,7 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                     modifier = Modifier.widthIn(max = 260.dp)
                 )
                 Text(
-                    text = "Maintenir OK : changer de flux",
+                    text = stringResource(R.string.player_change_stream_hint),
                     fontSize = 11.sp,
                     color = Color.White.copy(alpha = 0.35f)
                 )

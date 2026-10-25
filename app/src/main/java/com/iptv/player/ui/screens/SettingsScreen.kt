@@ -1,5 +1,11 @@
 package com.iptv.player.ui.screens
 
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.iptv.player.R
+import com.iptv.player.data.toUiText
+import com.iptv.player.data.UiText
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -68,14 +74,14 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * Paramètres : synchronisation manuelle, apparence, densité, chaînes et catégories masquées,
- * et gestion des sources de chaînes (ajout, test de connexion, activation, suppression).
+ * Settings: manual sync, appearance, density, hidden channels and categories,
+ * and channel source management (add, connection test, activation, deletion).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     repository: SettingsRepository,
-    onTestConnection: suspend (SourceConfig) -> Result<String>,
+    onTestConnection: suspend (SourceConfig) -> Result<UiText>,
     categories: List<Pair<String, Int>> = emptyList(),
     onRefreshPlaylist: () -> Unit = {},
     onRefreshEpg: () -> Unit = {},
@@ -91,7 +97,7 @@ fun SettingsScreen(
     val hiddenGroups by repository.hiddenGroups.collectAsState()
 
     val backButtonFocus = remember { FocusRequester() }
-    // Après la suppression d'une source, le focus revient sur "Ajouter une source" (et non en haut de l'écran)
+    // After a source is deleted, focus returns to "Add a source" (not to the top of the screen)
     val addSourceFocus = remember { FocusRequester() }
     var refocusAfterDelete by remember { mutableIntStateOf(0) }
     LaunchedEffect(refocusAfterDelete) {
@@ -102,7 +108,7 @@ fun SettingsScreen(
     var isAddingNew by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
 
-    // Le formulaire serveur est un Dialog : il gère lui-même la touche Retour
+    // The server form is a Dialog: it handles the Back key itself
     BackHandler {
         onBack()
     }
@@ -111,6 +117,7 @@ fun SettingsScreen(
         backButtonFocus.requestFocusWithRetry()
     }
 
+    val context = LocalContext.current
     val themeBgColor = Color(currentTheme.backgroundColorHex)
     val accentColorObj = Color(currentAccent.colorHex)
 
@@ -121,7 +128,7 @@ fun SettingsScreen(
             .padding(start = 48.dp, end = 48.dp, top = 26.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // En-tête
+            // Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -130,20 +137,20 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Paramètres",
+                        text = stringResource(R.string.settings_title),
                         fontSize = 26.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
                     )
                     Text(
-                        text = "Apparence, synchronisation et sources de chaînes",
+                        text = stringResource(R.string.settings_subtitle),
                         fontSize = 13.sp,
                         color = TextSecondary
                     )
                 }
 
                 ActionButton(
-                    label = "Retour",
+                    label = stringResource(R.string.settings_back),
                     icon = Icons.Filled.ArrowBack,
                     onClick = onBack,
                     modifier = Modifier.focusRequester(backButtonFocus)
@@ -155,30 +162,30 @@ fun SettingsScreen(
                 contentPadding = PaddingValues(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // SECTION 1 : SYNCHRONISATION MANUELLE
+                // SECTION 1: MANUAL SYNC
                 item {
                     SettingsSection(
-                        title = "Synchronisation",
-                        description = "Mettre à jour manuellement les chaînes et le guide depuis la source active"
+                        title = stringResource(R.string.settings_sync_title),
+                        description = stringResource(R.string.settings_sync_description)
                     ) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             ActionButton(
-                                label = "Actualiser les chaînes",
+                                label = stringResource(R.string.settings_refresh_channels),
                                 icon = Icons.Filled.Refresh,
                                 onClick = {
                                     onRefreshPlaylist()
-                                    syncMessage = "Actualisation des chaînes lancée"
+                                    syncMessage = context.getString(R.string.settings_refresh_channels_started)
                                 }
                             )
                             ActionButton(
-                                label = "Actualiser le guide",
+                                label = stringResource(R.string.settings_refresh_guide),
                                 icon = Icons.Filled.DateRange,
                                 onClick = {
                                     onRefreshEpg()
-                                    syncMessage = "Actualisation du guide lancée"
+                                    syncMessage = context.getString(R.string.settings_refresh_guide_started)
                                 }
                             )
                             if (syncMessage != null) {
@@ -189,14 +196,14 @@ fun SettingsScreen(
                     }
                 }
 
-                // SECTION 2 : THÈME ET COULEUR D'ACCENTUATION
+                // SECTION 2: THEME AND ACCENT COLOR
                 item {
                     SettingsSection(
-                        title = "Apparence",
-                        description = "Fond de l'application et couleur des indicateurs (progression, sélection)"
+                        title = stringResource(R.string.settings_appearance_title),
+                        description = stringResource(R.string.settings_appearance_description)
                     ) {
                         Text(
-                            text = "Fond",
+                            text = stringResource(R.string.settings_background),
                             fontSize = 12.sp,
                             color = TextSecondary,
                             modifier = Modifier.padding(bottom = 6.dp)
@@ -209,7 +216,7 @@ fun SettingsScreen(
                         ) {
                             AppThemeBackground.entries.forEach { theme ->
                                 OptionButton(
-                                    label = theme.label,
+                                    label = stringResource(theme.labelRes),
                                     selected = theme == currentTheme,
                                     swatch = Color(theme.backgroundColorHex),
                                     onClick = { repository.setThemeBackground(theme) },
@@ -219,7 +226,7 @@ fun SettingsScreen(
                         }
 
                         Text(
-                            text = "Couleur d'accentuation",
+                            text = stringResource(R.string.settings_accent_color),
                             fontSize = 12.sp,
                             color = TextSecondary,
                             modifier = Modifier.padding(bottom = 6.dp)
@@ -230,7 +237,7 @@ fun SettingsScreen(
                         ) {
                             AppAccentColor.entries.forEach { accent ->
                                 OptionButton(
-                                    label = accent.label,
+                                    label = stringResource(accent.labelRes),
                                     selected = accent == currentAccent,
                                     swatch = Color(accent.colorHex),
                                     onClick = { repository.setAccentColor(accent) },
@@ -241,11 +248,11 @@ fun SettingsScreen(
                     }
                 }
 
-                // SECTION 3 : DENSITÉ DE L'INTERFACE
+                // SECTION 3: INTERFACE DENSITY
                 item {
                     SettingsSection(
-                        title = "Densité de l'interface",
-                        description = "Taille des éléments à l'écran"
+                        title = stringResource(R.string.settings_density_title),
+                        description = stringResource(R.string.settings_density_description)
                     ) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -253,8 +260,8 @@ fun SettingsScreen(
                         ) {
                             UiDensity.entries.forEach { density ->
                                 OptionButton(
-                                    label = density.label,
-                                    description = density.description,
+                                    label = stringResource(density.labelRes),
+                                    description = stringResource(density.descriptionRes),
                                     selected = density == currentDensity,
                                     onClick = { repository.setUiDensity(density) },
                                     modifier = Modifier.weight(1f)
@@ -264,15 +271,19 @@ fun SettingsScreen(
                     }
                 }
 
-                // SECTION 4 : CHAÎNES MASQUÉES
+                // SECTION 4: HIDDEN CHANNELS
                 if (hiddenIds.isNotEmpty()) {
                     item {
                         SettingsSection(
-                            title = "Chaînes masquées",
-                            description = "${hiddenIds.size} chaîne(s) masquée(s) de l'accueil"
+                            title = stringResource(R.string.settings_hidden_channels_title),
+                            description = pluralStringResource(
+                                R.plurals.settings_hidden_channels_description,
+                                hiddenIds.size,
+                                hiddenIds.size
+                            )
                         ) {
                             ActionButton(
-                                label = "Tout réafficher",
+                                label = stringResource(R.string.settings_unhide_all),
                                 icon = Icons.Filled.Refresh,
                                 onClick = { repository.unhideAllChannels() }
                             )
@@ -280,13 +291,12 @@ fun SettingsScreen(
                     }
                 }
 
-                // SECTION 5 : CATÉGORIES AFFICHÉES
+                // SECTION 5: DISPLAYED CATEGORIES
                 if (categories.isNotEmpty()) {
                     item {
                         SettingsSection(
-                            title = "Catégories",
-                            description = "Catégories affichées sur l'accueil, dans le volet des chaînes et au zapping. " +
-                                "Vos favoris restent visibles."
+                            title = stringResource(R.string.settings_categories_title),
+                            description = stringResource(R.string.settings_categories_description)
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 categories.chunked(4).forEach { row ->
@@ -313,7 +323,7 @@ fun SettingsScreen(
                     }
                 }
 
-                // SECTION 6 : SERVEURS DISPATCHARR
+                // SECTION 6: DISPATCHARR SERVERS
                 item {
                     Row(
                         modifier = Modifier
@@ -321,9 +331,9 @@ fun SettingsScreen(
                             .padding(top = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SectionLabel(text = "Sources de chaînes", modifier = Modifier.weight(1f))
+                        SectionLabel(text = stringResource(R.string.settings_sources_title), modifier = Modifier.weight(1f))
                         ActionButton(
-                            label = "Ajouter une source",
+                            label = stringResource(R.string.settings_add_source),
                             icon = Icons.Filled.Add,
                             onClick = {
                                 editingConfig = SourceConfig(
@@ -381,7 +391,7 @@ fun SettingsScreen(
     }
 }
 
-/** Bloc de réglages : intitulé discret, description, contenu. */
+/** Settings block: subtle title, description, content. */
 @Composable
 private fun SettingsSection(
     title: String,
@@ -407,7 +417,7 @@ private fun SettingsSection(
 }
 
 /**
- * Option exclusive : fond discret, contour et coche d'accent si sélectionnée, pleine au focus.
+ * Exclusive option: subtle background, accent outline and check mark when selected, filled when focused.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -473,12 +483,12 @@ private fun OptionButton(
                     )
                 }
             }
-            // Coche réservée aux options larges ; pour les pastilles, le contour suffit
+            // Check mark reserved for wide options; for swatches, the outline is enough
             if (selected && swatch == null) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     imageVector = Icons.Filled.Check,
-                    contentDescription = "Sélectionné",
+                    contentDescription = stringResource(R.string.settings_selected),
                     tint = if (isFocused) contentColor else accent,
                     modifier = Modifier.size(16.dp)
                 )
@@ -488,7 +498,7 @@ private fun OptionButton(
 }
 
 /**
- * Case à cocher d'une catégorie : cochée = affichée, décochée = masquée (libellé estompé).
+ * Category checkbox: checked = shown, unchecked = hidden (dimmed label).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -524,7 +534,7 @@ private fun CategoryToggle(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            // Case : pleine avec coche si affichée, simple contour si masquée
+            // Box: filled with a check mark if shown, plain outline if hidden
             Box(
                 modifier = Modifier
                     .size(16.dp)
@@ -558,7 +568,7 @@ private fun CategoryToggle(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = if (visible) channelCount.toString() else "Masquée",
+                text = if (visible) channelCount.toString() else stringResource(R.string.settings_category_hidden),
                 fontSize = 11.sp,
                 color = if (isFocused) focusedContent.copy(alpha = 0.7f) else TextSecondary
             )
@@ -566,7 +576,7 @@ private fun CategoryToggle(
     }
 }
 
-/** Bouton d'action en pilule, avec icône facultative. */
+/** Pill-shaped action button, with an optional icon. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun ActionButton(
@@ -621,8 +631,8 @@ private fun ServerConfigCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    // Conteneur non focalisable : seuls les boutons d'action le sont. Une Card cliquable contenant
-    // des boutons captait le focus D-pad, débordait de l'écran une fois agrandie et masquait Modifier/Supprimer.
+    // Non-focusable container: only the action buttons are. A clickable Card containing
+    // buttons grabbed the D-pad focus, overflowed the screen once scaled up and hid Edit/Delete.
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -643,7 +653,7 @@ private fun ServerConfigCard(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = config.name.ifBlank { "Sans nom" },
+                        text = config.name.ifBlank { stringResource(R.string.settings_unnamed) },
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
@@ -657,12 +667,12 @@ private fun ServerConfigCard(
                                 .background(accentColorObj)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Actif", fontSize = 12.sp, color = TextSecondary)
+                        Text(text = stringResource(R.string.settings_active), fontSize = 12.sp, color = TextSecondary)
                     }
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${config.type.label}  ·  ${config.displayUrl}",
+                    text = "${stringResource(config.type.labelRes)}  ·  ${config.displayUrl}",
                     fontSize = 12.sp,
                     color = TextSecondary,
                     maxLines = 1,
@@ -672,10 +682,10 @@ private fun ServerConfigCard(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!isActive) {
-                    ActionButton(label = "Activer", icon = Icons.Filled.Check, onClick = onActivate)
+                    ActionButton(label = stringResource(R.string.settings_activate), icon = Icons.Filled.Check, onClick = onActivate)
                 }
-                ActionButton(label = "Modifier", icon = Icons.Filled.Edit, onClick = onEdit)
-                ActionButton(label = "Supprimer", icon = Icons.Filled.Delete, onClick = onDelete, destructive = true)
+                ActionButton(label = stringResource(R.string.settings_edit), icon = Icons.Filled.Edit, onClick = onEdit)
+                ActionButton(label = stringResource(R.string.settings_delete), icon = Icons.Filled.Delete, onClick = onDelete, destructive = true)
             }
         }
     }
@@ -686,7 +696,7 @@ private fun ServerConfigCard(
 private fun ConfigEditDialog(
     initialConfig: SourceConfig,
     isNew: Boolean,
-    onTestConnection: suspend (SourceConfig) -> Result<String>,
+    onTestConnection: suspend (SourceConfig) -> Result<UiText>,
     accentColorObj: Color,
     onDismiss: () -> Unit,
     onSave: (SourceConfig) -> Unit
@@ -700,6 +710,7 @@ private fun ConfigEditDialog(
     var epgUrl by remember { mutableStateOf(initialConfig.epgUrl ?: "") }
     var userAgent by remember { mutableStateOf(initialConfig.customUserAgent ?: "") }
 
+    val context = LocalContext.current
     var testStatus by remember { mutableStateOf<String?>(null) }
     var isTesting by remember { mutableStateOf(false) }
     var isTestSuccess by remember { mutableStateOf(false) }
@@ -709,14 +720,14 @@ private fun ConfigEditDialog(
 
     var formError by remember { mutableStateOf<String?>(null) }
 
-    /** Champs obligatoires selon le type de source ; null si le formulaire est complet. */
+    /** Required fields depending on the source type; null if the form is complete. */
     fun missingField(): String? = when {
         serverUrl.isBlank() -> when (type) {
-            SourceType.M3U -> "Saisissez le lien de la playlist."
-            else -> "Saisissez l'adresse du serveur."
+            SourceType.M3U -> context.getString(R.string.settings_missing_playlist_url)
+            else -> context.getString(R.string.settings_missing_server_url)
         }
         type == SourceType.XTREAM && (username.isBlank() || password.isBlank()) ->
-            "Saisissez l'identifiant et le mot de passe du compte Xtream."
+            context.getString(R.string.settings_missing_xtream_credentials)
         else -> null
     }
 
@@ -756,25 +767,25 @@ private fun ConfigEditDialog(
                     .padding(26.dp)
             ) {
                 Text(
-                    text = if (isNew) "Ajouter une source" else "Modifier la source",
+                    text = stringResource(if (isNew) R.string.settings_add_source else R.string.settings_edit_source),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary
                 )
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Type de source
+                // Source type
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     SourceType.entries.forEach { option ->
                         OptionButton(
-                            label = option.label,
+                            label = stringResource(option.labelRes),
                             selected = option == type,
                             onClick = {
                                 type = option
                                 testStatus = null
                                 formError = null
                             },
-                            // Focus initial sur le type de la source (un OK distrait ne doit pas le changer)
+                            // Initial focus on the source's type (a careless OK must not change it)
                             modifier = Modifier
                                 .weight(1f)
                                 .then(if (option == initialConfig.type) Modifier.focusRequester(focusRequester) else Modifier)
@@ -784,13 +795,13 @@ private fun ConfigEditDialog(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 TvInputField(
-                    label = "Nom du profil",
+                    label = stringResource(R.string.settings_profile_name),
                     value = name,
                     onValueChange = { name = it },
                     placeholder = when (type) {
-                        SourceType.DISPATCHARR -> "Serveur maison"
-                        SourceType.XTREAM -> "Mon abonnement"
-                        SourceType.M3U -> "Ma playlist"
+                        SourceType.DISPATCHARR -> stringResource(R.string.settings_profile_name_hint_dispatcharr)
+                        SourceType.XTREAM -> stringResource(R.string.settings_profile_name_hint_xtream)
+                        SourceType.M3U -> stringResource(R.string.settings_profile_name_hint_m3u)
                     },
                     accentColorObj = accentColorObj
                 )
@@ -799,28 +810,28 @@ private fun ConfigEditDialog(
                 when (type) {
                     SourceType.DISPATCHARR -> {
                         TvInputField(
-                            label = "Adresse du serveur",
+                            label = stringResource(R.string.settings_server_address),
                             value = serverUrl,
                             onValueChange = { serverUrl = it },
-                            placeholder = "dispatcharr.mondomaine.fr (ou https://...)",
+                            placeholder = stringResource(R.string.settings_dispatcharr_url_hint),
                             accentColorObj = accentColorObj
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         TvInputField(
-                            label = "Clé API (X-API-Key)",
+                            label = stringResource(R.string.settings_api_key),
                             value = apiKey,
                             onValueChange = { apiKey = it },
-                            placeholder = "Entrez votre clé API",
+                            placeholder = stringResource(R.string.settings_api_key_hint),
                             accentColorObj = accentColorObj,
                             secret = true
                         )
                     }
                     SourceType.XTREAM -> {
                         TvInputField(
-                            label = "Adresse du serveur",
+                            label = stringResource(R.string.settings_server_address),
                             value = serverUrl,
                             onValueChange = { text ->
-                                // Lien complet collé (get.php?username=…&password=…) : on répartit les champs
+                                // Full link pasted (get.php?username=…&password=…): split it across the fields
                                 val account = XtreamClient.splitAccountUrl(text)
                                 if (account != null) {
                                     serverUrl = account.first
@@ -830,24 +841,24 @@ private fun ConfigEditDialog(
                                     serverUrl = text
                                 }
                             },
-                            placeholder = "http://fournisseur.tv:8080 (ou lien get.php complet)",
+                            placeholder = stringResource(R.string.settings_xtream_url_hint),
                             accentColorObj = accentColorObj
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             TvInputField(
-                                label = "Nom d'utilisateur",
+                                label = stringResource(R.string.settings_username),
                                 value = username,
                                 onValueChange = { username = it },
-                                placeholder = "Identifiant",
+                                placeholder = stringResource(R.string.settings_username_hint),
                                 accentColorObj = accentColorObj,
                                 modifier = Modifier.weight(1f)
                             )
                             TvInputField(
-                                label = "Mot de passe",
+                                label = stringResource(R.string.settings_password),
                                 value = password,
                                 onValueChange = { password = it },
-                                placeholder = "Mot de passe",
+                                placeholder = stringResource(R.string.settings_password),
                                 accentColorObj = accentColorObj,
                                 secret = true,
                                 modifier = Modifier.weight(1f)
@@ -856,18 +867,18 @@ private fun ConfigEditDialog(
                     }
                     SourceType.M3U -> {
                         TvInputField(
-                            label = "Lien de la playlist (M3U / M3U8)",
+                            label = stringResource(R.string.settings_playlist_url),
                             value = serverUrl,
                             onValueChange = { serverUrl = it },
-                            placeholder = "https://fournisseur.tv/playlist.m3u",
+                            placeholder = stringResource(R.string.settings_playlist_url_hint),
                             accentColorObj = accentColorObj
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         TvInputField(
-                            label = "Guide EPG XMLTV (facultatif)",
+                            label = stringResource(R.string.settings_epg_url),
                             value = epgUrl,
                             onValueChange = { epgUrl = it },
-                            placeholder = "https://…/guide.xml.gz · sinon celui annoncé par la playlist",
+                            placeholder = stringResource(R.string.settings_epg_url_hint),
                             accentColorObj = accentColorObj
                         )
                     }
@@ -875,7 +886,7 @@ private fun ConfigEditDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 TvInputField(
-                    label = "User-Agent personnalisé (facultatif)",
+                    label = stringResource(R.string.settings_user_agent),
                     value = userAgent,
                     onValueChange = { userAgent = it },
                     placeholder = HttpClients.DEFAULT_USER_AGENT,
@@ -907,7 +918,7 @@ private fun ConfigEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ActionButton(
-                        label = if (isTesting) "Test en cours…" else "Tester la connexion",
+                        label = stringResource(if (isTesting) R.string.settings_testing else R.string.settings_test_connection),
                         icon = Icons.Filled.Refresh,
                         onClick = {
                             if (isTesting) return@ActionButton
@@ -915,16 +926,16 @@ private fun ConfigEditDialog(
                             if (formError != null) return@ActionButton
                             val tempConfig = buildConfig()
                             isTesting = true
-                            testStatus = "Vérification en cours…"
+                            testStatus = context.getString(R.string.settings_checking)
                             scope.launch {
                                 val result = onTestConnection(tempConfig)
                                 isTesting = false
                                 result.onSuccess { message ->
                                     isTestSuccess = true
-                                    testStatus = message
+                                    testStatus = message.resolve(context)
                                 }.onFailure { error ->
                                     isTestSuccess = false
-                                    testStatus = error.localizedMessage ?: "Erreur de connexion"
+                                    testStatus = error.toUiText().resolve(context)
                                 }
                             }
                         }
@@ -932,10 +943,10 @@ private fun ConfigEditDialog(
 
                     Spacer(modifier = Modifier.weight(1f))
 
-                    ActionButton(label = "Annuler", onClick = onDismiss)
+                    ActionButton(label = stringResource(R.string.settings_cancel), onClick = onDismiss)
                     Spacer(modifier = Modifier.width(10.dp))
                     ActionButton(
-                        label = "Enregistrer",
+                        label = stringResource(R.string.settings_save),
                         icon = Icons.Filled.Check,
                         primary = true,
                         onClick = {
@@ -950,9 +961,9 @@ private fun ConfigEditDialog(
 }
 
 /**
- * Champ de saisie adapté à la télécommande : le D-pad navigue entre les champs, OK passe en édition
- * (clavier), ↑/↓ ou "Terminé" en sortent. Un BasicTextField seul piégeait le focus (↓ déplaçait le
- * curseur) et ouvrait le clavier à chaque passage.
+ * Remote-friendly input field: the D-pad moves between fields, OK enters edit mode
+ * (keyboard), ↑/↓ or "Done" leave it. A bare BasicTextField trapped the focus (↓ moved the
+ * cursor) and opened the keyboard on every pass.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable

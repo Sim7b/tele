@@ -1,5 +1,9 @@
 package com.iptv.player.data.remote
 
+import com.iptv.player.R
+import com.iptv.player.data.UiText
+import com.iptv.player.data.UserFacingException
+import com.iptv.player.data.failure
 import com.iptv.player.data.model.Channel
 import com.iptv.player.data.model.SourceConfig
 import com.iptv.player.data.parser.M3uParser
@@ -7,10 +11,9 @@ import com.iptv.player.data.parser.M3uPlaylist
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
-import java.io.IOException
 
 /**
- * Source playlist M3U / M3U8 (lien direct), avec guide XMLTV facultatif.
+ * M3U / M3U8 playlist source (direct link), with an optional XMLTV guide.
  */
 object M3uClient {
 
@@ -18,10 +21,10 @@ object M3uClient {
         try {
             val playlist = download(config)
             if (playlist.entries.isEmpty()) {
-                return@withContext Result.failure(IOException("Aucune chaîne en direct dans cette playlist"))
+                return@withContext failure(R.string.error_playlist_no_live_channel)
             }
 
-            // Identifiants stables (favoris, flux choisis) : tvg-id ou nom, numérotés en cas de doublon
+            // Stable ids (favorites, selected streams): tvg-id or name, numbered when duplicated
             val idPrefix = "m3u-${config.id.take(8)}-"
             val seen = HashMap<String, Int>()
             val channels = playlist.entries.mapIndexed { index, entry ->
@@ -30,7 +33,7 @@ object M3uClient {
                 Channel(
                     id = idPrefix + Integer.toHexString(key.hashCode()) + if (occurrence > 1) "-$occurrence" else "",
                     name = entry.name,
-                    group = entry.group ?: "Autres",
+                    group = entry.group ?: "Other",
                     logoUrl = entry.logo,
                     streamUrl = entry.url,
                     tvgId = entry.tvgId ?: entry.tvgName,
@@ -38,29 +41,29 @@ object M3uClient {
                 )
             }
 
-            // Guide saisi par l'utilisateur, sinon celui annoncé par la playlist (url-tvg)
+            // Guide entered by the user, else the one announced by the playlist (url-tvg)
             val guideUrls = config.epgUrl?.takeIf { it.isNotBlank() }?.let { listOf(it.trim()) } ?: playlist.epgUrls
             Result.success(SourceChannels(channels, guideUrls))
         } catch (e: Exception) {
-            Result.failure(IOException(HttpClients.friendlyError(e), e))
+            Result.failure(e)
         }
     }
 
-    /** Vérifie la playlist (test de connexion) : nombre de chaînes en direct et présence d'un guide. */
-    suspend fun probe(config: SourceConfig): Result<String> = withContext(Dispatchers.IO) {
+    /** Checks the playlist (connection test): number of live channels and presence of a guide. */
+    suspend fun probe(config: SourceConfig): Result<UiText> = withContext(Dispatchers.IO) {
         try {
             val playlist = download(config)
             if (playlist.entries.isEmpty()) {
-                return@withContext Result.failure(IOException("Aucune chaîne en direct dans cette playlist"))
+                return@withContext failure(R.string.error_playlist_no_live_channel)
             }
             val guide = when {
-                !config.epgUrl.isNullOrBlank() -> "guide XMLTV renseigné"
-                playlist.epgUrls.isNotEmpty() -> "guide fourni par la playlist"
-                else -> "sans guide EPG"
+                !config.epgUrl.isNullOrBlank() -> R.string.playlist_guide_entered
+                playlist.epgUrls.isNotEmpty() -> R.string.playlist_guide_from_playlist
+                else -> R.string.playlist_guide_none
             }
-            Result.success("Playlist valide · ${playlist.entries.size} chaînes · $guide")
+            Result.success(UiText.Plural(R.plurals.playlist_valid, playlist.entries.size, playlist.entries.size, UiText.Res(guide)))
         } catch (e: Exception) {
-            Result.failure(IOException(HttpClients.friendlyError(e), e))
+            Result.failure(e)
         }
     }
 
@@ -72,15 +75,15 @@ object M3uClient {
             .build()
         HttpClients.base.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException(
+                throw UserFacingException(
                     when (response.code) {
-                        401, 403 -> "Accès à la playlist refusé (HTTP ${response.code})"
-                        404 -> "Playlist introuvable (HTTP 404)"
-                        else -> "Erreur serveur : HTTP ${response.code}"
+                        401, 403 -> UiText.Res(R.string.error_playlist_access_refused, response.code)
+                        404 -> UiText.Res(R.string.error_playlist_not_found)
+                        else -> UiText.Res(R.string.error_server_http, response.code)
                     }
                 )
             }
-            val body = response.body ?: throw IOException("Réponse vide")
+            val body = response.body ?: throw UserFacingException(UiText.Res(R.string.error_empty_response))
             return M3uParser.parse(body.byteStream())
         }
     }
