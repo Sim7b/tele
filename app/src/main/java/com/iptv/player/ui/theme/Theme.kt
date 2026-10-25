@@ -15,8 +15,8 @@ import com.iptv.player.data.storage.AppThemeBackground
 import com.iptv.player.data.storage.UiDensity
 
 /**
- * Thème de l'application : palette issue des réglages (fond, accent, mode clair) exposée via
- * [LocalAppColors], et densité d'interface appliquée en redimensionnant [LocalDensity].
+ * App theme: palette derived from the settings (background, accent, light mode) exposed through
+ * [LocalAppColors], and UI density applied by rescaling [LocalDensity].
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -35,7 +35,7 @@ fun IPTVPlayerTheme(
             textPrimary = if (themeBackground.isLight) Color(0xFF0F172A) else Color(0xFFF8FAFC),
             textSecondary = if (themeBackground.isLight) Color(0xFF475569) else Color(0xFF94A3B8),
             accent = accent,
-            // Anneau de focus neutre (blanc / encre) : l'accent reste réservé aux indicateurs (progression, sélection)
+            // Neutral focus ring (white / ink): the accent stays reserved for indicators (progress, selection)
             focusBorder = if (themeBackground.isLight) Color(0xFF0F172A) else Color.White.copy(alpha = 0.92f),
             isLight = themeBackground.isLight
         )
@@ -61,7 +61,7 @@ fun IPTVPlayerTheme(
         )
     }
 
-    // La densité d'interface s'applique à toute l'application en mettant à l'échelle les dp/sp
+    // UI density applies to the whole app by scaling dp/sp
     val baseDensity = LocalDensity.current
     val scaledDensity = remember(baseDensity, uiDensity) {
         Density(baseDensity.density * uiDensity.scaleFactor, baseDensity.fontScale)

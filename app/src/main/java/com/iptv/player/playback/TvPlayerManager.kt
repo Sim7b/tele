@@ -19,6 +19,8 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
+import com.iptv.player.R
+import com.iptv.player.data.UiText
 import com.iptv.player.data.remote.HttpClients
 import java.util.concurrent.TimeUnit
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -30,13 +32,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Informations techniques réelles du flux (null tant qu'ExoPlayer ne les connaît pas).
- */
-/**
- * Clé API Dispatcharr à joindre aux flux, uniquement pour les requêtes vers [host].
+ * Dispatcharr API key to attach to streams, only for requests to [host].
  */
 data class StreamAuth(val host: String, val apiKey: String)
 
+/**
+ * Actual technical information of the stream (null until ExoPlayer knows it).
+ */
 data class StreamInfo(
     val resolution: String? = null,
     val fps: Float? = null,
@@ -58,9 +60,9 @@ class TvPlayerManager(private val context: Context) {
     private var currentAuth: StreamAuth? = null
 
     /**
-     * Client HTTP du lecteur, dérivé du client partagé (connexions TLS réutilisées d'un zapping à l'autre).
-     * La clé API est ajoutée par un intercepteur réseau, exécuté à chaque redirection : elle n'est envoyée
-     * qu'au serveur Dispatcharr, jamais au fournisseur vers lequel il redirige.
+     * Player HTTP client, derived from the shared client (TLS connections reused from one channel to the next).
+     * The API key is added by a network interceptor, run on each redirect: it is only sent
+     * to the Dispatcharr server, never to the provider it redirects to.
      */
     private val streamHttpClient = HttpClients.base.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -76,11 +78,11 @@ class TvPlayerManager(private val context: Context) {
         }
         .build()
 
-    // TS : les images clés non IDR (fréquentes en IPTV) suffisent pour afficher la première image plus tôt
+    // TS: non-IDR keyframes (common in IPTV) are enough to show the first frame sooner
     private val extractorsFactory = DefaultExtractorsFactory()
         .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
     private var retryCount = 0
-    // Début du zapping en cours (mesure du temps jusqu'à la première image)
+    // Start of the current channel switch (measures the time to the first frame)
     private var zapStartedAt = 0L
     private val retryRunnable = Runnable { prepareCurrent() }
 
@@ -90,8 +92,8 @@ class TvPlayerManager(private val context: Context) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    private val _error = MutableStateFlow<UiText?>(null)
+    val error: StateFlow<UiText?> = _error.asStateFlow()
 
     private val _streamInfo = MutableStateFlow(StreamInfo())
     val streamInfo: StateFlow<StreamInfo> = _streamInfo.asStateFlow()
@@ -101,13 +103,13 @@ class TvPlayerManager(private val context: Context) {
     }
 
     private fun createPlayer(): ExoPlayer {
-        // Buffer optimisé pour le zapping ultra-rapide sur Android TV (< 500 ms)
+        // Buffer tuned for very fast channel switching on Android TV (< 500 ms)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                500,   // Min buffer avant démarrage de la lecture (zapping instantané)
+                500,   // Min buffer before playback starts (instant channel switch)
                 3500,  // Max buffer
-                500,   // Buffer requis après un rebuffering
-                500    // Buffer après une pause
+                500,   // Buffer required after a rebuffer
+                500    // Buffer after a pause
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -119,7 +121,7 @@ class TvPlayerManager(private val context: Context) {
 
         return ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
-            // Gestion du focus audio : coupe/reprend proprement face aux autres applications
+            // Audio focus handling: pauses/resumes cleanly around other apps
             .setAudioAttributes(audioAttributes, true)
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
@@ -132,7 +134,7 @@ class TvPlayerManager(private val context: Context) {
 
                     override fun onRenderedFirstFrame() {
                         if (zapStartedAt > 0) {
-                            Log.i(PERF_TAG, "Zapping : première image en ${SystemClock.elapsedRealtime() - zapStartedAt} ms")
+                            Log.i(PERF_TAG, "Channel switch: first frame in ${SystemClock.elapsedRealtime() - zapStartedAt} ms")
                             zapStartedAt = 0
                         }
                     }
@@ -158,7 +160,7 @@ class TvPlayerManager(private val context: Context) {
     }
 
     /**
-     * Dispatcharr bascule côté serveur sur un flux de secours : on retente avec un backoff court.
+     * Dispatcharr fails over to a backup stream on the server side: retry with a short backoff.
      */
     private fun handlePlaybackError(playbackError: PlaybackException) {
         val player = exoPlayer ?: return
@@ -169,7 +171,7 @@ class TvPlayerManager(private val context: Context) {
         }
 
         val httpCode = (playbackError.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
-        // Refus définitifs du fournisseur : inutile de réessayer
+        // Definitive refusals from the provider: no point retrying
         val isDefinitive = httpCode in DEFINITIVE_HTTP_ERRORS
 
         if (!isDefinitive && retryCount < MAX_RETRIES && currentUrl != null) {
@@ -185,19 +187,19 @@ class TvPlayerManager(private val context: Context) {
         }
     }
 
-    private fun describeError(playbackError: PlaybackException, httpCode: Int?): String = when {
-        httpCode == 401 || httpCode == 403 -> "Accès refusé par le fournisseur (HTTP $httpCode)"
-        httpCode == 404 || httpCode == 410 -> "Flux introuvable chez le fournisseur (HTTP $httpCode)"
+    private fun describeError(playbackError: PlaybackException, httpCode: Int?): UiText = when {
+        httpCode == 401 || httpCode == 403 -> UiText.Res(R.string.player_error_access_denied, httpCode)
+        httpCode == 404 || httpCode == 410 -> UiText.Res(R.string.player_error_stream_not_found, httpCode)
         httpCode == 429 || httpCode == 458 || httpCode == 509 ->
-            "Limite de connexions du fournisseur atteinte (HTTP $httpCode)"
-        httpCode != null -> "Le serveur du flux a répondu HTTP $httpCode"
+            UiText.Res(R.string.player_error_connection_limit, httpCode)
+        httpCode != null -> UiText.Res(R.string.player_error_http, httpCode)
         playbackError.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
             playbackError.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
-            "Connexion au flux impossible"
+            UiText.Res(R.string.player_error_connection_failed)
         playbackError.errorCode in PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED..PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ||
             playbackError.errorCode in PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
-            "Format du flux non pris en charge"
-        else -> "Erreur de lecture (${playbackError.errorCodeName})"
+            UiText.Res(R.string.player_error_unsupported_format)
+        else -> UiText.Res(R.string.player_error_generic, playbackError.errorCodeName)
     }
 
     private fun updateStreamInfo() {
@@ -236,7 +238,7 @@ class TvPlayerManager(private val context: Context) {
         _error.value = null
         val player = getPlayer()
 
-        // User-Agent customisé (idéal pour remonter dans les stats Dispatcharr)
+        // Custom User-Agent (shows up in the Dispatcharr stats)
         val userAgent = currentUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT
 
         val httpDataSourceFactory = OkHttpDataSource.Factory(streamHttpClient)
@@ -272,7 +274,7 @@ class TvPlayerManager(private val context: Context) {
     }
 
     /**
-     * Arrête la lecture (retour à l'accueil, application en arrière-plan) : libère le flux réseau et le son.
+     * Stops playback (back to home, app in background): releases the network stream and the audio.
      */
     fun stop() {
         mainHandler.removeCallbacks(retryRunnable)

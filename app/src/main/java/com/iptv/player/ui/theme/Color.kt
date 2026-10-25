@@ -7,7 +7,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * Palette dynamique issue des réglages (fond, couleur d'accentuation, thème clair).
+ * Dynamic palette derived from the settings (background, accent color, light theme).
  */
 @Immutable
 data class AppColors(
@@ -34,7 +34,7 @@ val DefaultAppColors = AppColors(
 
 val LocalAppColors = staticCompositionLocalOf { DefaultAppColors }
 
-// Couleur sombre fixe : texte posé sur une couleur d'accentuation (lisible quel que soit le thème)
+// Fixed dark color: text laid on an accent color (readable whatever the theme)
 val BackgroundDark = Color(0xFF080B10)
 val AccentBlue = Color(0xFF3B82F6)
 val LiveRed = Color(0xFFEF4444)

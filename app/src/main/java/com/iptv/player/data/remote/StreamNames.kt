@@ -4,11 +4,11 @@ import com.iptv.player.data.optStringOrNull
 import org.json.JSONObject
 
 /**
- * Mise en forme des noms de flux fournisseurs ("VIP: TF1 ᴴᴰ", "FR - TF1 FHD ◉") pour l'affichage TV.
+ * Formats provider stream names ("VIP: TF1 ᴴᴰ", "FR - TF1 FHD ◉") for display on TV.
  */
 object StreamNames {
 
-    // Lettres en exposant souvent utilisées par les fournisseurs (ᴴᴰ, ᴿᴬᵂ, ᵁᴴᴰ...)
+    // Superscript letters often used by providers (ᴴᴰ, ᴿᴬᵂ, ᵁᴴᴰ...)
     private val SUPERSCRIPTS = mapOf(
         'ᴬ' to 'A', 'ᴮ' to 'B', 'ᴰ' to 'D', 'ᴱ' to 'E', 'ᴳ' to 'G', 'ᴴ' to 'H', 'ᴵ' to 'I',
         'ᴶ' to 'J', 'ᴷ' to 'K', 'ᴸ' to 'L', 'ᴹ' to 'M', 'ᴺ' to 'N', 'ᴼ' to 'O', 'ᴾ' to 'P',
@@ -22,7 +22,7 @@ object StreamNames {
     private fun normalize(raw: String): String =
         raw.map { SUPERSCRIPTS[it] ?: it }.joinToString("")
 
-    /** Nom lisible : exposants convertis, symboles décoratifs retirés. */
+    /** Readable name: superscripts converted, decorative symbols removed. */
     fun clean(raw: String): String =
         normalize(raw)
             .replace(DECORATIONS, " ")
@@ -31,7 +31,7 @@ object StreamNames {
             .trimEnd('-', ':')
             .trim()
 
-    /** Étiquettes de qualité déduites du nom (4K, FHD, HD, SD, HEVC, RAW, 50 FPS). */
+    /** Quality tags inferred from the name (4K, FHD, HD, SD, HEVC, RAW, 50 FPS). */
     fun qualityTags(raw: String): List<String> {
         val name = " ${normalize(raw).uppercase()} "
         val tags = mutableListOf<String>()
@@ -49,7 +49,7 @@ object StreamNames {
         return tags
     }
 
-    /** Résumé des statistiques mesurées par Dispatcharr (si disponibles). */
+    /** Summary of the statistics measured by Dispatcharr (if available). */
     fun describeStats(stats: JSONObject): String? {
         val parts = listOfNotNull(
             stats.optStringOrNull("resolution"),

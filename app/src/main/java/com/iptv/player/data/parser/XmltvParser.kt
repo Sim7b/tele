@@ -11,7 +11,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 
 /**
- * Guide XMLTV : programmes et noms d'affichage, indexés par identifiant de chaîne XMLTV.
+ * XMLTV guide: programs and display names, indexed by XMLTV channel id.
  */
 class XmltvGuide(
     val programs: Map<String, List<GuideProgram>>,
@@ -19,10 +19,10 @@ class XmltvGuide(
 )
 
 /**
- * Lecture en flux d'un guide XMLTV (éventuellement compressé .gz ou .zip).
- * Les guides complets pèsent souvent des dizaines de Mo : seuls les programmes de la fenêtre
- * [fromMillis, toMillis] sont conservés, et uniquement pour les chaînes demandées si [wantedChannel] est fourni
- * (appelé une fois par chaîne XMLTV avec son identifiant et ses noms d'affichage, déclarés avant les programmes).
+ * Streaming reader of an XMLTV guide (possibly compressed as .gz or .zip).
+ * Full guides often weigh tens of MB: only the programs of the [fromMillis, toMillis] window are kept,
+ * and only for the wanted channels when [wantedChannel] is given
+ * (called once per XMLTV channel with its id and display names, declared before the programs).
  */
 object XmltvParser {
 
@@ -71,7 +71,7 @@ object XmltvParser {
         return XmltvGuide(programs, displayNames)
     }
 
-    /** Détecte gzip (1F 8B) et zip (PK) par leurs octets magiques, quelle que soit l'extension. */
+    /** Detects gzip (1F 8B) and zip (PK) by their magic bytes, whatever the extension. */
     private fun decompressed(input: InputStream): InputStream {
         val buffered = BufferedInputStream(input, 64 * 1024)
         buffered.mark(4)
@@ -145,7 +145,7 @@ object XmltvParser {
     }
 
     /**
-     * Horodatage XMLTV : "20261025183000 +0100" (décalage facultatif, UTC par défaut ; secondes facultatives).
+     * XMLTV timestamp: "20261025183000 +0100" (optional offset, UTC by default; optional seconds).
      */
     fun parseTime(value: String?): Long {
         if (value.isNullOrBlank()) return 0L

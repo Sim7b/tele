@@ -1,4 +1,4 @@
-# Règles Proguard pour Android TV et ExoPlayer Media3
+# Proguard rules for Android TV and Media3 ExoPlayer
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
 

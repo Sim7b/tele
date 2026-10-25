@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,12 +28,15 @@ import com.iptv.player.ui.theme.*
 import java.time.LocalTime
 
 /**
- * Accueil au démarrage : "Bonjour" ou "Bonsoir" selon l'heure, suivi du prénom du compte Dispatcharr.
- * Affiché par-dessus l'accueil pendant le chargement du guide et des visuels des favoris.
+ * Startup welcome: "Good morning" or "Good evening" depending on the time, followed by the Dispatcharr account's first name.
+ * Shown over the home screen while the guide and the favorites' artwork are loading.
  */
 @Composable
 fun WelcomeScreen(name: String?, modifier: Modifier = Modifier) {
-    val greeting = remember { greetingFor(LocalTime.now()) }
+    val greetingRes = remember { greetingFor(LocalTime.now()) }
+    val greeting = stringResource(greetingRes.first)
+    // Name part of the greeting (e.g. ", Matthieu"): the named variant minus the plain greeting
+    val namePart = if (name.isNullOrBlank()) "" else stringResource(greetingRes.second, name).removePrefix(greeting)
     val appear = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
@@ -74,13 +78,13 @@ fun WelcomeScreen(name: String?, modifier: Modifier = Modifier) {
                     fontWeight = FontWeight.Light,
                     color = TextPrimary
                 )
-                // Le prénom apparaît en douceur s'il arrive après l'affichage (premier lancement)
+                // The first name fades in if it arrives after the screen is shown (first launch)
                 AnimatedVisibility(
                     visible = !name.isNullOrBlank(),
                     enter = fadeIn(tween(600)) + expandHorizontally(tween(600))
                 ) {
                     Text(
-                        text = " ${name.orEmpty()}",
+                        text = namePart,
                         fontSize = 46.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
@@ -102,7 +106,7 @@ fun WelcomeScreen(name: String?, modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = "Préparation de votre guide",
+                text = stringResource(R.string.welcome_preparing_guide),
                 fontSize = 13.sp,
                 color = TextSecondary
             )
@@ -110,5 +114,7 @@ fun WelcomeScreen(name: String?, modifier: Modifier = Modifier) {
     }
 }
 
-/** "Bonjour" de 5 h à 18 h, "Bonsoir" ensuite. */
-private fun greetingFor(time: LocalTime): String = if (time.hour in 5..17) "Bonjour" else "Bonsoir"
+/** "Good morning" from 5 am to 6 pm, "Good evening" afterwards: plain greeting and greeting with the name. */
+private fun greetingFor(time: LocalTime): Pair<Int, Int> =
+    if (time.hour in 5..17) R.string.welcome_good_morning to R.string.welcome_good_morning_name
+    else R.string.welcome_good_evening to R.string.welcome_good_evening_name

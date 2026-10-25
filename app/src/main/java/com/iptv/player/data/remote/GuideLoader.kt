@@ -1,6 +1,9 @@
 package com.iptv.player.data.remote
 
+import com.iptv.player.R
+import com.iptv.player.data.UiText
 import com.iptv.player.data.epg.EpgResolver
+import com.iptv.player.data.toUiText
 import com.iptv.player.data.model.Channel
 import com.iptv.player.data.model.GuideProgram
 import com.iptv.player.data.parser.XmltvGuide
@@ -11,7 +14,7 @@ import okhttp3.Request
 import java.io.IOException
 
 /**
- * Chaînes chargées depuis une source Xtream ou M3U, avec les liens de guide XMLTV à utiliser.
+ * Channels loaded from an Xtream or M3U source, with the XMLTV guide links to use.
  */
 class SourceChannels(
     val channels: List<Channel>,
@@ -20,15 +23,15 @@ class SourceChannels(
 )
 
 /**
- * Programmes associés aux chaînes (par identifiant de chaîne de l'application).
+ * Programs matched to channels (by application channel id).
  */
 class ChannelGuide(
     val programs: Map<String, List<GuideProgram>>,
-    val error: String? = null
+    val error: UiText? = null
 )
 
 /**
- * Téléchargement d'un guide XMLTV et association à des chaînes : par tvg-id, sinon par nom normalisé.
+ * Downloads an XMLTV guide and matches it to channels: by tvg-id, else by normalized name.
  */
 object GuideLoader {
 
@@ -43,9 +46,9 @@ object GuideLoader {
             val wantedNames = channels.map { EpgResolver.normalizeName(it.name) }.toHashSet()
             val now = System.currentTimeMillis()
             val merged = HashMap<String, List<GuideProgram>>()
-            val errors = mutableListOf<String>()
+            val errors = mutableListOf<UiText>()
 
-            // Plusieurs guides possibles (url-tvg="a.xml,b.xml") : le premier qui couvre une chaîne l'emporte
+            // Several guides possible (url-tvg="a.xml,b.xml"): the first one covering a channel wins
             for (url in urls) {
                 try {
                     val guide = download(url, userAgent) { input ->
@@ -57,11 +60,11 @@ object GuideLoader {
                     }
                     match(guide, channels).forEach { (channelId, programs) -> merged.putIfAbsent(channelId, programs) }
                 } catch (e: Exception) {
-                    errors += e.localizedMessage ?: "erreur réseau"
+                    errors += e.toUiText()
                 }
             }
 
-            val error = if (merged.isEmpty() && errors.isNotEmpty()) "Guide EPG indisponible : ${errors.first()}" else null
+            val error = if (merged.isEmpty() && errors.isNotEmpty()) UiText.Res(R.string.error_guide_unavailable, errors.first()) else null
             ChannelGuide(merged, error)
         }
 
@@ -69,7 +72,7 @@ object GuideLoader {
         val request = Request.Builder().url(url).header("User-Agent", userAgent).get().build()
         HttpClients.base.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-            val body = response.body ?: throw IOException("Réponse vide")
+            val body = response.body ?: throw IOException("Empty response")
             return read(body.byteStream())
         }
     }

@@ -1,6 +1,10 @@
 package com.iptv.player.data.remote
 
+import com.iptv.player.R
+import com.iptv.player.data.UserFacingException
+import com.iptv.player.data.UiText
 import com.iptv.player.data.epg.EpgResolver
+import com.iptv.player.data.failure
 import com.iptv.player.data.model.*
 import com.iptv.player.data.optStringOrNull
 import kotlinx.coroutines.Dispatchers
@@ -11,14 +15,12 @@ import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 
 class DispatcharrClient(
     @Volatile private var currentConfig: SourceConfig? = null
 ) {
-    // Dérivé du client partagé : même pool de connexions que le lecteur et les images
+    // Derived from the shared client: same connection pool as the player and the images
     private val client = HttpClients.base.newBuilder()
         .addInterceptor { chain ->
             val original = chain.request()
@@ -57,7 +59,7 @@ class DispatcharrClient(
         get() = currentConfig?.normalizedUrl ?: ""
 
     /**
-     * Teste la connexion à un serveur Dispatcharr.
+     * Tests the connection to a Dispatcharr server; returns the number of channels.
      */
     suspend fun testConnection(config: SourceConfig): Result<Int> = withContext(Dispatchers.IO) {
         val testUrl = "${config.normalizedUrl}/api/channels/channels/"
@@ -72,41 +74,33 @@ class DispatcharrClient(
         }
 
         try {
-            // Client sans intercepteur : la clé du serveur actif ne doit pas se substituer à celle testée
+            // Client without interceptor: the key of the active server must not replace the tested one
             testClient.newCall(requestBuilder.build()).execute().use { response ->
                 if (!response.isSuccessful) {
                     val code = response.code
-                    val msg = when (code) {
-                        401, 403 -> "Clé API non valide ou non autorisée (HTTP $code)"
-                        404 -> "Serveur introuvable ou chemin API incorrect (HTTP 404)"
-                        else -> "Erreur serveur : HTTP $code"
+                    return@withContext when (code) {
+                        401, 403 -> failure(R.string.error_dispatcharr_api_key_invalid, code)
+                        404 -> failure(R.string.error_dispatcharr_not_found)
+                        else -> failure(R.string.error_server_http, code)
                     }
-                    return@withContext Result.failure(IOException(msg))
                 }
 
-                val body = response.body?.string() ?: return@withContext Result.failure(IOException("Réponse vide"))
+                val body = response.body?.string() ?: return@withContext failure(R.string.error_empty_response)
                 val count = try {
                     extractArray(body).length()
                 } catch (e: Exception) {
-                    return@withContext Result.failure(IOException("Réponse inattendue : ce serveur n'est pas une API Dispatcharr"))
+                    return@withContext failure(R.string.error_not_dispatcharr_api)
                 }
 
                 Result.success(count)
             }
         } catch (e: Exception) {
-            val friendlyMsg = when (e) {
-                is java.net.UnknownHostException -> "Nom de domaine introuvable : vérifiez l'adresse saisie."
-                is java.net.ConnectException -> "Connexion refusée : vérifiez que le serveur et le port sont ouverts."
-                is java.net.SocketTimeoutException -> "Délai d'attente dépassé (Timeout) : le serveur ne répond pas."
-                is IllegalArgumentException -> "Adresse du serveur invalide."
-                else -> e.localizedMessage ?: "Erreur réseau inconnue"
-            }
-            Result.failure(IOException(friendlyMsg, e))
+            Result.failure(e)
         }
     }
 
     /**
-     * Accepte un tableau JSON brut ou un objet paginé ("results" / "data").
+     * Accepts a raw JSON array or a paginated object ("results" / "data").
      */
     private fun extractArray(body: String): JSONArray {
         return if (body.trimStart().startsWith("[")) {
@@ -148,8 +142,8 @@ class DispatcharrClient(
     }
 
     /**
-     * Table epg_data_id -> tvg_id : les chaînes Dispatcharr référencent leur guide via epg_data_id,
-     * alors que la grille EPG est indexée par le tvg_id de l'EPGData.
+     * epg_data_id -> tvg_id table: Dispatcharr channels reference their guide through epg_data_id,
+     * while the EPG grid is indexed by the tvg_id of the EPGData.
      */
     private suspend fun fetchEpgDataMap(): Map<Int, DispatcharrEpgData> = withContext(Dispatchers.IO) {
         if (epgDataCache.isNotEmpty()) return@withContext epgDataCache
@@ -167,12 +161,12 @@ class DispatcharrClient(
         epgDataCache
     }
 
-    /** Liste EPGData (pour la correspondance par nom des chaînes sans epg_data_id). */
+    /** EPGData list (to match by name the channels without epg_data_id). */
     suspend fun getEpgData(): List<DispatcharrEpgData> = fetchEpgDataMap().values.toList()
 
     suspend fun getChannels(): Result<List<DispatcharrChannel>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
-            return@withContext Result.failure(IOException("Aucun serveur Dispatcharr configuré"))
+            return@withContext failure(R.string.error_dispatcharr_not_configured)
         }
 
         try {
@@ -187,14 +181,14 @@ class DispatcharrClient(
 
                 val body = client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw IOException(
+                        throw UserFacingException(
                             when (response.code) {
-                                401, 403 -> "Clé API refusée par le serveur (HTTP ${response.code})"
-                                else -> "Erreur HTTP ${response.code} : ${response.message}"
+                                401, 403 -> UiText.Res(R.string.error_dispatcharr_api_key_refused, response.code)
+                                else -> UiText.Res(R.string.error_server_http, response.code)
                             }
                         )
                     }
-                    response.body?.string() ?: throw IOException("Corps de réponse vide")
+                    response.body?.string() ?: throw UserFacingException(UiText.Res(R.string.error_empty_response))
                 }
 
                 val groupsMap = groupsDeferred.await()
@@ -205,10 +199,10 @@ class DispatcharrClient(
                 for (i in 0 until channelsArray.length()) {
                     val item = channelsArray.optJSONObject(i) ?: continue
                     val uuid = item.optStringOrNull("uuid") ?: item.optStringOrNull("id") ?: continue
-                    val name = item.optStringOrNull("effective_name") ?: item.optStringOrNull("name") ?: "Chaîne sans nom"
+                    val name = item.optStringOrNull("effective_name") ?: item.optStringOrNull("name") ?: "Unnamed channel"
 
                     val groupId = item.optInt("effective_channel_group_id", item.optInt("channel_group_id", -1))
-                    val group = groupsMap[groupId] ?: "Général"
+                    val group = groupsMap[groupId] ?: "General"
 
                     val logoId = item.optInt("effective_logo_id", item.optInt("logo_id", -1))
                     val logoUrl = if (logoId > 0) {
@@ -252,19 +246,19 @@ class DispatcharrClient(
     }
 
     /**
-     * Récupère la grille EPG complète optimisée (Supporte le tableau plat de programmes ou les canaux imbriqués).
-     * Les programmes sont indexés par tvg_id (ou uuid de chaîne pour les programmes "dummy").
+     * Fetches the full EPG grid (flat array of programs or channels with nested programs).
+     * Programs are indexed by tvg_id (or channel uuid for "dummy" programs).
      */
     suspend fun getEpgGrid(
         days: Int = 1,
         channelProfileId: String? = null
     ): Result<List<DispatcharrEpgChannel>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
-            return@withContext Result.failure(IOException("Aucun serveur Dispatcharr configuré"))
+            return@withContext failure(R.string.error_dispatcharr_not_configured)
         }
 
         val urlBuilder = "$baseUrl/api/epg/grid/".toHttpUrlOrNull()?.newBuilder()
-            ?: return@withContext Result.failure(IOException("URL invalide"))
+            ?: return@withContext failure(R.string.error_invalid_address)
 
         urlBuilder.addQueryParameter("days", days.toString())
         channelProfileId?.let { urlBuilder.addQueryParameter("channel_profile_id", it) }
@@ -277,17 +271,17 @@ class DispatcharrClient(
         try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return@withContext Result.failure(IOException("Erreur HTTP ${response.code}"))
+                    return@withContext failure(R.string.error_server_http, response.code)
                 }
 
-                val body = response.body?.string() ?: return@withContext Result.failure(IOException("Réponse vide"))
+                val body = response.body?.string() ?: return@withContext failure(R.string.error_empty_response)
                 val epgMap = mutableMapOf<String, MutableList<GuideProgram>>()
                 val dataArray = extractArray(body)
 
                 for (i in 0 until dataArray.length()) {
                     val item = dataArray.optJSONObject(i) ?: continue
 
-                    // CAS 1 : Objet Canal avec tableau "programs" imbriqué
+                    // Case 1: channel object with a nested "programs" array
                     if (item.has("programs")) {
                         val channelKey = item.optStringOrNull("tvg_id")
                             ?: item.optStringOrNull("channel_uuid")
@@ -301,7 +295,7 @@ class DispatcharrClient(
                             parseProgram(progObj, channelKey, "$channelKey-$j")?.let { progList.add(it) }
                         }
                     }
-                    // CAS 2 : Tableau plat de programmes individuels (format de /api/epg/grid/)
+                    // Case 2: flat array of individual programs (format of /api/epg/grid/)
                     else if (item.has("title")) {
                         val key = item.optStringOrNull("tvg_id")
                             ?: item.optStringOrNull("channel_uuid")
@@ -340,7 +334,7 @@ class DispatcharrClient(
         return GuideProgram(
             id = obj.optStringOrNull("id") ?: fallbackId,
             channelUuid = channelKey,
-            title = obj.optStringOrNull("title") ?: "Programme",
+            title = obj.optStringOrNull("title") ?: "Program",
             description = obj.optStringOrNull("description"),
             startTimeIso = startIso,
             endTimeIso = endIso,
@@ -352,8 +346,8 @@ class DispatcharrClient(
     }
 
     /**
-     * Visuels et catégories des programmes diffusés entre [fromMillis] et [toMillis], indexés par id de programme.
-     * La grille EPG ne les contient pas ; la recherche de programmes les expose dans custom_properties.
+     * Artwork and categories of the programs aired between [fromMillis] and [toMillis], indexed by program id.
+     * The EPG grid does not contain them; the program search exposes them in custom_properties.
      */
     suspend fun getProgramArtwork(fromMillis: Long, toMillis: Long): Map<String, ProgramArtwork> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) return@withContext emptyMap()
@@ -390,7 +384,7 @@ class DispatcharrClient(
     private fun isoInstant(millis: Long): String =
         java.time.Instant.ofEpochMilli(millis).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
 
-    /** Comptes M3U (fournisseurs) : nom affiché et état actif, mis en cache. */
+    /** M3U accounts (providers): display name and active state, cached. */
     private suspend fun fetchAccounts(): Map<Int, Pair<String, Boolean>> = withContext(Dispatchers.IO) {
         if (accountsCache.isNotEmpty()) return@withContext accountsCache
         if (baseUrl.isBlank()) return@withContext emptyMap()
@@ -407,19 +401,19 @@ class DispatcharrClient(
     }
 
     /**
-     * Flux disponibles pour une chaîne, dans l'ordre de priorité Dispatcharr.
-     * Le flux est lu à son URL d'origine, comme le fait Dispatcharr en profil "Redirect".
+     * Streams available for a channel, in Dispatcharr priority order.
+     * The stream is played from its original URL, as Dispatcharr does with the "Redirect" profile.
      */
     suspend fun getChannelStreams(channelServerId: String): Result<List<StreamSource>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
-            return@withContext Result.failure(IOException("Aucun serveur Dispatcharr configuré"))
+            return@withContext failure(R.string.error_dispatcharr_not_configured)
         }
 
         try {
             coroutineScope {
                 val accountsDeferred = async { fetchAccounts() }
                 val array = fetchArray("$baseUrl/api/channels/channels/$channelServerId/streams/")
-                    ?: throw IOException("Impossible de récupérer les flux de la chaîne")
+                    ?: throw UserFacingException(UiText.Res(R.string.error_channel_streams))
                 val accounts = accountsDeferred.await()
 
                 val streams = mutableListOf<StreamSource>()
@@ -434,7 +428,7 @@ class DispatcharrClient(
                     val url = item.optStringOrNull("url")
                         ?: item.optStringOrNull("stream_hash")?.let { "$baseUrl/proxy/ts/stream/$it" }
                         ?: continue
-                    val rawName = item.optStringOrNull("name") ?: "Flux ${i + 1}"
+                    val rawName = item.optStringOrNull("name") ?: "Stream ${i + 1}"
 
                     streams.add(
                         StreamSource(
@@ -455,7 +449,7 @@ class DispatcharrClient(
     }
 
     /**
-     * Prénom et identifiant du compte associé à la clé API (null si indisponible).
+     * First name and username of the account linked to the API key (null if unavailable).
      */
     suspend fun getCurrentUser(): Pair<String?, String?>? = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) return@withContext null

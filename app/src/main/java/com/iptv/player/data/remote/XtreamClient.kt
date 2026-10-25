@@ -1,5 +1,9 @@
 package com.iptv.player.data.remote
 
+import com.iptv.player.R
+import com.iptv.player.data.UiText
+import com.iptv.player.data.UserFacingException
+import com.iptv.player.data.failure
 import com.iptv.player.data.model.Channel
 import com.iptv.player.data.model.SourceConfig
 import com.iptv.player.data.model.StreamSource
@@ -13,10 +17,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 
 /**
- * Compte Xtream Codes authentifié.
+ * Authenticated Xtream Codes account.
  */
 data class XtreamAccount(
     val username: String,
@@ -27,7 +30,7 @@ data class XtreamAccount(
 )
 
 /**
- * Client de l'API Xtream Codes (player_api.php) : authentification, chaînes en direct et guide xmltv.php.
+ * Xtream Codes API client (player_api.php): authentication, live channels and xmltv.php guide.
  */
 object XtreamClient {
 
@@ -35,13 +38,13 @@ object XtreamClient {
         try {
             val root = JSONObject(get(apiUrl(config, action = null), config))
             val user = root.optJSONObject("user_info")
-                ?: return@withContext Result.failure(IOException("Réponse inattendue : ce serveur n'est pas une API Xtream Codes"))
+                ?: return@withContext failure(R.string.error_not_xtream_api)
             if (user.optInt("auth", 0) != 1) {
-                return@withContext Result.failure(IOException("Identifiant ou mot de passe refusé par le serveur"))
+                return@withContext failure(R.string.error_xtream_credentials_refused)
             }
             val status = user.optStringOrNull("status")
             if (status != null && !status.equals("Active", ignoreCase = true)) {
-                return@withContext Result.failure(IOException("Compte $status"))
+                return@withContext failure(R.string.error_xtream_account_status, status)
             }
             val formats = user.optJSONArray("allowed_output_formats")
                 ?.let { array -> (0 until array.length()).mapNotNull { array.optString(it).takeIf { f -> f.isNotBlank() } } }
@@ -56,7 +59,7 @@ object XtreamClient {
                 )
             )
         } catch (e: Exception) {
-            Result.failure(IOException(HttpClients.friendlyError(e), e))
+            Result.failure(e)
         }
     }
 
@@ -68,10 +71,10 @@ object XtreamClient {
                 val streams = JSONArray(get(apiUrl(config, "get_live_streams"), config))
                 val categories = categoriesDeferred.await().let { array ->
                     (0 until array.length()).mapNotNull { array.optJSONObject(it) }
-                        .associate { it.optString("category_id") to (it.optStringOrNull("category_name") ?: "Autres") }
+                        .associate { it.optString("category_id") to (it.optStringOrNull("category_name") ?: "Other") }
                 }
 
-                // TS en priorité (lecture progressive, démarrage rapide), sinon HLS
+                // TS first (progressive playback, fast start), else HLS
                 val formats = account.outputFormats.ifEmpty { listOf("ts", "m3u8") }
                 val preferred = if ("ts" in formats) "ts" else formats.firstOrNull { it == "m3u8" } ?: "ts"
                 val idPrefix = "xt-${config.id.take(8)}-"
@@ -94,8 +97,8 @@ object XtreamClient {
                     channels.add(
                         Channel(
                             id = idPrefix + streamId,
-                            name = item.optStringOrNull("name") ?: "Chaîne $streamId",
-                            group = categories[categoryId] ?: "Autres",
+                            name = item.optStringOrNull("name") ?: "Channel $streamId",
+                            group = categories[categoryId] ?: "Other",
                             logoUrl = item.optStringOrNull("stream_icon"),
                             streamUrl = streamUrl(config, streamId, preferred),
                             tvgId = item.optStringOrNull("epg_channel_id"),
@@ -115,12 +118,12 @@ object XtreamClient {
                 )
             }
         } catch (e: Exception) {
-            Result.failure(IOException(HttpClients.friendlyError(e), e))
+            Result.failure(e)
         }
     }
 
     private fun base(config: SourceConfig): HttpUrl =
-        config.normalizedUrl.toHttpUrlOrNull() ?: throw IllegalArgumentException("Adresse du serveur invalide")
+        config.normalizedUrl.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid server address")
 
     private fun apiUrl(config: SourceConfig, action: String?): HttpUrl =
         base(config).newBuilder()
@@ -154,23 +157,23 @@ object XtreamClient {
             .build()
         HttpClients.base.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException(
+                throw UserFacingException(
                     when (response.code) {
-                        401, 403 -> "Identifiant ou mot de passe refusé (HTTP ${response.code})"
-                        404 -> "API Xtream introuvable à cette adresse (HTTP 404)"
-                        else -> "Erreur serveur : HTTP ${response.code}"
+                        401, 403 -> UiText.Res(R.string.error_xtream_credentials_refused_http, response.code)
+                        404 -> UiText.Res(R.string.error_xtream_not_found)
+                        else -> UiText.Res(R.string.error_server_http, response.code)
                     }
                 )
             }
             val body = response.body?.string().orEmpty()
-            if (body.isBlank()) throw IOException("Réponse vide du serveur")
+            if (body.isBlank()) throw UserFacingException(UiText.Res(R.string.error_empty_response))
             return body
         }
     }
 
     /**
-     * Les utilisateurs collent souvent un lien complet (get.php?username=…&password=…) :
-     * renvoie l'adresse du serveur, l'identifiant et le mot de passe qu'il contient.
+     * Users often paste a full link (get.php?username=…&password=…):
+     * returns the server address, username and password it contains.
      */
     fun splitAccountUrl(text: String): Triple<String, String, String>? {
         val url = text.trim().let { if (it.contains("://")) it else "http://$it" }.toHttpUrlOrNull() ?: return null
