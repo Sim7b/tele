@@ -98,7 +98,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Architecture
 
 ```
-app/src/main/java/com/iptv/player/
+app/src/main/java/io/github/sim7b/tele/
 ├── MainActivity.kt          Single activity, navigation, welcome screen
 ├── MainViewModel.kt         Loads channels and guide for the active source
 ├── data/
