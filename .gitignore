@@ -1,0 +1,29 @@
+# Android Studio / Gradle
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+.DS_Store
+
+# Paquets compilés
+*.apk
+*.aab
+
+# Clés de signature et secrets : ne jamais publier
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Notes de travail locales (assistant IA, exports de serveur personnels)
+GEMINI.md
+.agents/
+channels_sample.json
+epg_sample.json
+epg_visualizer.html
