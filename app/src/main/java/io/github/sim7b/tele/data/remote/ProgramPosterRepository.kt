@@ -51,8 +51,7 @@ object ProgramPosterRepository {
             client.newCall(request).execute().use { response ->
                 when {
                     response.isSuccessful -> {
-                        val body = response.body?.string()
-                        if (body != null) result = extractLandscapeImage(JSONObject(body), cleanTitle)
+                        result = extractLandscapeImage(JSONObject(HttpClients.jsonString(response.body)), cleanTitle)
                     }
                     // 404 = no matching show; other codes (429, 5xx) are transient
                     response.code != 404 -> definitive = false

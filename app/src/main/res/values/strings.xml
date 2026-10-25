@@ -32,6 +32,8 @@
     <string name="error_timeout">Timeout: the server does not respond.</string>
     <string name="error_invalid_address">Invalid server address.</string>
     <string name="error_network_unknown">Unknown network error</string>
+    <string name="error_response_too_large">Response too large</string>
+    <string name="error_invalid_response">Invalid response from the server</string>
     <string name="error_empty_response">Empty response from the server</string>
     <string name="error_server_http">Server error: HTTP %1$d</string>
     <string name="error_dispatcharr_api_key_invalid">Invalid or unauthorized API key (HTTP %1$d)</string>

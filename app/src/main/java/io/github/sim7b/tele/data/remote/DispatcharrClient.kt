@@ -85,7 +85,7 @@ class DispatcharrClient(
                     }
                 }
 
-                val body = response.body?.string() ?: return@withContext failure(R.string.error_empty_response)
+                val body = HttpClients.jsonString(response.body)
                 val count = try {
                     extractArray(body).length()
                 } catch (e: Exception) {
@@ -116,7 +116,7 @@ class DispatcharrClient(
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
-                val body = response.body?.string() ?: return null
+                val body = HttpClients.jsonString(response.body)
                 extractArray(body)
             }
         } catch (e: Exception) {
@@ -188,7 +188,7 @@ class DispatcharrClient(
                             }
                         )
                     }
-                    response.body?.string() ?: throw UserFacingException(UiText.Res(R.string.error_empty_response))
+                    HttpClients.jsonString(response.body)
                 }
 
                 val groupsMap = groupsDeferred.await()
@@ -274,7 +274,7 @@ class DispatcharrClient(
                     return@withContext failure(R.string.error_server_http, response.code)
                 }
 
-                val body = response.body?.string() ?: return@withContext failure(R.string.error_empty_response)
+                val body = HttpClients.jsonString(response.body)
                 val epgMap = mutableMapOf<String, MutableList<GuideProgram>>()
                 val dataArray = extractArray(body)
 
@@ -457,7 +457,7 @@ class DispatcharrClient(
         try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
-                val user = JSONObject(response.body?.string() ?: return@withContext null)
+                val user = JSONObject(HttpClients.jsonString(response.body))
                 user.optStringOrNull("first_name") to user.optStringOrNull("username")
             }
         } catch (e: Exception) {

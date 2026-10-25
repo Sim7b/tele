@@ -72,7 +72,7 @@ object GuideLoader {
         val request = Request.Builder().url(url).header("User-Agent", userAgent).get().build()
         HttpClients.base.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-            val body = response.body ?: throw IOException("Empty response")
+            val body = response.body
             return read(body.byteStream())
         }
     }

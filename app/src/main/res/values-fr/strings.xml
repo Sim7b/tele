@@ -28,6 +28,8 @@
     <string name="error_timeout">Délai d\'attente dépassé : le serveur ne répond pas.</string>
     <string name="error_invalid_address">Adresse du serveur invalide.</string>
     <string name="error_network_unknown">Erreur réseau inconnue</string>
+    <string name="error_response_too_large">Réponse trop volumineuse</string>
+    <string name="error_invalid_response">Réponse invalide du serveur</string>
     <string name="error_empty_response">Réponse vide du serveur</string>
     <string name="error_server_http">Erreur serveur : HTTP %1$d</string>
     <string name="error_dispatcharr_api_key_invalid">Clé API non valide ou non autorisée (HTTP %1$d)</string>

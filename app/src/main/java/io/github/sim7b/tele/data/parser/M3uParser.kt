@@ -1,6 +1,5 @@
 package io.github.sim7b.tele.data.parser
 
-import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
 
@@ -33,11 +32,17 @@ object M3uParser {
     private val VOD_PATH_REGEX = """/(movie|series)/""".toRegex(RegexOption.IGNORE_CASE)
     private val VOD_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "m4v")
 
+    // Limits against huge or malicious playlists
+    private const val MAX_BYTES = 256L * 1024 * 1024
+    private const val MAX_LINE_LENGTH = 64 * 1024
+    private const val MAX_ENTRIES = 200_000
+
     /**
      * Reads the playlist line by line (provider playlists often exceed 50,000 entries).
+     * Lines are cut to [MAX_LINE_LENGTH] characters and the reading stops at [maxEntries] live channels.
      */
-    fun parse(input: InputStream): M3uPlaylist {
-        val reader = BufferedReader(InputStreamReader(input, Charsets.UTF_8), 64 * 1024)
+    fun parse(input: InputStream, maxBytes: Long = MAX_BYTES, maxEntries: Int = MAX_ENTRIES): M3uPlaylist {
+        val reader = BoundedLineReader(InputStreamReader(CappedInputStream(input, maxBytes), Charsets.UTF_8), MAX_LINE_LENGTH)
         val entries = ArrayList<M3uEntry>()
         val epgUrls = mutableListOf<String>()
 
@@ -45,7 +50,8 @@ object M3uParser {
         var title: String? = null
         var extGroup: String? = null
 
-        reader.forEachLine { raw ->
+        while (entries.size < maxEntries) {
+            val raw = reader.readLine() ?: break
             val line = raw.trim().removePrefix("\uFEFF")
             when {
                 line.isEmpty() -> Unit
