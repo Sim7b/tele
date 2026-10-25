@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.remote
 
+import android.util.Log
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UserFacingException
 import io.github.sim7b.tele.data.UiText
@@ -120,7 +121,8 @@ class DispatcharrClient(
                 extractArray(body)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Exception type only: parsing errors carry the response body
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
             null
         }
     }
@@ -466,6 +468,7 @@ class DispatcharrClient(
     }
 
     companion object {
+        private const val TAG = "Dispatcharr"
         const val DEFAULT_USER_AGENT = HttpClients.DEFAULT_USER_AGENT
         private const val ARTWORK_PAGE_SIZE = 500
         private const val MAX_ARTWORK_PAGES = 6

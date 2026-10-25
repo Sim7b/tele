@@ -2,6 +2,7 @@ package io.github.sim7b.tele.data.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.annotation.StringRes
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.epg.EpgResolver
@@ -113,7 +114,7 @@ class SettingsRepository(context: Context) {
                     list.add(SourceConfig.fromJson(obj))
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.w(TAG, "Unable to read the sources: ${e.javaClass.simpleName}")
             }
         }
 
@@ -152,7 +153,7 @@ class SettingsRepository(context: Context) {
                 )
             }.toMap()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Unable to read the selected streams: ${e.javaClass.simpleName}")
             emptyMap()
         }
     }
@@ -316,7 +317,7 @@ class SettingsRepository(context: Context) {
             }
             prefs.edit().putString(KEY_CACHED_CHANNELS, root.toString()).apply()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Unable to save the channel cache: ${e.javaClass.simpleName}")
         }
     }
 
@@ -367,7 +368,7 @@ class SettingsRepository(context: Context) {
                 )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Unable to read the channel cache: ${e.javaClass.simpleName}")
             return emptyList()
         }
         return list
@@ -438,6 +439,7 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
+        private const val TAG = "Settings"
         private const val PREFS_NAME = "iptv_dispatcharr_prefs"
         private const val KEY_CONFIGS = "dispatcharr_configs_list"
         private const val KEY_UI_DENSITY = "iptv_ui_density"
