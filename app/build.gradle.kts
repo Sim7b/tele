@@ -102,4 +102,8 @@ dependencies {
 
     // HTTP Client (OkHttp for resilient IPTV streams)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    testImplementation("junit:junit:4.13.2")
+    // Real org.json implementation: the Android stub throws in local unit tests
+    testImplementation("org.json:json:20240303")
 }
