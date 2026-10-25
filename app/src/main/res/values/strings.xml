@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">TV</string>
+    <string name="categories_title">Catégories</string>
+    <string name="channels_title">Chaînes</string>
+    <string name="favorites_title">Favoris</string>
+    <string name="settings_title">Paramètres</string>
+    <string name="play_button">Regarder</string>
+    <string name="loading_stream">Chargement du flux…</string>
+    <string name="error_stream">Impossible de charger cette chaîne. Vérifiez votre connexion.</string>
+</resources>
