@@ -10,6 +10,8 @@ import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import org.json.JSONException
+import org.xmlpull.v1.XmlPullParserException
 
 /**
  * User-facing text produced outside the UI (data layer, player): a string resource with its arguments,
@@ -44,15 +46,22 @@ fun UiText.resolve(): String = resolve(LocalResources.current)
 /** Error carrying a user-facing message. */
 class UserFacingException(val text: UiText, cause: Throwable? = null) : IOException(text.toString(), cause)
 
-/** User-facing message of an error: the text of a [UserFacingException], a known network error, else the raw message. */
+/**
+ * User-facing message of an error: the text of a [UserFacingException], a known network or parsing error,
+ * else the raw message, shortened. Parsing errors never show their message: org.json includes the whole
+ * response body in it, which may contain credentials (Xtream user_info).
+ */
 fun Throwable.toUiText(): UiText = when (this) {
     is UserFacingException -> text
     is UnknownHostException -> UiText.Res(R.string.error_unknown_host)
     is ConnectException -> UiText.Res(R.string.error_connection_refused)
     is SocketTimeoutException -> UiText.Res(R.string.error_timeout)
+    is JSONException, is XmlPullParserException -> UiText.Res(R.string.error_invalid_response)
     is IllegalArgumentException -> UiText.Res(R.string.error_invalid_address)
-    else -> localizedMessage?.let { UiText.Raw(it) } ?: UiText.Res(R.string.error_network_unknown)
+    else -> localizedMessage?.let { UiText.Raw(it.take(MAX_RAW_MESSAGE_LENGTH)) } ?: UiText.Res(R.string.error_network_unknown)
 }
+
+private const val MAX_RAW_MESSAGE_LENGTH = 200
 
 /** Shortcut for a failed [Result] carrying a string resource. */
 fun <T> failure(@StringRes id: Int, vararg args: Any): Result<T> =
