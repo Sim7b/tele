@@ -20,7 +20,7 @@ val appVersionCode = appVersion.split(".").map { it.toInt() }.let { (major, mino
 
 android {
     namespace = "com.iptv.player"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.iptv.player"
@@ -86,9 +86,9 @@ dependencies {
 
     // Jetpack Compose for TV (Official modern TV UI)
     implementation("androidx.tv:tv-foundation:1.0.0-alpha11")
-    implementation("androidx.tv:tv-material:1.0.0-rc01")
+    implementation("androidx.tv:tv-material:1.1.0")
     implementation("androidx.compose.material3:material3:1.2.1")
-    implementation("androidx.compose.material:material-icons-core:1.6.8")
+    implementation("androidx.compose.material:material-icons-core:1.7.8")
 
     // AndroidX Media3 (ExoPlayer - Modern Video Player engine)
     val media3Version = "1.4.0"
@@ -107,9 +107,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // HTTP Client (OkHttp for resilient IPTV streams)
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
 
     testImplementation("junit:junit:4.13.2")
     // Real org.json implementation: the Android stub throws in local unit tests
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 }

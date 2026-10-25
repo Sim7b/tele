@@ -1,10 +1,10 @@
 package com.iptv.player.data
 
-import android.content.Context
+import android.content.res.Resources
 import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import com.iptv.player.R
 import java.io.IOException
 import java.net.ConnectException
@@ -28,18 +28,18 @@ sealed interface UiText {
         override fun toString() = "UiText.Plural($id, $quantity, ${args.contentToString()})"
     }
 
-    fun resolve(context: Context): String = when (this) {
+    fun resolve(resources: Resources): String = when (this) {
         is Raw -> value
-        is Res -> context.getString(id, *resolveArgs(context, args))
-        is Plural -> context.resources.getQuantityString(id, quantity, *resolveArgs(context, args))
+        is Res -> resources.getString(id, *resolveArgs(resources, args))
+        is Plural -> resources.getQuantityString(id, quantity, *resolveArgs(resources, args))
     }
 
-    private fun resolveArgs(context: Context, args: Array<out Any>): Array<Any> =
-        args.map { if (it is UiText) it.resolve(context) else it }.toTypedArray()
+    private fun resolveArgs(resources: Resources, args: Array<out Any>): Array<Any> =
+        args.map { if (it is UiText) it.resolve(resources) else it }.toTypedArray()
 }
 
 @Composable
-fun UiText.resolve(): String = resolve(LocalContext.current)
+fun UiText.resolve(): String = resolve(LocalResources.current)
 
 /** Error carrying a user-facing message. */
 class UserFacingException(val text: UiText, cause: Throwable? = null) : IOException(text.toString(), cause)
