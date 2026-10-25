@@ -1,0 +1,53 @@
+---
+name: Build APK
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  apk:
+    # Release APKs are built and signed by the release workflow; this one is a debug build to try a change.
+    name: Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Java
+        uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          install_args: java
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Name the APK
+        id: apk
+        env:
+          SUFFIX: ${{ github.event.pull_request.number && format('pr{0}', github.event.pull_request.number) || github.ref_name }}
+        run: |
+          name="tele-${SUFFIX//\//-}-${GITHUB_SHA::7}-debug"
+          mv app/build/outputs/apk/debug/app-debug.apk "$name.apk"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.name }}.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -27,3 +27,7 @@ GEMINI.md
 channels_sample.json
 epg_sample.json
 epg_visualizer.html
+
+# Release tooling
+node_modules/
+dist/
