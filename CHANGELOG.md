@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.0](https://github.com/Sim7b/tele/compare/v0.1.2...v0.2.0) (2026-10-26)
+
+### Features
+
+* **home:** show free Dispatcharr playback slots ([5a7fbaf](https://github.com/Sim7b/tele/commit/5a7fbafa3f6a59d406573f8f83ae0997a3f277ec))
+
 ## [0.1.2](https://github.com/Sim7b/tele/compare/v0.1.1...v0.1.2) (2026-10-26)
 
 ### Bug Fixes
