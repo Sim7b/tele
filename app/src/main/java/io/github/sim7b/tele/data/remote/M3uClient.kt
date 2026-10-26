@@ -80,13 +80,13 @@ object M3uClient {
         }
     }
 
-    private fun download(config: SourceConfig): M3uPlaylist {
+    private suspend fun download(config: SourceConfig): M3uPlaylist {
         val request = Request.Builder()
             .url(config.normalizedUrl)
             .header("User-Agent", config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT)
             .get()
             .build()
-        HttpClients.base.newCall(request).execute().use { response ->
+        return HttpClients.base.newCall(request).executeCancellable { response ->
             if (!response.isSuccessful) {
                 throw UserFacingException(
                     when (response.code) {
@@ -96,8 +96,7 @@ object M3uClient {
                     }
                 )
             }
-            val body = response.body
-            return M3uParser.parse(body.byteStream())
+            M3uParser.parse(response.body.byteStream())
         }
     }
 }
