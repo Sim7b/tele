@@ -61,7 +61,9 @@ enum class AppAccentColor(
 class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val channelCache = ChannelCache(File(context.noBackupFilesDir, CHANNEL_CACHE_FILE))
+    // Sources, chosen streams and channel cache hold credentials: encrypted with a Keystore key
+    private val secrets = SecretBox.androidKeystore()
+    private val channelCache = ChannelCache(File(context.noBackupFilesDir, CHANNEL_CACHE_FILE), secrets)
 
     private val _configs = MutableStateFlow<List<SourceConfig>>(emptyList())
     val configs: StateFlow<List<SourceConfig>> = _configs.asStateFlow()
@@ -103,7 +105,8 @@ class SettingsRepository(context: Context) {
     }
 
     private fun loadConfigs() {
-        val rawJson = prefs.getString(KEY_CONFIGS, null)
+        val stored = prefs.getString(KEY_CONFIGS, null)
+        val rawJson = readSecret(stored)
         val list = mutableListOf<SourceConfig>()
 
         if (!rawJson.isNullOrBlank()) {
@@ -120,6 +123,20 @@ class SettingsRepository(context: Context) {
 
         _configs.value = list
         _activeConfig.value = list.firstOrNull { it.isActive } ?: list.firstOrNull()
+        // Sources saved in plain text by the previous versions: encrypted from now on
+        if (stored != null && !secrets.isEncrypted(stored) && list.isNotEmpty()) persistConfigs(list)
+    }
+
+    /** Decrypted value of a secret preference; a plain value of the previous versions is returned as is. */
+    private fun readSecret(stored: String?): String? = when {
+        stored.isNullOrBlank() -> null
+        !secrets.isEncrypted(stored) -> stored
+        else -> try {
+            secrets.decrypt(stored)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to decrypt a setting: ${e.javaClass.simpleName}")
+            null
+        }
     }
 
     private fun loadPreferences() {
@@ -136,10 +153,15 @@ class SettingsRepository(context: Context) {
         _hiddenIds.value = prefs.getStringSet(KEY_HIDDEN, emptySet()) ?: emptySet()
         _hiddenGroups.value = prefs.getStringSet(KEY_HIDDEN_GROUPS, emptySet()) ?: emptySet()
         _selectedStreams.value = loadSelectedStreams()
+        // Chosen streams saved in plain text by the previous versions (Xtream URLs embed the password)
+        prefs.getString(KEY_SELECTED_STREAMS, null)
+            ?.takeIf { it.isNotBlank() && !secrets.isEncrypted(it) }
+            ?.let { prefs.edit().putString(KEY_SELECTED_STREAMS, secrets.encrypt(it)).apply() }
     }
 
     private fun loadSelectedStreams(): Map<String, StreamSource> {
-        val raw = prefs.getString(KEY_SELECTED_STREAMS, null) ?: return emptyMap()
+        val stored = prefs.getString(KEY_SELECTED_STREAMS, null)
+        val raw = readSecret(stored) ?: return emptyMap()
         return try {
             val root = JSONObject(raw)
             root.keys().asSequence().mapNotNull { channelId ->
@@ -180,7 +202,7 @@ class SettingsRepository(context: Context) {
                 put("provider", s.provider)
             })
         }
-        prefs.edit().putString(KEY_SELECTED_STREAMS, root.toString()).apply()
+        prefs.edit().putString(KEY_SELECTED_STREAMS, secrets.encrypt(root.toString())).apply()
         _selectedStreams.value = current
     }
 
@@ -301,7 +323,7 @@ class SettingsRepository(context: Context) {
     private fun persistConfigs(list: List<SourceConfig>) {
         val array = JSONArray()
         list.forEach { array.put(it.toJson()) }
-        prefs.edit().putString(KEY_CONFIGS, array.toString()).apply()
+        prefs.edit().putString(KEY_CONFIGS, secrets.encrypt(array.toString())).apply()
 
         _configs.value = list
         _activeConfig.value = list.firstOrNull { it.isActive } ?: list.firstOrNull()
