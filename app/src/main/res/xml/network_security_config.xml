@@ -3,9 +3,19 @@
     Plain HTTP stays allowed for the user's sources: Dispatcharr servers on the local network,
     Xtream / M3U providers and their streams are often HTTP only. The fixed third-party services the
     app talks to (GitHub for updates, TVMaze for posters) are HTTPS only, so a downgrade is refused.
+
+    Trusted certificates: the system ones, plus the Let's Encrypt roots ISRG Root X1 and X2, which older
+    Android TV versions do not know (X2 only ships with Android 14): self-hosted servers using a recent
+    Let's Encrypt certificate stay reachable. User-installed certificates are still not trusted.
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x1" />
+            <certificates src="@raw/isrg_root_x2" />
+        </trust-anchors>
+    </base-config>
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">github.com</domain>
         <domain includeSubdomains="true">githubusercontent.com</domain>
