@@ -52,6 +52,8 @@ import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.playback.StreamInfo
 import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.ChannelListPanel
+import io.github.sim7b.tele.ui.components.ChannelNumberBadge
+import io.github.sim7b.tele.ui.components.rememberChannelNumberEntry
 import io.github.sim7b.tele.ui.components.LogoPlate
 import io.github.sim7b.tele.ui.components.ProgressLine
 import io.github.sim7b.tele.ui.components.StreamPickerDialog
@@ -83,6 +85,7 @@ fun PlayerScreen(
     val isLoading by playerManager.isLoading.collectAsState()
     val errorMessage by playerManager.error.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
+    val reconnection by playerManager.reconnection.collectAsState()
 
     var showOverlay by remember { mutableStateOf(true) }
     // Incremented on every requested display to restart the hide delay
@@ -159,10 +162,20 @@ fun PlayerScreen(
         onBack()
     }
 
+    // Remote digits: switch to the typed channel number
+    val numberEntry = rememberChannelNumberEntry(channels) { selected ->
+        if (selected.id != channel.id) onSelectChannel(selected)
+    }
+
     // Declared after: takes priority while the channel panel is open
     BackHandler(enabled = showChannelPanel) {
         showChannelPanel = false
         refocusToken++
+    }
+
+    // Back while typing a number only cancels it
+    BackHandler(enabled = numberEntry.isTyping) {
+        numberEntry.cancel()
     }
 
     Box(
@@ -174,6 +187,7 @@ fun PlayerScreen(
             .onKeyEvent { keyEvent ->
                 // Panel open: its rows handle navigation (up/down must no longer switch channels)
                 if (showChannelPanel) return@onKeyEvent false
+                if (numberEntry.onKey(keyEvent)) return@onKeyEvent true
                 if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
                 val repeatCount = keyEvent.nativeKeyEvent.repeatCount
                 when (keyEvent.nativeKeyEvent.keyCode) {
@@ -186,9 +200,13 @@ fun PlayerScreen(
                         onPreviousChannel()
                         true
                     }
-                    // OK: shows the banner; long press: stream choice
+                    // OK: shows the banner (retries after an error); long press: stream choice
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                        if (repeatCount == 1) showStreamPicker = true else if (repeatCount == 0) revealOverlay()
+                        when {
+                            repeatCount == 1 -> showStreamPicker = true
+                            repeatCount == 0 && errorMessage != null -> playerManager.retry()
+                            repeatCount == 0 -> revealOverlay()
+                        }
                         true
                     }
                     KeyEvent.KEYCODE_MENU -> {
@@ -274,10 +292,34 @@ fun PlayerScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
+                    text = stringResource(R.string.player_retry_hint),
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
                     text = stringResource(R.string.player_other_stream_hint),
                     color = Color.White.copy(alpha = 0.85f),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Discreet reconnection indicator after a drop (the spinner shows the loading itself)
+        reconnection?.let { attempt ->
+            if (errorMessage == null) {
+                Text(
+                    text = stringResource(R.string.player_reconnecting, attempt.attempt, attempt.maxAttempts),
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(top = 84.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
                 )
             }
         }
@@ -291,6 +333,14 @@ fun PlayerScreen(
         ) {
             PlayerOverlay(channel = channel, streamInfo = streamInfo)
         }
+
+        ChannelNumberBadge(
+            entry = numberEntry,
+            channels = channels,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 32.dp, end = 48.dp)
+        )
 
         // Channel panel (left arrow): the video keeps playing behind
         AnimatedVisibility(

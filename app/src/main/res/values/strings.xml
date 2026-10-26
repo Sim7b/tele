@@ -79,6 +79,7 @@
     <string name="player_error_connection_limit">Provider connection limit reached (HTTP %1$d)</string>
     <string name="player_error_http">The stream server responded HTTP %1$d</string>
     <string name="player_error_connection_failed">Unable to connect to the stream</string>
+    <string name="player_error_live_window">The provider\'s live stream is out of sync</string>
     <string name="player_error_unsupported_format">Unsupported stream format</string>
     <string name="player_error_generic">Playback error (%1$s)</string>
 
@@ -187,6 +188,8 @@
     <!-- Player -->
     <string name="player_playback_failed">Unable to play</string>
     <string name="player_other_stream_hint">Hold OK to choose another stream</string>
+    <string name="player_retry_hint">Press OK to retry</string>
+    <string name="player_reconnecting">Reconnecting… %1$d/%2$d</string>
     <string name="player_live">LIVE</string>
     <string name="player_next_program">"Next %1$s  ·  %2$s"</string>
     <string name="player_fps" translatable="false">%1$d FPS</string>
@@ -258,4 +261,7 @@
         <item quantity="one">%1$d result</item>
         <item quantity="other">%1$d results</item>
     </plurals>
+
+    <!-- Channel number typed with the remote -->
+    <string name="channel_number_not_found">No channel %1$d</string>
 </resources>

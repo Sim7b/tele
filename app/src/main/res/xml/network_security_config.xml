@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Plain HTTP stays allowed for the user's sources: Dispatcharr servers on the local network,
+    Xtream / M3U providers and their streams are often HTTP only. The fixed third-party services the
+    app talks to (GitHub for updates, TVMaze for posters) are HTTPS only, so a downgrade is refused.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <domain includeSubdomains="true">tvmaze.com</domain>
+    </domain-config>
+</network-security-config>

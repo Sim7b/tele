@@ -12,10 +12,10 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 - Reorderable **favorites** on the grid, hideable **channels** and **categories**.
 - **Search** by channel name, number or current program, typed with the TV keyboard or spoken (microphone button, or the remote's search key).
 - **Player** (Media3 / ExoPlayer, hardware decoding):
-  - channel switching with ↑ / ↓ and CH+ / CH−;
+  - channel switching with ↑ / ↓ and CH+ / CH−, or by typing the channel number with the remote digits (also from the home screen);
   - info banner: current and next program, resolution, codecs;
   - **channel panel** (← key) with the guide, over the live stream;
-  - automatic retries and explicit error messages.
+  - automatic reconnection when a stream drops (also when the network comes back), explicit error messages, OK to retry.
 - **Stream picker** (long press on a channel, or OK during playback): Dispatcharr streams with provider and quality, or TS / HLS variants with Xtream. The choice is saved per channel.
 - **EPG guide**:
   - Dispatcharr: server grid, program artwork and categories;
@@ -23,6 +23,11 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Appearance**: 6 backgrounds including a light theme, 6 accent colors, 3 interface densities.
 - **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → Updates** after the system confirmation.
+- **Credentials encrypted** on the device with a key kept in the Android Keystore.
+
+| Search | Channel number |
+|---|---|
+| ![Search](docs/screenshots/search.png) | ![Channel number](docs/screenshots/channel-number.jpg) |
 
 ![Stream picker](docs/screenshots/stream-picker.png)
 
@@ -133,7 +138,7 @@ Technical choices:
 
 ## Privacy
 
-Sources, API keys and passwords are stored **only on the device**. The app contains no server and no default credentials.
+Sources, API keys and passwords are stored **only on the device**, encrypted with a key that never leaves the Android Keystore. The app contains no server and no default credentials.
 
 The only requests to a third-party service are poster searches on [TVMaze](https://www.tvmaze.com/api), and only when the source provides no artwork for a program. These requests only contain the program title. Update checks query the public GitHub API for the latest release of this repository and send no data about you or your sources.
 

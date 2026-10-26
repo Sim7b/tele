@@ -7,6 +7,8 @@ import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.optStringOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedInputStream
+import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
 
@@ -16,14 +18,17 @@ import java.io.IOException
  * Stored in its own file, one JSON object per line: playlists may hold tens of thousands of channels,
  * which must neither sit in the SharedPreferences (loaded at once, rewritten on every setting change)
  * nor be read as a single huge string. To be used off the main thread.
+ *
+ * With a [secrets] box, the file is encrypted (stream URLs may embed credentials); a plain cache of the
+ * previous versions is still read, and replaced by an encrypted one on the next save.
  */
-class ChannelCache(private val file: File) {
+class ChannelCache(private val file: File, private val secrets: SecretBox? = null) {
 
     /** Replaces the cache with the channels of source [configId] (written to a temporary file, then renamed). */
     fun save(configId: String, channels: List<Channel>) {
         val temp = File(file.parentFile, file.name + ".tmp")
         try {
-            temp.bufferedWriter().use { writer ->
+            temp.outputStream().let { secrets?.encryptingStream(it) ?: it }.bufferedWriter().use { writer ->
                 writer.write(JSONObject().put(KEY_CONFIG_ID, configId).toString())
                 writer.newLine()
                 channels.forEach { channel ->
@@ -43,7 +48,7 @@ class ChannelCache(private val file: File) {
      */
     fun load(configId: String, now: Long = System.currentTimeMillis()): List<Channel> {
         if (!file.exists()) return emptyList()
-        file.bufferedReader().use { reader ->
+        openReader().use { reader ->
             val header = reader.readLine()?.let { JSONObject(it) } ?: return emptyList()
             if (header.optString(KEY_CONFIG_ID) != configId) return emptyList()
             val channels = ArrayList<Channel>()
@@ -53,6 +58,24 @@ class ChannelCache(private val file: File) {
             }
             return channels
         }
+    }
+
+    /** Reader of the cache, decrypted when it starts with the encrypted stream marker. */
+    private fun openReader(): BufferedReader {
+        val input = BufferedInputStream(file.inputStream())
+        val magic = SecretBox.STREAM_MAGIC
+        input.mark(magic.size)
+        val head = ByteArray(magic.size)
+        val read = input.read(head)
+        if (read == magic.size && head.contentEquals(magic)) {
+            val box = secrets ?: run {
+                input.close()
+                throw IOException("Encrypted channel cache without a key")
+            }
+            return box.decryptingStream(input).bufferedReader()
+        }
+        input.reset()
+        return input.bufferedReader()
     }
 
     fun clear() {
