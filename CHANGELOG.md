@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.5](https://github.com/Sim7b/tele/compare/v0.3.4...v0.3.5) (2026-10-26)
+
+### Bug Fixes
+
+* **network:** connect to TLS 1.3-only servers on Android 9 and older ([0171da2](https://github.com/Sim7b/tele/commit/0171da2b9bc3a90d2475beed076a563c3b491bf1))
+
 ## [0.3.4](https://github.com/Sim7b/tele/compare/v0.3.3...v0.3.4) (2026-10-26)
 
 ### Features
