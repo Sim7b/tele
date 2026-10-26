@@ -43,6 +43,7 @@ import io.github.sim7b.tele.ui.components.FavoriteChannelCard
 import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.SectionLabel
+import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
@@ -371,7 +372,7 @@ fun HomeScreen(
                         ) {
                             items(categories) { category ->
                                 DiscreteCategoryChip(
-                                    text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else category,
+                                    text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else groupLabel(category),
                                     isSelected = category == effectiveCategory,
                                     onClick = { selectedCategory = category },
                                     onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category })

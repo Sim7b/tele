@@ -163,7 +163,7 @@ fun FavoriteChannelCard(
                 Spacer(modifier = Modifier.height(1.dp))
                 Text(
                     text = when {
-                        program == null -> channel.group
+                        program == null -> groupLabel(channel.group)
                         !program.nextTitle.isNullOrBlank() ->
                             stringResource(R.string.card_time_range_then, program.startTime, program.endTime, program.nextTitle)
                         else -> "${program.startTime} – ${program.endTime}"
@@ -468,7 +468,7 @@ fun ChannelActionMenuDialog(
         DialogPanel(width = 560.dp) {
             DialogHeader(
                 channel = channel,
-                subtitle = channel.currentProgram?.let { "${it.startTime} – ${it.endTime}  ·  ${it.title}" } ?: channel.group
+                subtitle = channel.currentProgram?.let { "${it.startTime} – ${it.endTime}  ·  ${it.title}" } ?: groupLabel(channel.group)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -688,7 +688,7 @@ fun CategoryActionDialog(
 
         DialogPanel(width = 460.dp) {
             Text(
-                text = category,
+                text = groupLabel(category),
                 fontSize = 19.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,

@@ -71,7 +71,7 @@ object XtreamClient {
                 val categoriesDeferred = async {
                     val categories = HashMap<String, String>()
                     forEachObject(apiUrl(config, "get_live_categories"), config) {
-                        categories[it.optString("category_id")] = it.optStringOrNull("category_name") ?: "Other"
+                        categories[it.optString("category_id")] = it.optStringOrNull("category_name") ?: Channel.NO_GROUP
                     }
                     categories
                 }
@@ -93,7 +93,7 @@ object XtreamClient {
                         ?: item.optJSONArray("category_ids")?.optString(0)
                     val variants = formats.filter { it == "ts" || it == "m3u8" }.map { format ->
                         StreamSource(
-                            name = if (format == "ts") "MPEG-TS (direct)" else "HLS",
+                            name = if (format == "ts") "MPEG-TS" else "HLS",
                             url = streamUrl(config, streamId, format),
                             id = "xtream-$format",
                             provider = account.username,
@@ -104,7 +104,7 @@ object XtreamClient {
                     channels.add(
                         Channel(
                             id = idPrefix + streamId,
-                            name = item.optStringOrNull("name") ?: "Channel $streamId",
+                            name = item.optStringOrNull("name") ?: "#$streamId",
                             group = "",
                             logoUrl = item.optStringOrNull("stream_icon"),
                             streamUrl = streamUrl(config, streamId, preferred),
@@ -116,7 +116,7 @@ object XtreamClient {
                 }
                 val categories = categoriesDeferred.await()
                 for (i in channels.indices) {
-                    channels[i] = channels[i].copy(group = categories[categoryIds[i]] ?: "Other")
+                    channels[i] = channels[i].copy(group = categories[categoryIds[i]] ?: Channel.NO_GROUP)
                 }
                 channels.sortBy { it.number ?: Int.MAX_VALUE }
 
