@@ -21,6 +21,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - Dispatcharr: server grid, program artwork and categories;
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
+- **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → Help**.
 - **Appearance**: 6 backgrounds including a light theme, 6 accent colors, 3 interface densities.
 - **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → Updates** after the system confirmation.
 - **Credentials encrypted** on the device with a key kept in the Android Keystore.

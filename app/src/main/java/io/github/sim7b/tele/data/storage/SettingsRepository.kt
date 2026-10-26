@@ -95,6 +95,10 @@ class SettingsRepository(context: Context) {
     // Declared before init {} so that it is not reset after the preferences are loaded.
     private var legacyFavoritesUnordered = false
 
+    // Quick start guide already shown (or skipped): it only opens by itself on the first launch
+    private val _guideSeen = MutableStateFlow(false)
+    val guideSeen: StateFlow<Boolean> = _guideSeen.asStateFlow()
+
     // Stream selected manually per channel (absent = Dispatcharr automatic mode)
     private val _selectedStreams = MutableStateFlow<Map<String, StreamSource>>(emptyMap())
     val selectedStreams: StateFlow<Map<String, StreamSource>> = _selectedStreams.asStateFlow()
@@ -140,6 +144,7 @@ class SettingsRepository(context: Context) {
     }
 
     private fun loadPreferences() {
+        _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
         val savedDensity = prefs.getString(KEY_UI_DENSITY, UiDensity.NORMAL.name)
         _uiDensity.value = try { UiDensity.valueOf(savedDensity ?: UiDensity.NORMAL.name) } catch (e: Exception) { UiDensity.NORMAL }
 
@@ -219,6 +224,11 @@ class SettingsRepository(context: Context) {
     fun setAccentColor(accent: AppAccentColor) {
         prefs.edit().putString(KEY_ACCENT_COLOR, accent.name).apply()
         _accentColor.value = accent
+    }
+
+    fun setGuideSeen() {
+        prefs.edit().putBoolean(KEY_GUIDE_SEEN, true).apply()
+        _guideSeen.value = true
     }
 
     /** Favorites order; migrates the legacy unordered storage when it does not exist yet. */
@@ -398,6 +408,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_CACHED_CHANNELS = "iptv_cached_channels_json"
         private const val KEY_SELECTED_STREAMS = "iptv_selected_streams"
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
+        private const val KEY_GUIDE_SEEN = "guide_seen"
         private const val CHANNEL_CACHE_FILE = "channel_cache.jsonl"
     }
 }

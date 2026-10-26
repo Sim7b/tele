@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,6 +90,7 @@ fun SettingsScreen(
     categories: List<Pair<String, Int>> = emptyList(),
     onRefreshPlaylist: () -> Unit = {},
     onRefreshEpg: () -> Unit = {},
+    onShowGuide: () -> Unit = {},
     installedVersion: String = "",
     updatesSupported: Boolean = false,
     updateState: UpdateState = UpdateState.Idle,
@@ -387,6 +389,20 @@ fun SettingsScreen(
                             refocusAfterDelete++
                         }
                     )
+                }
+
+                // LAST SECTION: HELP
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_help_title),
+                        description = stringResource(R.string.settings_help_description)
+                    ) {
+                        ActionButton(
+                            label = stringResource(R.string.settings_show_guide),
+                            icon = Icons.Filled.Info,
+                            onClick = onShowGuide
+                        )
+                    }
                 }
             }
         }

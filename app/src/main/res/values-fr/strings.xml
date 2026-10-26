@@ -264,4 +264,27 @@
 
     <!-- Channel number typed with the remote -->
     <string name="channel_number_not_found">Aucune chaîne n° %1$d</string>
+
+    <!-- Quick start guide -->
+    <string name="guide_welcome_title">Bienvenue sur Télé</string>
+    <string name="guide_welcome_1">Télé se pilote entièrement à la télécommande : flèches pour se déplacer, OK pour ouvrir, Retour pour revenir.</string>
+    <string name="guide_welcome_2">Commencez par ajouter une source (Dispatcharr, Xtream Codes ou playlist M3U) dans les paramètres, avec l\'engrenage en haut à droite.</string>
+    <string name="guide_home_title">À l\'accueil</string>
+    <string name="guide_home_1">Vos favoris en haut, puis les catégories et toutes les chaînes.</string>
+    <string name="guide_home_2">OK maintenu sur une chaîne : l\'ajouter aux favoris, la masquer, choisir son flux ou la déplacer.</string>
+    <string name="guide_home_3">OK maintenu sur une catégorie pour la masquer.</string>
+    <string name="guide_player_title">Pendant la lecture</string>
+    <string name="guide_player_1">↑ ↓ ou CH+ CH− : chaîne suivante ou précédente.</string>
+    <string name="guide_player_2">Chiffres : aller directement à un numéro de chaîne.</string>
+    <string name="guide_player_3">← : liste des chaînes avec le guide, par-dessus l\'image.</string>
+    <string name="guide_player_4">OK : infos du programme · OK maintenu : choisir un autre flux.</string>
+    <string name="guide_search_title">Recherche et le reste</string>
+    <string name="guide_search_1">La loupe en haut de l\'accueil trouve une chaîne par nom, numéro ou programme, au clavier ou à la voix.</string>
+    <string name="guide_search_2">Un petit point sur l\'engrenage : une mise à jour est prête à installer.</string>
+    <string name="guide_search_3">Ce guide reste disponible dans les paramètres.</string>
+    <string name="guide_hint_next">→ ou OK : suivant · Retour : passer</string>
+    <string name="guide_hint_last">OK : c\'est parti · ← : précédent</string>
+    <string name="settings_help_title">Aide</string>
+    <string name="settings_help_description">Les principaux gestes à la télécommande, en quelques pages</string>
+    <string name="settings_show_guide">Revoir le guide de démarrage</string>
 </resources>
