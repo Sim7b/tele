@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.1](https://github.com/Sim7b/tele/compare/v0.1.0...v0.1.1) (2026-10-26)
+
+### Bug Fixes
+
+* **ci:** pass the bot Client ID to create-github-app-token ([c35f643](https://github.com/Sim7b/tele/commit/c35f643398ed2f9358a29be61b8713384f6985c3))
+
 ## [0.1.0](https://github.com/Sim7b/tele/compare/v0.0.0...v0.1.0) (2026-10-25)
 
 ### Features
