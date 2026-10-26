@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.2](https://github.com/Sim7b/tele/compare/v0.3.1...v0.3.2) (2026-10-26)
+
+### Features
+
+* **search:** search channels by text or voice ([04e7f7f](https://github.com/Sim7b/tele/commit/04e7f7fb60d8ba99714c48a8c9559f9734aaa3ed))
+
+### Bug Fixes
+
+* **home:** move down from the favorites to the categories ([2c8ce1c](https://github.com/Sim7b/tele/commit/2c8ce1cf55824b6146164a70d3c24585aba78741))
+* **search:** restore the focus on the opened channel after playback ([039a133](https://github.com/Sim7b/tele/commit/039a133b2ab65a86877d9966dbef7e9828e2e24f))
+
 ## [0.3.1](https://github.com/Sim7b/tele/compare/v0.3.0...v0.3.1) (2026-10-26)
 
 ### Features
