@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.TextureView
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -78,6 +79,8 @@ class TvPlayerManager(private val context: Context) {
     private val extractorsFactory = DefaultExtractorsFactory()
         .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
     private var retryCount = 0
+    // Muted home preview in progress (see preview)
+    private var previewing = false
     // The current stream has played at least once: a drop gets more (and visible) reconnection attempts
     private var hasPlayed = false
     // HLS playlist served without the .m3u8 extension: detected when the progressive extractors reject it
@@ -287,6 +290,18 @@ class TvPlayerManager(private val context: Context) {
      * before the error is shown.
      */
     fun playStream(url: String, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
+        // The home preview of this very channel keeps playing: the sound comes back without a new start
+        val player = exoPlayer
+        if (previewing && url == currentUrl && player != null && _error.value == null &&
+            (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+        ) {
+            endPreviewMode(player)
+            fallbackUrls.clear()
+            fallbackUrls.addAll(fallbacks)
+            currentAuths = auths
+            return
+        }
+        player?.let { endPreviewMode(it) }
         fallbackUrls.clear()
         fallbackUrls.addAll(fallbacks)
         zapStartedAt = SystemClock.elapsedRealtime()
@@ -300,6 +315,41 @@ class TvPlayerManager(private val context: Context) {
         _reconnection.value = null
         _streamInfo.value = StreamInfo()
         prepareCurrent()
+    }
+
+    /**
+     * Muted preview of [url] on the home screen, in at most 720p (less bandwidth). Opening the channel
+     * afterwards keeps it playing with the sound (see [playStream]).
+     */
+    fun preview(url: String, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList()) {
+        if (previewing && url == currentUrl) return
+        playStream(url, customUserAgent, auths)
+        val player = getPlayer()
+        previewing = true
+        player.volume = 0f
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setMaxVideoSize(PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT)
+            .build()
+    }
+
+    /** Stops the home preview (focus moved, home screen left); a channel played in full is not affected. */
+    fun stopPreview() {
+        if (previewing) stop()
+    }
+
+    /** Video output of the home preview (a TextureView: it can sit inside a scrolling list). */
+    fun attachPreviewSurface(view: TextureView) = getPlayer().setVideoTextureView(view)
+
+    fun detachPreviewSurface(view: TextureView) {
+        exoPlayer?.clearVideoTextureView(view)
+    }
+
+    private fun endPreviewMode(player: ExoPlayer) {
+        previewing = false
+        player.volume = 1f
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearVideoSizeConstraints()
+            .build()
     }
 
     /** New series of attempts on the current stream (OK on the error message, network back). */
@@ -359,6 +409,7 @@ class TvPlayerManager(private val context: Context) {
      */
     fun stop() {
         mainHandler.removeCallbacks(retryRunnable)
+        previewing = false
         currentUrl = null
         fallbackUrls.clear()
         retryCount = 0
@@ -386,6 +437,8 @@ class TvPlayerManager(private val context: Context) {
 
     companion object {
         const val PERF_TAG = "TVPerf"
+        private const val PREVIEW_MAX_WIDTH = 1280
+        private const val PREVIEW_MAX_HEIGHT = 720
         private val DEFINITIVE_HTTP_ERRORS = setOf(401, 403, 404, 410)
     }
 }
