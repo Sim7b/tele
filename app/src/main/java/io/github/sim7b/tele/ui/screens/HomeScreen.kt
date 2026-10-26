@@ -27,10 +27,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.TvLazyRow
-import androidx.tv.foundation.lazy.list.items
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.*
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -99,8 +99,8 @@ fun HomeScreen(
     // Saved states: restored when coming back from the player or the settings
     var selectedCategory by rememberSaveable { mutableStateOf(ALL_CATEGORIES) }
     var lastFocusedKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val listState = rememberTvLazyListState()
-    val categoriesState = rememberTvLazyListState()
+    val listState = rememberLazyListState()
+    val categoriesState = rememberLazyListState()
 
     var actionMenuChannel by remember { mutableStateOf<Channel?>(null) }
     var categoryMenu by remember { mutableStateOf<String?>(null) }
@@ -292,7 +292,7 @@ fun HomeScreen(
                     }
                 }
             } else {
-                TvLazyColumn(
+                LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
@@ -352,7 +352,7 @@ fun HomeScreen(
 
                     // SECTION 2: CATEGORIES
                     item {
-                        TvLazyRow(
+                        LazyRow(
                             state = categoriesState,
                             modifier = Modifier
                                 .fillMaxWidth()

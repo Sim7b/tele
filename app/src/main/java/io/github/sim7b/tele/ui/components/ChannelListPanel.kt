@@ -35,9 +35,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.itemsIndexed
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
@@ -79,7 +79,7 @@ fun ChannelListPanel(
     // The playing channel (or the first one of the category) gets the focus on opening
     val focusTargetId = shown.firstOrNull { it.id == playingChannelId }?.id ?: shown.firstOrNull()?.id
     val focusTargetIndex = shown.indexOfFirst { it.id == focusTargetId }.coerceAtLeast(0)
-    val listState = rememberTvLazyListState(initialFirstVisibleItemIndex = (focusTargetIndex - 2).coerceAtLeast(0))
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (focusTargetIndex - 2).coerceAtLeast(0))
     val initialFocus = remember { FocusRequester() }
     var focusedIndex by remember { mutableIntStateOf(focusTargetIndex) }
     var interactions by remember { mutableIntStateOf(0) }
@@ -145,7 +145,7 @@ fun ChannelListPanel(
                 count = shown.size
             )
 
-            TvLazyColumn(
+            LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 18.dp, end = 10.dp, top = 4.dp, bottom = 12.dp),
