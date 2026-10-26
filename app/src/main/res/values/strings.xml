@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">TV</string>
+    <string name="app_name" translatable="false">Télé</string>
 
     <!-- Source types -->
     <string name="source_type_dispatcharr" translatable="false">Dispatcharr</string>
