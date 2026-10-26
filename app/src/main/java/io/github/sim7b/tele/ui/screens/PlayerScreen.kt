@@ -72,7 +72,8 @@ fun PlayerScreen(
     channel: Channel,
     channels: List<Channel>,
     playerManager: TvPlayerManager,
-    streamAuth: ApiKeyAuth? = null,
+    // Dispatcharr keys of the enabled servers: each one only goes to its own server (origin check)
+    streamAuths: List<ApiKeyAuth> = emptyList(),
     userAgent: String? = null,
     loadStreams: suspend () -> Result<List<StreamSource>>,
     // Streams to try in automatic mode, best quality first (empty: the channel URL as is)
@@ -100,7 +101,7 @@ fun PlayerScreen(
 
     val streamUrl = channel.activeStreamUrl
     val currentStreamUrl by rememberUpdatedState(streamUrl)
-    val currentStreamAuth by rememberUpdatedState(streamAuth)
+    val currentStreamAuths by rememberUpdatedState(streamAuths)
     val currentUserAgent by rememberUpdatedState(userAgent)
     val currentChannel by rememberUpdatedState(channel)
     val scope = rememberCoroutineScope()
@@ -112,7 +113,7 @@ fun PlayerScreen(
 
     // Channel start (and on every channel switch / stream change)
     val lastStartRequestAt = remember { mutableLongStateOf(0L) }
-    LaunchedEffect(streamUrl, streamAuth, userAgent) {
+    LaunchedEffect(streamUrl, streamAuths, userAgent) {
         revealOverlay()
         // Zapping through several channels: only the one the user stops on is opened, providers often
         // limit simultaneous connections (the banner already shows the new channel)
@@ -124,7 +125,7 @@ fun PlayerScreen(
         playerManager.playStream(
             urls.firstOrNull() ?: streamUrl,
             customUserAgent = userAgent,
-            auth = streamAuth,
+            auths = streamAuths,
             fallbacks = urls.drop(1)
         )
     }
@@ -160,7 +161,7 @@ fun PlayerScreen(
                         playerManager.playStream(
                             urls.firstOrNull() ?: currentStreamUrl,
                             customUserAgent = currentUserAgent,
-                            auth = currentStreamAuth,
+                            auths = currentStreamAuths,
                             fallbacks = urls.drop(1)
                         )
                     }

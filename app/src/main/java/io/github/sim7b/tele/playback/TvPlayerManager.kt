@@ -61,7 +61,7 @@ class TvPlayerManager(private val context: Context) {
     private val fallbackUrls = ArrayDeque<String>()
     private var currentUserAgent: String? = null
     @Volatile
-    private var currentAuth: ApiKeyAuth? = null
+    private var currentAuths: List<ApiKeyAuth> = emptyList()
 
     /**
      * Player HTTP client, derived from the shared client (TLS connections reused from one channel to the next).
@@ -71,7 +71,7 @@ class TvPlayerManager(private val context: Context) {
     private val streamHttpClient = HttpClients.base.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
-        .addNetworkInterceptor(ApiKeyInterceptor { currentAuth })
+        .addNetworkInterceptor(ApiKeyInterceptor { request -> currentAuths.firstOrNull { it.appliesTo(request.url) } })
         .build()
 
     // TS: non-IDR keyframes (common in IPTV) are enough to show the first frame sooner
@@ -286,13 +286,13 @@ class TvPlayerManager(private val context: Context) {
      * Plays [url]; when it fails for good (refused, or every retry spent), [fallbacks] are tried in order
      * before the error is shown.
      */
-    fun playStream(url: String, customUserAgent: String? = null, auth: ApiKeyAuth? = null, fallbacks: List<String> = emptyList()) {
+    fun playStream(url: String, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
         fallbackUrls.clear()
         fallbackUrls.addAll(fallbacks)
         zapStartedAt = SystemClock.elapsedRealtime()
         currentUrl = url
         currentUserAgent = customUserAgent
-        currentAuth = auth
+        currentAuths = auths
         retryCount = 0
         hasPlayed = false
         forceHls = false

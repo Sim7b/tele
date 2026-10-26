@@ -52,6 +52,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -64,6 +65,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.*
+import io.github.sim7b.tele.data.bouquet.BouquetPreference
+import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.storage.AppAccentColor
@@ -101,11 +104,13 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val configs by repository.configs.collectAsState()
-    val activeConfig by repository.activeConfig.collectAsState()
+    val enabledConfigs by repository.enabledConfigs.collectAsState()
+    val categoryMode by repository.categoryMode.collectAsState()
     val currentDensity by repository.uiDensity.collectAsState()
     val currentTheme by repository.themeBackground.collectAsState()
     val currentAccent by repository.accentColor.collectAsState()
     val currentQuality by repository.qualityPreference.collectAsState()
+    val currentBouquet by repository.bouquet.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
 
@@ -318,6 +323,29 @@ fun SettingsScreen(
                     }
                 }
 
+                // SECTION 3C: REFERENCE BOUQUET (channel names, numbers, categories, grouped versions)
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_bouquet_title),
+                        description = stringResource(R.string.settings_bouquet_description)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            BouquetPreference.entries.forEach { preference ->
+                                OptionButton(
+                                    label = stringResource(preference.labelRes),
+                                    description = stringResource(preference.descriptionRes),
+                                    selected = preference == currentBouquet,
+                                    onClick = { repository.setBouquet(preference) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // SECTION 4: HIDDEN CHANNELS
                 if (hiddenIds.isNotEmpty()) {
                     item {
@@ -345,6 +373,31 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_categories_title),
                             description = stringResource(R.string.settings_categories_description)
                         ) {
+                            // Same category name in several enabled sources: one category, or one per source
+                            if (enabledConfigs.size > 1) {
+                                Text(
+                                    text = stringResource(R.string.settings_category_mode),
+                                    fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 14.dp)
+                                ) {
+                                    CategoryMode.entries.forEach { mode ->
+                                        OptionButton(
+                                            label = stringResource(mode.labelRes),
+                                            description = stringResource(mode.descriptionRes),
+                                            selected = mode == categoryMode,
+                                            onClick = { repository.setCategoryMode(mode) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 categories.chunked(4).forEach { row ->
                                     Row(
@@ -397,13 +450,13 @@ fun SettingsScreen(
                 }
 
                 items(configs, key = { it.id }) { config ->
-                    val isActive = config.id == activeConfig?.id
+                    val isActive = config.isActive
                     ServerConfigCard(
                         config = config,
                         isActive = isActive,
                         accentColorObj = accentColorObj,
-                        onActivate = {
-                            repository.setActiveConfig(config.id)
+                        onToggleEnabled = {
+                            repository.setSourceEnabled(config.id, !config.isActive)
                         },
                         onEdit = {
                             editingConfig = config
@@ -688,7 +741,7 @@ private fun ServerConfigCard(
     config: SourceConfig,
     isActive: Boolean,
     accentColorObj: Color,
-    onActivate: () -> Unit,
+    onToggleEnabled: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -742,9 +795,12 @@ private fun ServerConfigCard(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!isActive) {
-                    ActionButton(label = stringResource(R.string.settings_activate), icon = Icons.Filled.Check, onClick = onActivate)
-                }
+                // Several sources can be enabled at once: their channels are shown together
+                ActionButton(
+                    label = stringResource(if (isActive) R.string.settings_deactivate else R.string.settings_activate),
+                    icon = if (isActive) Icons.Filled.Close else Icons.Filled.Check,
+                    onClick = onToggleEnabled
+                )
                 ActionButton(label = stringResource(R.string.settings_edit), icon = Icons.Filled.Edit, onClick = onEdit)
                 ActionButton(label = stringResource(R.string.settings_delete), icon = Icons.Filled.Delete, onClick = onDelete, destructive = true)
             }

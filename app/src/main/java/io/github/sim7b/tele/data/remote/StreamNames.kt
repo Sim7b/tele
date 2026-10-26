@@ -19,7 +19,8 @@ object StreamNames {
 
     private val DECORATIONS = Regex("""[◉●○◆◇★☆✪✦▶►■□|]+""")
 
-    private fun normalize(raw: String): String =
+    /** Superscript letters (ᴴᴰ, ᵁᴴᴰ...) turned into plain ones. */
+    fun normalize(raw: String): String =
         raw.map { SUPERSCRIPTS[it] ?: it }.joinToString("")
 
     /** Readable name: superscripts converted, decorative symbols removed. */

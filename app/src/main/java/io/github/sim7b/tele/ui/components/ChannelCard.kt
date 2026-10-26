@@ -14,6 +14,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -674,21 +684,28 @@ fun CategoryActionDialog(
     category: String,
     channelCount: Int,
     onHide: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isRenamed: Boolean = false,
+    // New displayed name (null: back to the name given by the source)
+    onRename: (String?) -> Unit = {}
 ) {
     val firstItemFocus = remember { FocusRequester() }
+    val nameFocus = remember { FocusRequester() }
+    var editing by remember { mutableStateOf(false) }
+    val currentLabel = groupLabel(category)
+    var name by remember { mutableStateOf(TextFieldValue(currentLabel, TextRange(currentLabel.length))) }
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        LaunchedEffect(Unit) {
-            firstItemFocus.requestFocusWithRetry()
+        LaunchedEffect(editing) {
+            if (editing) nameFocus.requestFocusWithRetry() else firstItemFocus.requestFocusWithRetry()
         }
 
         DialogPanel(width = 460.dp) {
             Text(
-                text = groupLabel(category),
+                text = currentLabel,
                 fontSize = 19.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,
@@ -701,14 +718,70 @@ fun CategoryActionDialog(
                 color = TextSecondary
             )
             Spacer(modifier = Modifier.height(16.dp))
+            if (editing) {
+                // TV keyboard: its OK / Done key saves the new name
+                val accent = LocalAppColors.current.accent
+                BasicTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = TextPrimary, fontSize = 16.sp),
+                    cursorBrush = SolidColor(accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        onRename(name.text)
+                        onDismiss()
+                    }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(nameFocus),
+                    decorationBox = { inner ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SurfaceCard)
+                                .border(2.dp, accent, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            if (name.text.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.card_category_name_hint),
+                                    fontSize = 16.sp,
+                                    color = TextSecondary.copy(alpha = 0.6f)
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = stringResource(R.string.card_category_rename_hint), fontSize = 12.sp, color = TextSecondary)
+                return@DialogPanel
+            }
+            MenuRow(
+                label = stringResource(R.string.card_rename_category),
+                icon = Icons.Filled.Edit,
+                onClick = { editing = true },
+                modifier = Modifier.focusRequester(firstItemFocus)
+            )
+            if (isRenamed) {
+                MenuRow(
+                    label = stringResource(R.string.card_reset_category_name),
+                    icon = Icons.Filled.Refresh,
+                    onClick = {
+                        onRename(null)
+                        onDismiss()
+                    }
+                )
+            }
             MenuRow(
                 label = stringResource(R.string.card_hide_category),
                 icon = Icons.Filled.Close,
                 onClick = {
                     onHide()
                     onDismiss()
-                },
-                modifier = Modifier.focusRequester(firstItemFocus)
+                }
             )
             MenuRow(label = stringResource(R.string.common_cancel), onClick = onDismiss)
         }

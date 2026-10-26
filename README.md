@@ -9,7 +9,9 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 ## Features
 
 - **Home**: 8 favorite tiles with the artwork of the current program, categories and channel grid (program, times, progress).
-- Reorderable **favorites** on the grid, hideable **channels** and **categories**.
+- Reorderable **favorites** on the grid, hideable **channels** and **categories**; categories can be **renamed** (hold OK on a category).
+- **Several sources at once**: the channels of every enabled source are shown together; categories with the same name are merged or kept apart per source (setting).
+- **Reference bouquet** (France: TNT + Canal+): channels are recognized whatever the provider spelling ("FR | TF1 FHD", "TF1 ᴴᴰ"), get their proper name, usual number and Canal+-style category, and their HD / FHD / 4K versions become one channel whose versions are its streams. Provider categories are cleaned and grouped by meaning ("Sport", "FR | Sports", "France Sport").
 - **Search** by channel name, number or current program, typed with the TV keyboard or spoken (microphone button, or the remote's search key).
 - **Player** (Media3 / ExoPlayer, hardware decoding):
   - channel switching with ↑ / ↓ and CH+ / CH−, or by typing the channel number with the remote digits (also from the home screen);

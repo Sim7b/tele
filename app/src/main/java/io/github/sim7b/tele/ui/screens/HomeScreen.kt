@@ -40,7 +40,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.*
 import io.github.sim7b.tele.data.model.Channel
-import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
 import androidx.activity.compose.BackHandler
@@ -97,7 +96,8 @@ fun pickFavoriteChannels(
 fun HomeScreen(
     channels: List<Channel>,
     favorites: List<Channel>,
-    activeConfig: SourceConfig?,
+    // At least one source is enabled (else the home screen invites to add one)
+    hasSource: Boolean,
     favoriteIds: List<String> = emptyList(),
     isLoading: Boolean,
     loadError: UiText? = null,
@@ -110,7 +110,9 @@ fun HomeScreen(
     onSelectStream: (Channel, StreamSource?) -> Unit,
     onMoveFavorite: (channelId: String, toIndex: Int) -> Unit,
     onHideCategory: (String) -> Unit,
-    automaticStreamDescription: String,
+    automaticStreamDescription: (Channel) -> String,
+    isCategoryRenamed: (String) -> Boolean = { false },
+    onRenameCategory: (category: String, name: String?) -> Unit = { _, _ -> },
     onOpenSettings: () -> Unit,
     onOpenSearch: (voice: Boolean) -> Unit,
     onRefresh: () -> Unit,
@@ -338,7 +340,7 @@ fun HomeScreen(
                         modifier = Modifier.width(460.dp)
                     ) {
                         Text(
-                            text = if (activeConfig == null) stringResource(R.string.home_welcome) else stringResource(R.string.home_no_channels),
+                            text = if (!hasSource) stringResource(R.string.home_welcome) else stringResource(R.string.home_no_channels),
                             fontSize = 24.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextPrimary
@@ -346,7 +348,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = when {
-                                activeConfig == null -> stringResource(R.string.home_add_source_hint)
+                                !hasSource -> stringResource(R.string.home_add_source_hint)
                                 loadError != null -> loadError.resolve()
                                 else -> stringResource(R.string.home_no_channels_hint)
                             },
@@ -361,7 +363,7 @@ fun HomeScreen(
                             onClick = onOpenSettings,
                             modifier = Modifier.focusRequester(emptyStateFocusRequester)
                         )
-                        if (activeConfig != null) {
+                        if (hasSource) {
                             MenuRow(
                                 label = stringResource(R.string.home_retry),
                                 icon = Icons.Filled.Refresh,
@@ -508,7 +510,7 @@ fun HomeScreen(
                 loadStreams = { loadStreams(ch) },
                 onSelectStream = { stream -> onSelectStream(ch, stream) },
                 onMove = if (canMove) ({ movingChannelId = ch.id }) else null,
-                automaticDescription = automaticStreamDescription,
+                automaticDescription = automaticStreamDescription(ch),
                 onDismiss = {
                     actionMenuChannel = null
                     // Give the focus back to the grid (the original card may have disappeared if the channel was hidden)
@@ -523,6 +525,8 @@ fun HomeScreen(
                 category = category,
                 channelCount = channels.count { it.group == category },
                 onHide = { onHideCategory(category) },
+                isRenamed = isCategoryRenamed(category),
+                onRename = { name -> onRenameCategory(category, name) },
                 onDismiss = {
                     categoryMenu = null
                     focusRestoreRequest++
