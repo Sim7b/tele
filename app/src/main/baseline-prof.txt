@@ -1,0 +1,7 @@
+# Baseline profile of the app, compiled into the release APK (assets/dexopt) and installed at first
+# launch by androidx.profileinstaller, also for an APK installed outside the Play Store.
+# The app is small: all its code is compiled ahead of time instead of being interpreted at startup,
+# on the first scroll of the home grid and on the first channel switch. The libraries (Compose,
+# Media3, OkHttp) ship their own profiles, merged into the same file.
+HSPLio/github/sim7b/tele/**->**(**)**
+Lio/github/sim7b/tele/**;
