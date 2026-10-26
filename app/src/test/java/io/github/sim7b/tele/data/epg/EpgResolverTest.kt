@@ -64,4 +64,28 @@ class EpgResolverTest {
         assertEquals(0.75f, EpgResolver.refreshCached(current, 105_000)!!.progress, 0.0001f)
         assertNull(EpgResolver.refreshCached(current, 120_000))
     }
+
+    @Test
+    fun `finds the program covering an instant like a linear scan`() {
+        val random = java.util.Random(42)
+        repeat(200) {
+            var start = 0L
+            val programs = List(random.nextInt(40)) { index ->
+                start += (1 + random.nextInt(2)) * 30_000L
+                // Gaps and overlaps of a few programs, as found in real guides
+                program("p$index", start, start + 15_000L + random.nextInt(4) * 30_000L)
+            }.sortedBy { it.startMillis }
+            for (now in 0L..start + 60_000L step 7_500L) {
+                val expected = programs.indexOfFirst { now >= it.startMillis && now < it.endMillis }
+                assertEquals(expected, EpgResolver.currentIndex(programs, now))
+            }
+        }
+    }
+
+    @Test
+    fun `formats clock times consistently from its cache`() {
+        val millis = 1_700_000_000_000L
+        assertEquals(EpgResolver.formatClock(millis), EpgResolver.formatClock(millis))
+        assertEquals("", EpgResolver.formatClock(0L))
+    }
 }

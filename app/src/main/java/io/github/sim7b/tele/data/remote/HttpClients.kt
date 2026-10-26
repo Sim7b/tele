@@ -3,7 +3,13 @@ package io.github.sim7b.tele.data.remote
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.UserFacingException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import okhttp3.Call
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.ResponseBody
 import java.util.concurrent.TimeUnit
 
@@ -60,4 +66,26 @@ object HttpClients {
     }
 
     internal fun tooLarge() = UserFacingException(UiText.Res(R.string.error_response_too_large))
+}
+
+/**
+ * Blocking execution of the call and reading of its response, cancelled with the calling coroutine:
+ * OkHttp blocking reads ignore coroutine cancellation, so a guide of tens of MB would otherwise keep
+ * downloading and parsing after a source change. To be called from an IO dispatcher.
+ */
+internal suspend fun <T> Call.executeCancellable(read: (Response) -> T): T = coroutineScope {
+    val call = this@executeCancellable
+    // Cancelled with the scope, on another thread than the blocking read below
+    val watcher = launch(Dispatchers.IO) {
+        try {
+            awaitCancellation()
+        } finally {
+            call.cancel()
+        }
+    }
+    try {
+        call.execute().use(read)
+    } finally {
+        watcher.cancel()
+    }
 }

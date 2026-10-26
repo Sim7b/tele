@@ -152,13 +152,13 @@ object XtreamClient {
             .build()
             .toString()
 
-    private fun get(url: HttpUrl, config: SourceConfig): String {
+    private suspend fun get(url: HttpUrl, config: SourceConfig): String {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT)
             .get()
             .build()
-        HttpClients.base.newCall(request).execute().use { response ->
+        return HttpClients.base.newCall(request).executeCancellable { response ->
             if (!response.isSuccessful) {
                 throw UserFacingException(
                     when (response.code) {
@@ -170,7 +170,7 @@ object XtreamClient {
             }
             val body = HttpClients.jsonString(response.body)
             if (body.isBlank()) throw UserFacingException(UiText.Res(R.string.error_empty_response))
-            return body
+            body
         }
     }
 

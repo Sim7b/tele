@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,7 +125,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun selectStream(channel: Channel, stream: StreamSource?) {
         configRepository.setSelectedStream(channel.id, stream?.takeIf { it.id != null })
-        _channels.value = withSelectedStreams(_channels.value)
+        _channels.update { withSelectedStreams(it) }
     }
 
     /** Connection test from a source form (success message or readable error). */
@@ -313,14 +314,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT
 
     /** Publishes the channels with their current program and the stream selected by the user. */
-    private fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: UiText?) {
+    private suspend fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: UiText?) {
         programsByChannelId = programs
-        val now = System.currentTimeMillis()
-        val withPrograms = channels.map { channel ->
-            programs[channel.id]?.let { channel.copy(currentProgram = EpgResolver.currentProgram(it, now)) } ?: channel
+        // Off the main thread: playlists may hold tens of thousands of channels
+        val published = withContext(Dispatchers.Default) {
+            val now = System.currentTimeMillis()
+            withSelectedStreams(
+                channels.map { channel ->
+                    programs[channel.id]?.let { channel.copy(currentProgram = EpgResolver.currentProgram(it, now)) } ?: channel
+                }
+            )
         }
-        configRepository.applyLegacyFavoriteOrder(withPrograms.map { it.id })
-        _channels.value = withSelectedStreams(withPrograms)
+        configRepository.applyLegacyFavoriteOrder(published.map { it.id })
+        _channels.value = published
         _loadError.value = error
     }
 
@@ -379,17 +385,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Moves the progress bars forward and switches to the next program when the current one ends.
      */
-    private fun refreshCurrentPrograms() {
-        val now = System.currentTimeMillis()
+    private suspend fun refreshCurrentPrograms() {
         val programsMap = programsByChannelId
-        _channels.value = _channels.value.map { channel ->
-            val programs = programsMap[channel.id]
-            val program = if (programs != null) {
-                EpgResolver.currentProgram(programs, now)
-            } else {
-                channel.currentProgram?.let { EpgResolver.refreshCached(it, now) }
+        // Off the main thread (every channel, every 30 s); atomic update against a concurrent stream selection
+        withContext(Dispatchers.Default) {
+            val now = System.currentTimeMillis()
+            _channels.update { channels ->
+                channels.map { channel ->
+                    val programs = programsMap[channel.id]
+                    val program = if (programs != null) {
+                        EpgResolver.currentProgram(programs, now)
+                    } else {
+                        channel.currentProgram?.let { EpgResolver.refreshCached(it, now) }
+                    }
+                    if (program == channel.currentProgram) channel else channel.copy(currentProgram = program)
+                }
             }
-            if (program == channel.currentProgram) channel else channel.copy(currentProgram = program)
         }
     }
 
