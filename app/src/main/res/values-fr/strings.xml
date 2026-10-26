@@ -258,4 +258,7 @@
         <item quantity="many">%1$d résultats</item>
         <item quantity="other">%1$d résultats</item>
     </plurals>
+
+    <!-- Channel number typed with the remote -->
+    <string name="channel_number_not_found">Aucune chaîne n° %1$d</string>
 </resources>

@@ -43,7 +43,10 @@ import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
+import androidx.activity.compose.BackHandler
 import io.github.sim7b.tele.ui.components.CategoryActionDialog
+import io.github.sim7b.tele.ui.components.ChannelNumberBadge
+import io.github.sim7b.tele.ui.components.rememberChannelNumberEntry
 import io.github.sim7b.tele.ui.components.ChannelActionMenuDialog
 import io.github.sim7b.tele.ui.components.CompactChannelCard
 import io.github.sim7b.tele.ui.components.DiscreteCategoryChip
@@ -196,6 +199,12 @@ fun HomeScreen(
         }
     }
 
+    // Remote digits: open the channel of the typed number
+    val numberEntry = rememberChannelNumberEntry(channels, onChannelSelected)
+    BackHandler(enabled = numberEntry.isTyping) {
+        numberEntry.cancel()
+    }
+
     fun Modifier.trackFocus(key: String): Modifier = this
         .then(if (key == focusTargetKey) Modifier.focusRequester(restoreFocusRequester) else Modifier)
         .onFocusChanged { if (it.isFocused) lastFocusedKey = key }
@@ -204,6 +213,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
+                if (movingChannelId == null && hasContent && numberEntry.onKey(event)) return@onPreviewKeyEvent true
                 // Search key of the remote (or keyboard): voice search directly
                 if (movingChannelId == null && hasContent && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_SEARCH) {
                     if (event.type == KeyEventType.KeyUp) onOpenSearch(true)
@@ -478,6 +488,12 @@ fun HomeScreen(
                 }
             }
         }
+
+        ChannelNumberBadge(
+            entry = numberEntry,
+            channels = channels,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 64.dp)
+        )
 
         // Context menu on long press
         actionMenuChannel?.let { ch ->
