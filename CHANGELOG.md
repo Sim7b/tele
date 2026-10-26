@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0](https://github.com/Sim7b/tele/compare/v0.2.0...v0.3.0) (2026-10-26)
+
+### Features
+
+* **branding:** rename the app to Télé ([01f3f7f](https://github.com/Sim7b/tele/commit/01f3f7f511bca86bac2671cad00b6df115bd69a9))
+
+### Bug Fixes
+
+* **playback:** play chosen Dispatcharr streams through its proxy ([73333a5](https://github.com/Sim7b/tele/commit/73333a5be220e1a056d7257543b9019f37b9f559))
+
 ## [0.2.0](https://github.com/Sim7b/tele/compare/v0.1.2...v0.2.0) (2026-10-26)
 
 ### Features
