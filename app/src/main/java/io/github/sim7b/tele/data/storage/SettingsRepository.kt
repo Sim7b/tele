@@ -5,10 +5,8 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.annotation.StringRes
 import io.github.sim7b.tele.R
-import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.SourceConfig
-import io.github.sim7b.tele.data.model.EpgProgram
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.optStringOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /** Interface density: factor applied to every dimension (dp/sp). */
 enum class UiDensity(@param:StringRes val labelRes: Int, val scaleFactor: Float, @param:StringRes val descriptionRes: Int) {
@@ -62,6 +61,7 @@ enum class AppAccentColor(
 class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val channelCache = ChannelCache(File(context.noBackupFilesDir, CHANNEL_CACHE_FILE))
 
     private val _configs = MutableStateFlow<List<SourceConfig>>(emptyList())
     val configs: StateFlow<List<SourceConfig>> = _configs.asStateFlow()
@@ -146,7 +146,7 @@ class SettingsRepository(context: Context) {
                 val obj = root.optJSONObject(channelId) ?: return@mapNotNull null
                 val url = obj.optStringOrNull("url") ?: return@mapNotNull null
                 channelId to StreamSource(
-                    name = obj.optString("name", "Stream"),
+                    name = obj.optStringOrNull("name") ?: return@mapNotNull null,
                     url = url,
                     id = obj.optStringOrNull("id"),
                     provider = obj.optStringOrNull("provider")
@@ -274,104 +274,28 @@ class SettingsRepository(context: Context) {
         _hiddenIds.value = emptySet()
     }
 
-    /**
-     * Offline storage of channels and current programs for an instant startup without a spinner.
-     */
+    /** Saves the channels and current programs of the active source (to call off the main thread). */
     fun saveCachedChannels(configId: String, channels: List<Channel>) {
         try {
-            val array = JSONArray()
-            channels.forEach { ch ->
-                val obj = JSONObject().apply {
-                    put("id", ch.id)
-                    put("name", ch.name)
-                    put("group", ch.group)
-                    put("logoUrl", ch.logoUrl)
-                    put("streamUrl", ch.streamUrl)
-                    put("tvgId", ch.tvgId)
-                    put("isFavorite", ch.isFavorite)
-                    put("serverId", ch.serverId)
-                    ch.number?.let { put("number", it) }
-
-                    ch.currentProgram?.let { prog ->
-                        val progObj = JSONObject().apply {
-                            put("title", prog.title)
-                            put("category", prog.category)
-                            put("startTime", prog.startTime)
-                            put("endTime", prog.endTime)
-                            put("progress", prog.progress.toDouble())
-                            put("posterUrl", prog.posterUrl)
-                            put("description", prog.description)
-                            put("nextTitle", prog.nextTitle)
-                            put("nextStartTime", prog.nextStartTime)
-                            put("startMillis", prog.startMillis)
-                            put("endMillis", prog.endMillis)
-                        }
-                        put("currentProgram", progObj)
-                    }
-                }
-                array.put(obj)
-            }
-            val root = JSONObject().apply {
-                put("configId", configId)
-                put("channels", array)
-            }
-            prefs.edit().putString(KEY_CACHED_CHANNELS, root.toString()).apply()
+            channelCache.save(configId, channels)
         } catch (e: Exception) {
             Log.w(TAG, "Unable to save the channel cache: ${e.javaClass.simpleName}")
         }
     }
 
     /**
-     * Cached channels of server [configId] (empty when the cache belongs to another server).
-     * Programs that ended since caching are dropped.
+     * Cached channels of server [configId] (empty when the cache belongs to another server), to call off
+     * the main thread. Programs that ended since caching are dropped.
      */
     fun getCachedChannels(configId: String, now: Long = System.currentTimeMillis()): List<Channel> {
-        val rawJson = prefs.getString(KEY_CACHED_CHANNELS, null) ?: return emptyList()
-        val list = mutableListOf<Channel>()
-        try {
-            if (!rawJson.trimStart().startsWith("{")) return emptyList()
-            val root = JSONObject(rawJson)
-            if (root.optString("configId") != configId) return emptyList()
-            val array = root.optJSONArray("channels") ?: return emptyList()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val progObj = obj.optJSONObject("currentProgram")
-                val program = if (progObj != null) {
-                    EpgProgram(
-                        title = progObj.optString("title", ""),
-                        category = progObj.optStringOrNull("category"),
-                        startTime = progObj.optString("startTime", ""),
-                        endTime = progObj.optString("endTime", ""),
-                        progress = progObj.optDouble("progress", 0.0).toFloat(),
-                        posterUrl = progObj.optStringOrNull("posterUrl"),
-                        description = progObj.optStringOrNull("description"),
-                        nextTitle = progObj.optStringOrNull("nextTitle"),
-                        nextStartTime = progObj.optStringOrNull("nextStartTime"),
-                        startMillis = progObj.optLong("startMillis", 0L),
-                        endMillis = progObj.optLong("endMillis", 0L)
-                    ).let { EpgResolver.refreshCached(it, now) }
-                } else null
-
-                list.add(
-                    Channel(
-                        id = obj.getString("id"),
-                        name = obj.getString("name"),
-                        group = obj.getString("group"),
-                        logoUrl = obj.optStringOrNull("logoUrl"),
-                        streamUrl = obj.getString("streamUrl"),
-                        tvgId = obj.optStringOrNull("tvgId"),
-                        isFavorite = obj.optBoolean("isFavorite", false),
-                        currentProgram = program,
-                        serverId = obj.optStringOrNull("serverId"),
-                        number = obj.optInt("number", -1).takeIf { it > 0 }
-                    )
-                )
-            }
+        // Cache of the previous versions, kept in the preferences: dropped, the next sync rebuilds it
+        if (prefs.contains(KEY_CACHED_CHANNELS)) prefs.edit().remove(KEY_CACHED_CHANNELS).apply()
+        return try {
+            channelCache.load(configId, now)
         } catch (e: Exception) {
             Log.w(TAG, "Unable to read the channel cache: ${e.javaClass.simpleName}")
-            return emptyList()
+            emptyList()
         }
-        return list
     }
 
     private fun persistConfigs(list: List<SourceConfig>) {
@@ -452,5 +376,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_CACHED_CHANNELS = "iptv_cached_channels_json"
         private const val KEY_SELECTED_STREAMS = "iptv_selected_streams"
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
+        private const val CHANNEL_CACHE_FILE = "channel_cache.jsonl"
     }
 }

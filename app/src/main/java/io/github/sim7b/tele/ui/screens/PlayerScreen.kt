@@ -2,6 +2,7 @@ package io.github.sim7b.tele.ui.screens
 
 import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.R
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -59,6 +60,8 @@ import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
 
+private const val ZAP_DEBOUNCE_MS = 300L
+
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -100,9 +103,16 @@ fun PlayerScreen(
     }
 
     // Channel start (and on every channel switch / stream change)
+    val lastStartRequestAt = remember { mutableLongStateOf(0L) }
     LaunchedEffect(streamUrl, streamAuth, userAgent) {
-        playerManager.playStream(streamUrl, customUserAgent = userAgent, auth = streamAuth)
         revealOverlay()
+        // Zapping through several channels: only the one the user stops on is opened, providers often
+        // limit simultaneous connections (the banner already shows the new channel)
+        val now = SystemClock.elapsedRealtime()
+        val isQuickZap = now - lastStartRequestAt.longValue < ZAP_DEBOUNCE_MS
+        lastStartRequestAt.longValue = now
+        if (isQuickZap) delay(ZAP_DEBOUNCE_MS)
+        playerManager.playStream(streamUrl, customUserAgent = userAgent, auth = streamAuth)
     }
 
     // Automatically hide the overlay after 5 seconds

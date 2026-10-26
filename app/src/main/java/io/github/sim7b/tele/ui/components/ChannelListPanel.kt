@@ -141,7 +141,7 @@ fun ChannelListPanel(
                 .fillMaxHeight()
         ) {
             PanelHeader(
-                category = if (category == ALL_CHANNELS) stringResource(R.string.panel_all_channels) else category,
+                category = if (category == ALL_CHANNELS) stringResource(R.string.panel_all_channels) else groupLabel(category),
                 count = shown.size
             )
 

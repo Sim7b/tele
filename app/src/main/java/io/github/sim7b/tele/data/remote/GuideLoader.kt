@@ -9,6 +9,7 @@ import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.parser.XmltvGuide
 import io.github.sim7b.tele.data.parser.XmltvParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.IOException
@@ -50,6 +51,7 @@ object GuideLoader {
 
             // Several guides possible (url-tvg="a.xml,b.xml"): the first one covering a channel wins
             for (url in urls) {
+                ensureActive()
                 try {
                     val guide = download(url, userAgent) { input ->
                         XmltvParser.parse(input, now - PAST_WINDOW_MS, now + FUTURE_WINDOW_MS) { id, names ->
@@ -60,6 +62,8 @@ object GuideLoader {
                     }
                     match(guide, channels).forEach { (channelId, programs) -> merged.putIfAbsent(channelId, programs) }
                 } catch (e: Exception) {
+                    // A cancelled load stops here (the cancelled call fails with an IOException)
+                    ensureActive()
                     errors += e.toUiText()
                 }
             }
@@ -68,12 +72,11 @@ object GuideLoader {
             ChannelGuide(merged, error)
         }
 
-    private fun <T> download(url: String, userAgent: String, read: (java.io.InputStream) -> T): T {
+    private suspend fun <T> download(url: String, userAgent: String, read: (java.io.InputStream) -> T): T {
         val request = Request.Builder().url(url).header("User-Agent", userAgent).get().build()
-        HttpClients.base.newCall(request).execute().use { response ->
+        return HttpClients.base.newCall(request).executeCancellable { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-            val body = response.body
-            return read(body.byteStream())
+            read(response.body.byteStream())
         }
     }
 

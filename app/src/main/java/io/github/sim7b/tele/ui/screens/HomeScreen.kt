@@ -43,6 +43,7 @@ import io.github.sim7b.tele.ui.components.FavoriteChannelCard
 import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.SectionLabel
+import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
@@ -53,6 +54,8 @@ import java.time.format.DateTimeFormatter
 private const val ALL_CATEGORIES = "__all__"
 
 private const val FAVORITE_SLOTS = 8
+private const val FAVORITE_KEY_PREFIX = "fav:"
+private const val LIST_KEY_PREFIX = "list:"
 private const val FAVORITE_COLUMNS = 4
 
 /**
@@ -64,9 +67,11 @@ fun pickFavoriteChannels(
     visibleChannels: List<Channel>,
     favoriteIds: List<String>
 ): List<Channel> {
-    val byId = allChannels.associateBy { it.id }
+    // Only the favorites are indexed: the lists may hold tens of thousands of channels
+    val favoriteSet = favoriteIds.toHashSet()
+    val byId = allChannels.filter { it.id in favoriteSet }.associateBy { it.id }
     val favorites = favoriteIds.mapNotNull { byId[it] }
-    val filler = visibleChannels.filterNot { it.id in favoriteIds }
+    val filler = visibleChannels.asSequence().filterNot { it.id in favoriteSet }.take(FAVORITE_SLOTS)
     return (favorites + filler).take(FAVORITE_SLOTS)
 }
 
@@ -143,11 +148,16 @@ fun HomeScreen(
     // Rows of 4 computed once per list change (and not on every grid recomposition)
     val channelRows = remember(filteredChannels) { filteredChannels.chunked(4) }
 
-    // Item that gets the focus when shown: the last focused one, otherwise the first favorite
-    val focusTargetKey = remember(favoriteChannels, filteredChannels, lastFocusedKey) {
-        val keys = favoriteChannels.map { "fav:${it.id}" } + filteredChannels.map { "list:${it.id}" }
-        lastFocusedKey?.takeIf { it in keys } ?: keys.firstOrNull()
+    // Item that gets the focus when shown: the last focused one, otherwise the first favorite.
+    // Id sets built once per list change: the last focused key changes on every D-pad move.
+    val favoriteIdSet = remember(favoriteChannels) { favoriteChannels.mapTo(HashSet()) { it.id } }
+    val listIdSet = remember(filteredChannels) { filteredChannels.mapTo(HashSet(filteredChannels.size * 2)) { it.id } }
+    val focusTargetKey = lastFocusedKey?.takeIf { key ->
+        (key.startsWith(FAVORITE_KEY_PREFIX) && key.removePrefix(FAVORITE_KEY_PREFIX) in favoriteIdSet) ||
+            (key.startsWith(LIST_KEY_PREFIX) && key.removePrefix(LIST_KEY_PREFIX) in listIdSet)
     }
+        ?: favoriteChannels.firstOrNull()?.let { FAVORITE_KEY_PREFIX + it.id }
+        ?: filteredChannels.firstOrNull()?.let { LIST_KEY_PREFIX + it.id }
     val hasContent = channels.isNotEmpty() || favorites.isNotEmpty()
 
     LaunchedEffect(focusRestoreRequest, hasContent) {
@@ -337,7 +347,7 @@ fun HomeScreen(
                                                     isMoving = isMoving,
                                                     modifier = Modifier
                                                         .then(if (isMoving) Modifier.focusRequester(movingFocus) else Modifier)
-                                                        .trackFocus("fav:${channel.id}")
+                                                        .trackFocus(FAVORITE_KEY_PREFIX + channel.id)
                                                 )
                                             }
                                         }
@@ -362,7 +372,7 @@ fun HomeScreen(
                         ) {
                             items(categories) { category ->
                                 DiscreteCategoryChip(
-                                    text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else category,
+                                    text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else groupLabel(category),
                                     isSelected = category == effectiveCategory,
                                     onClick = { selectedCategory = category },
                                     onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category })
@@ -388,7 +398,7 @@ fun HomeScreen(
                                         channel = channel,
                                         onClick = { onChannelSelected(channel) },
                                         onLongClick = { actionMenuChannel = channel },
-                                        modifier = Modifier.trackFocus("list:${channel.id}")
+                                        modifier = Modifier.trackFocus(LIST_KEY_PREFIX + channel.id)
                                     )
                                 }
                             }

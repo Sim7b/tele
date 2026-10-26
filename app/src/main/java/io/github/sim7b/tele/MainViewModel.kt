@@ -9,6 +9,7 @@ import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.failure
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.DispatcharrEpgChannel
 import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.ProgramArtwork
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -30,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,12 +51,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         configRepository.activeConfig.value?.takeIf { it.type == SourceType.DISPATCHARR }
     )
 
-    private val _channels = MutableStateFlow(
-        withSelectedStreams(configRepository.activeConfig.value?.let { configRepository.getCachedChannels(it.id) } ?: emptyList())
-    )
+    // Cached channels are read off the main thread at startup (see showCachedChannels)
+    private val _channels = MutableStateFlow<List<Channel>>(emptyList())
     val channels: StateFlow<List<Channel>> = _channels.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(_channels.value.isEmpty())
+    private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _loadError = MutableStateFlow<UiText?>(null)
@@ -74,7 +75,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile
     private var programsByChannelId: Map<String, List<GuideProgram>> = emptyMap()
     private var loadJob: Job? = null
-    private var loadedConfigId: String? = configRepository.activeConfig.value?.id
+    // Null at startup: the first load shows the cached channels of the active source
+    private var loadedConfigId: String? = null
+    // XMLTV guides of the Xtream / M3U source, kept for the periodic guide reload
+    private var playlistGuideUrls: List<String> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -86,18 +90,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(EPG_TICK_MS)
                 refreshCurrentPrograms()
                 ticks++
-                when (configRepository.activeConfig.value?.type) {
+                // The guide only covers a limited window (the TV may stay on for days): reload it periodically
+                if (ticks % GUIDE_RELOAD_TICKS == 0) {
+                    reloadGuide()
+                } else if (ticks % ARTWORK_REFRESH_TICKS == 0 &&
+                    configRepository.activeConfig.value?.type == SourceType.DISPATCHARR
+                ) {
                     // Artwork only covers the next hours: renew it regularly
-                    SourceType.DISPATCHARR -> if (ticks % ARTWORK_REFRESH_TICKS == 0) refreshArtwork()
-                    // The XMLTV guide is only kept over a limited window: reload it periodically
-                    SourceType.XTREAM, SourceType.M3U -> if (ticks % GUIDE_RELOAD_TICKS == 0) refresh()
-                    null -> Unit
+                    refreshArtwork()
                 }
             }
         }
     }
 
+    /** Manual refresh: everything is reloaded, including the reference tables cached by the client. */
     fun refresh() {
+        dispatcharrClient.clearCaches()
         loadChannels(configRepository.activeConfig.value)
     }
 
@@ -109,7 +117,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (configRepository.activeConfig.value?.type != SourceType.DISPATCHARR) return Result.success(emptyList())
         val serverId = channel.serverId
             ?: return failure(R.string.error_sync_channels_for_streams)
-        return dispatcharrClient.getChannelStreams(serverId)
+        return dispatcharrClient.getChannelStreams(serverId).onSuccess { streams ->
+            freshSelection(channel.id, streams)?.let { selectStream(channel, it) }
+        }
+    }
+
+    /**
+     * Up-to-date version of the stream selected for a channel, when its URL changed (provider token,
+     * new Xtream password): the selection follows its stream id. Null when there is nothing to update.
+     */
+    private fun freshSelection(channelId: String, streams: List<StreamSource>): StreamSource? {
+        val selected = configRepository.selectedStreams.value[channelId] ?: return null
+        val fresh = streams.firstOrNull { it.id != null && it.id == selected.id } ?: return null
+        return fresh.takeIf { it.url != selected.url }
     }
 
     /**
@@ -117,7 +137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun selectStream(channel: Channel, stream: StreamSource?) {
         configRepository.setSelectedStream(channel.id, stream?.takeIf { it.id != null })
-        _channels.value = withSelectedStreams(_channels.value)
+        _channels.update { withSelectedStreams(it) }
     }
 
     /** Connection test from a source form (success message or readable error). */
@@ -159,7 +179,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Source change: do not show the channels of the previous one
             loadedConfigId = config?.id
             programsByChannelId = emptyMap()
-            _channels.value = config?.let { withSelectedStreams(configRepository.getCachedChannels(it.id)) } ?: emptyList()
+            playlistGuideUrls = emptyList()
+            _channels.value = emptyList()
+            config?.let { showCachedChannels(it) }
             _userName.value = config?.let { configRepository.getUserDisplayName(it.id) }
         }
 
@@ -188,6 +210,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Shows the cached channels of [config] while it loads, unless the load has already published its own. */
+    private fun showCachedChannels(config: SourceConfig) {
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { configRepository.getCachedChannels(config.id) }
+            if (cached.isEmpty() || loadedConfigId != config.id) return@launch
+            val withStreams = withContext(Dispatchers.Default) { withSelectedStreams(cached) }
+            _channels.update { current -> if (current.isEmpty() && loadedConfigId == config.id) withStreams else current }
+        }
+    }
+
     private suspend fun loadDispatcharr(config: SourceConfig, startedAt: Long) = coroutineScope {
         // Account first name, in parallel: does not delay the channel load
         launch {
@@ -205,22 +237,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Log.i(TvPlayerManager.PERF_TAG, "Load: channels + guide in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
         channelsResult.onSuccess { dChannels ->
-            val (channels, programs) = withContext(Dispatchers.Default) {
-                val epgByKey = epgResult.getOrNull()
-                    ?.associate { it.channelUuid to it.programs }
-                    ?: emptyMap()
-                val epgKeyByName = buildNameIndex(epgByKey.keys)
-                val programsMap = HashMap<String, List<GuideProgram>>()
-                val result = dChannels.map { dChan ->
-                    val baseChannel = dChan.toChannel()
-                    programsMap[baseChannel.id] = epgByKey[dChan.tvgId]
-                        ?: epgByKey[dChan.uuid]
-                        ?: epgKeyByName[EpgResolver.normalizeName(dChan.name)]?.let { epgByKey[it] }
-                        ?: emptyList()
-                    baseChannel
-                }
-                result to programsMap
-            }
+            val channels = dChannels.map { it.toChannel() }
+            val programs = matchDispatcharrGuide(channels, epgResult.getOrNull().orEmpty())
             publish(channels, programs, epgResult.exceptionOrNull()?.let { UiText.Res(R.string.error_guide_unavailable, it.toUiText()) })
             _isLoading.value = false
 
@@ -243,13 +261,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         result.onSuccess { source ->
             source.userName?.let { displayFirstName(null, it) }?.let { saveUserName(config, it) }
-            publish(source.channels, emptyMap(), null)
+            playlistGuideUrls = source.guideUrls
+            // The guide already loaded for this source stays shown while the new one downloads
+            publish(source.channels, programsByChannelId, null)
             _isLoading.value = false
             Log.i(TvPlayerManager.PERF_TAG, "Load: ${source.channels.size} channels in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
-            val userAgent = config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT
-            val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent)
-            programsByChannelId = guide.programs
+            val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent(config))
+            // A guide that failed to download does not erase the previous one
+            if (guide.programs.isNotEmpty() || guide.error == null) programsByChannelId = guide.programs
             refreshCurrentPrograms()
             _loadError.value = guide.error
             Log.i(
@@ -262,15 +282,85 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Publishes the channels with their current program and the stream selected by the user. */
-    private fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: UiText?) {
-        programsByChannelId = programs
-        val now = System.currentTimeMillis()
-        val withPrograms = channels.map { channel ->
-            programs[channel.id]?.let { channel.copy(currentProgram = EpgResolver.currentProgram(it, now)) } ?: channel
+    /**
+     * Periodic guide reload, without reloading the channels. Skipped while a load is running;
+     * a failed reload keeps the previous guide.
+     */
+    private fun reloadGuide() {
+        val config = configRepository.activeConfig.value ?: return
+        if (loadJob?.isActive == true || _channels.value.isEmpty()) return
+
+        loadJob = viewModelScope.launch {
+            when (config.type) {
+                SourceType.DISPATCHARR -> {
+                    val now = System.currentTimeMillis()
+                    val artworkDeferred = async { dispatcharrClient.getProgramArtwork(now, now + ARTWORK_WINDOW_MS) }
+                    dispatcharrClient.getEpgGrid().onSuccess { epg ->
+                        programsByChannelId = matchDispatcharrGuide(_channels.value, epg)
+                        refreshCurrentPrograms()
+                    }
+                    applyArtwork(artworkDeferred.await())
+                }
+                SourceType.XTREAM, SourceType.M3U -> {
+                    val guide = GuideLoader.load(playlistGuideUrls, _channels.value, userAgent(config))
+                    if (guide.programs.isNotEmpty()) {
+                        programsByChannelId = guide.programs
+                        refreshCurrentPrograms()
+                    }
+                }
+            }
+            saveCache(config)
         }
-        configRepository.applyLegacyFavoriteOrder(withPrograms.map { it.id })
-        _channels.value = withSelectedStreams(withPrograms)
+    }
+
+    /**
+     * Programs of each channel (by app channel id) from the Dispatcharr grid: by tvg_id, channel uuid,
+     * else by normalized name.
+     */
+    private suspend fun matchDispatcharrGuide(
+        channels: List<Channel>,
+        epg: List<DispatcharrEpgChannel>
+    ): Map<String, List<GuideProgram>> = withContext(Dispatchers.Default) {
+        val epgByKey = epg.associate { it.channelUuid to it.programs }
+        val epgKeyByName = buildNameIndex(epgByKey.keys)
+        val programsMap = HashMap<String, List<GuideProgram>>()
+        channels.forEach { channel ->
+            programsMap[channel.id] = channel.tvgId?.let { epgByKey[it] }
+                ?: epgByKey[channel.id]
+                ?: epgKeyByName[EpgResolver.normalizeName(channel.name)]?.let { epgByKey[it] }
+                ?: emptyList()
+        }
+        programsMap
+    }
+
+    private fun userAgent(config: SourceConfig) =
+        config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT
+
+    /** Publishes the channels with their current program and the stream selected by the user. */
+    private suspend fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: UiText?) {
+        programsByChannelId = programs
+        // Xtream: stream variants come with the channels, the selections follow their new URLs
+        val selections = configRepository.selectedStreams.value
+        if (selections.isNotEmpty()) {
+            val updates = withContext(Dispatchers.Default) {
+                channels.mapNotNull { channel ->
+                    if (channel.availableStreams.isEmpty() || channel.id !in selections) return@mapNotNull null
+                    freshSelection(channel.id, channel.availableStreams)?.let { channel.id to it }
+                }
+            }
+            updates.forEach { (channelId, stream) -> configRepository.setSelectedStream(channelId, stream) }
+        }
+        // Off the main thread: playlists may hold tens of thousands of channels
+        val published = withContext(Dispatchers.Default) {
+            val now = System.currentTimeMillis()
+            withSelectedStreams(
+                channels.map { channel ->
+                    programs[channel.id]?.let { channel.copy(currentProgram = EpgResolver.currentProgram(it, now)) } ?: channel
+                }
+            )
+        }
+        configRepository.applyLegacyFavoriteOrder(published.map { it.id })
+        _channels.value = published
         _loadError.value = error
     }
 
@@ -329,17 +419,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Moves the progress bars forward and switches to the next program when the current one ends.
      */
-    private fun refreshCurrentPrograms() {
-        val now = System.currentTimeMillis()
+    private suspend fun refreshCurrentPrograms() {
         val programsMap = programsByChannelId
-        _channels.value = _channels.value.map { channel ->
-            val programs = programsMap[channel.id]
-            val program = if (programs != null) {
-                EpgResolver.currentProgram(programs, now)
-            } else {
-                channel.currentProgram?.let { EpgResolver.refreshCached(it, now) }
+        // Off the main thread (every channel, every 30 s); atomic update against a concurrent stream selection
+        withContext(Dispatchers.Default) {
+            val now = System.currentTimeMillis()
+            _channels.update { channels ->
+                channels.map { channel ->
+                    val programs = programsMap[channel.id]
+                    val program = if (programs != null) {
+                        EpgResolver.currentProgram(programs, now)
+                    } else {
+                        channel.currentProgram?.let { EpgResolver.refreshCached(it, now) }
+                    }
+                    if (program == channel.currentProgram) channel else channel.copy(currentProgram = program)
+                }
             }
-            if (program == channel.currentProgram) channel else channel.copy(currentProgram = program)
         }
     }
 

@@ -18,7 +18,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.setValue
@@ -30,6 +34,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -43,8 +48,11 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.storage.LogoToneStore
 import io.github.sim7b.tele.ui.theme.*
-import java.util.concurrent.ConcurrentHashMap
+import java.io.File
 
 /**
  * Small shared visual elements: understated palette, accent reserved for indicators, white focus.
@@ -56,6 +64,11 @@ fun focusRing(shape: Shape, width: Dp = 2.dp): ClickableSurfaceBorder =
     ClickableSurfaceDefaults.border(
         focusedBorder = Border(BorderStroke(width, FocusBorderColor), shape = shape)
     )
+
+/** Label of a channel group: the channels without a category are shown in a localized "Other" group. */
+@Composable
+fun groupLabel(group: String): String =
+    if (group == Channel.NO_GROUP) stringResource(R.string.group_other) else group
 
 /** Network image with a crossfade when it appears. */
 @Composable
@@ -84,27 +97,44 @@ fun FadeInImage(
  * session to the next: a known logo is loaded as a hardware bitmap, without a new analysis.
  */
 private object LogoTones {
-    private const val PREFS = "logo_tones"
-    private val cache = ConcurrentHashMap<String, Boolean>()
-    @Volatile
-    private var loaded = false
+    private const val FILE = "logo_tones"
+    private const val LEGACY_PREFS = "logo_tones"
+    private const val SAVE_DELAY_MS = 5_000L
 
-    fun get(context: Context, url: String): Boolean? {
-        ensureLoaded(context)
-        return cache[url]
-    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var store: LogoToneStore? = null
+    private var saveJob: Job? = null
+
+    fun get(context: Context, url: String): Boolean? = store(context).get(url)
 
     fun put(context: Context, url: String, light: Boolean) {
-        cache[url] = light
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(url, light).apply()
+        val store = store(context)
+        store.put(url, light)
+        scheduleSave(store)
     }
 
-    private fun ensureLoaded(context: Context) {
-        if (loaded) return
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all.forEach { (url, value) ->
-            if (value is Boolean) cache[url] = value
+    /** Created on first use; the saved tones are read in the background (unknown logos are analyzed meanwhile). */
+    @Synchronized
+    private fun store(context: Context): LogoToneStore = store ?: run {
+        val appContext = context.applicationContext
+        LogoToneStore(File(appContext.noBackupFilesDir, FILE)).also { created ->
+            store = created
+            scope.launch {
+                // Storage of the previous versions: one preference per logo, rewritten on every new logo
+                appContext.deleteSharedPreferences(LEGACY_PREFS)
+                runCatching { created.load() }
+            }
         }
-        loaded = true
+    }
+
+    /** Saved once the analyses calm down, not on every logo. */
+    @Synchronized
+    private fun scheduleSave(store: LogoToneStore) {
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(SAVE_DELAY_MS)
+            runCatching { store.save() }
+        }
     }
 }
 

@@ -45,4 +45,9 @@ data class Channel(
 ) {
     val activeStreamUrl: String
         get() = selectedStreamUrl ?: streamUrl
+
+    companion object {
+        /** Group of the channels without a category: displayed with a localized label (see groupLabel). */
+        const val NO_GROUP = ""
+    }
 }

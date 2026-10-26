@@ -68,6 +68,7 @@ import io.github.sim7b.tele.data.storage.AppThemeBackground
 import io.github.sim7b.tele.data.storage.SettingsRepository
 import io.github.sim7b.tele.data.storage.UiDensity
 import io.github.sim7b.tele.ui.components.SectionLabel
+import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.launch
@@ -306,7 +307,7 @@ fun SettingsScreen(
                                     ) {
                                         row.forEach { (group, count) ->
                                             CategoryToggle(
-                                                label = group,
+                                                label = groupLabel(group),
                                                 channelCount = count,
                                                 visible = group !in hiddenGroups,
                                                 onClick = { repository.setGroupHidden(group, group !in hiddenGroups) },

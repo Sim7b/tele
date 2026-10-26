@@ -74,7 +74,8 @@ object M3uParser {
                     if (!isVod(line)) {
                         val name = title?.takeIf { it.isNotEmpty() }
                             ?: attributes["tvg-name"]?.takeIf { it.isNotBlank() }
-                            ?: "Channel ${entries.size + 1}"
+                            // Language-neutral fallback: the data layer has no access to the string resources
+                            ?: "#${entries.size + 1}"
                         entries.add(
                             M3uEntry(
                                 name = name,
