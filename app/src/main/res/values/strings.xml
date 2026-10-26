@@ -312,4 +312,20 @@
     <string name="category_mode_separate">Separate by source</string>
     <string name="category_mode_separate_description">Source name added: “Sport · Neo”</string>
     <string name="settings_deactivate">Disable</string>
+
+    <!-- Reference bouquet -->
+    <string name="bouquet_tnt">Free-to-air</string>
+    <string name="bouquet_news">News</string>
+    <string name="bouquet_sport">Sports</string>
+    <string name="bouquet_cinema">Movies</string>
+    <string name="bouquet_series">Series &amp; entertainment</string>
+    <string name="bouquet_kids">Kids</string>
+    <string name="bouquet_documentary">Discovery</string>
+    <string name="bouquet_music">Music</string>
+    <string name="settings_bouquet_title">Reference bouquet</string>
+    <string name="settings_bouquet_description">Recognizes the channels (name, number, category) and groups their HD, FHD, 4K… versions into one channel</string>
+    <string name="bouquet_france">France (TNT + Canal+)</string>
+    <string name="bouquet_france_description">Names, numbers and categories of the bouquet</string>
+    <string name="bouquet_none">None</string>
+    <string name="bouquet_none_description">Provider names and categories, cleaned up</string>
 </resources>

@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.annotation.StringRes
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.QualityPreference
@@ -83,6 +84,10 @@ class SettingsRepository(context: Context) {
     // Categories renamed on the device (source group -> displayed name)
     private val _categoryNames = MutableStateFlow<Map<String, String>>(emptyMap())
     val categoryNames: StateFlow<Map<String, String>> = _categoryNames.asStateFlow()
+
+    // Reference bouquet recognizing the channels (names, numbers, categories, grouped versions)
+    private val _bouquet = MutableStateFlow(BouquetPreference.FRANCE)
+    val bouquet: StateFlow<BouquetPreference> = _bouquet.asStateFlow()
 
     // Same category name in several enabled sources: merged or one per source
     private val _categoryMode = MutableStateFlow(CategoryMode.MERGE)
@@ -175,6 +180,8 @@ class SettingsRepository(context: Context) {
             Log.w(TAG, "Unable to read the category names: ${e.javaClass.simpleName}")
             emptyMap()
         }
+        _bouquet.value = BouquetPreference.entries.firstOrNull { it.name == prefs.getString(KEY_BOUQUET, null) }
+            ?: BouquetPreference.FRANCE
         _categoryMode.value = CategoryMode.entries.firstOrNull { it.name == prefs.getString(KEY_CATEGORY_MODE, null) }
             ?: CategoryMode.MERGE
         _qualityPreference.value = prefs.getString(KEY_QUALITY_PREFERENCE, null)
@@ -420,6 +427,11 @@ class SettingsRepository(context: Context) {
         _hiddenGroups.value = current
     }
 
+    fun setBouquet(preference: BouquetPreference) {
+        prefs.edit().putString(KEY_BOUQUET, preference.name).apply()
+        _bouquet.value = preference
+    }
+
     fun setCategoryMode(mode: CategoryMode) {
         prefs.edit().putString(KEY_CATEGORY_MODE, mode.name).apply()
         _categoryMode.value = mode
@@ -458,6 +470,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"
         private const val KEY_CATEGORY_NAMES = "category_names"
         private const val KEY_CATEGORY_MODE = "category_mode"
+        private const val KEY_BOUQUET = "reference_bouquet"
         private const val CHANNEL_CACHE_FILE = "channel_cache.jsonl"
     }
 }

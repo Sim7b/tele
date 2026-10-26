@@ -26,7 +26,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import coil.imageLoader
 import coil.request.ImageRequest
-import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.remote.ProgramPosterRepository
 import io.github.sim7b.tele.data.model.SourceType
@@ -80,8 +79,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val enabledConfigs by configRepository.enabledConfigs.collectAsState()
-            val categoryNames by configRepository.categoryNames.collectAsState()
-            val categoryMode by configRepository.categoryMode.collectAsState()
             val uiDensity by configRepository.uiDensity.collectAsState()
             val themeBackground by configRepository.themeBackground.collectAsState()
             val accentColor by configRepository.accentColor.collectAsState()
@@ -89,7 +86,8 @@ class MainActivity : ComponentActivity() {
             val hiddenIds by configRepository.hiddenIds.collectAsState()
             val hiddenGroups by configRepository.hiddenGroups.collectAsState()
 
-            val channels by viewModel.channels.collectAsState()
+            // Displayed channels: bouquet names and categories, grouped versions, renamed categories
+            val displayedChannels by viewModel.displayChannels.collectAsState()
             val isLoadingChannels by viewModel.isLoading.collectAsState()
             val loadError by viewModel.loadError.collectAsState()
             val streamSlots by viewModel.streamSlots.collectAsState()
@@ -120,7 +118,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.initialSyncDone.first { it }
                     val hidden = configRepository.hiddenIds.value
                     val hiddenCategories = configRepository.hiddenGroups.value
-                    val pool = viewModel.channels.value.filterNot { hidden.contains(it.id) }
+                    val pool = viewModel.displayChannels.value.filterNot { channel -> channel.allIds.all { it in hidden } }
                     val favorites = pickFavoriteChannels(
                         pool,
                         pool.filterNot { hiddenCategories.contains(it.group) },
@@ -147,20 +145,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Displayed categories: names renamed on the device, merged or separated by source
-            val sourceNames = remember(enabledConfigs) { enabledConfigs.associate { it.id to it.name } }
-            val displayedChannels = remember(channels, categoryNames, categoryMode, sourceNames) {
-                Categories.apply(channels, categoryNames, categoryMode, sourceNames)
+            // Dispatcharr keys of every enabled server: a grouped channel may mix sources, and each key
+            // only goes to its own server (origin check on every request)
+            val streamAuths = remember(enabledConfigs) {
+                enabledConfigs.filter { it.type == SourceType.DISPATCHARR }.mapNotNull { ApiKeyAuth.of(it) }
             }
-            fun sourceGroupsOf(category: String) =
-                Categories.sourceGroupsOf(category, channels, categoryNames, categoryMode, sourceNames)
-            fun renameCategory(category: String, name: String?) {
-                val groups = sourceGroupsOf(category)
-                configRepository.renameCategory(groups, name)
-                // A hidden category stays hidden under its new name
-                val renamed = Categories.apply(channels, configRepository.categoryNames.value, categoryMode, sourceNames)
-                val newNames = channels.indices.filter { channels[it].group in groups }.mapTo(HashSet()) { renamed[it].group }
-                configRepository.replaceHiddenGroup(category, newNames)
+
+            // Hiding / favoriting a grouped channel applies to all its versions ("TF1 HD", "TF1 FHD")
+            fun hideChannel(channelId: String) {
+                val channel = displayedChannels.firstOrNull { it.id == channelId }
+                (channel?.allIds ?: listOf(channelId)).forEach { configRepository.hideChannel(it) }
+            }
+            fun toggleFavorite(channelId: String) {
+                val ids = displayedChannels.firstOrNull { it.id == channelId }?.allIds ?: listOf(channelId)
+                val favorited = ids.filter { it in favoriteIds }
+                if (favorited.isEmpty()) configRepository.toggleFavoriteChannel(channelId) else favorited.forEach { configRepository.toggleFavoriteChannel(it) }
             }
 
             // Keeps the home screen state (category, scroll, focus) during playback / settings
@@ -168,7 +167,8 @@ class MainActivity : ComponentActivity() {
 
             // Channels not individually hidden: favorites are taken from them, even if their category is hidden
             val unhiddenChannels = remember(displayedChannels, hiddenIds) {
-                displayedChannels.filterNot { hiddenIds.contains(it.id) }
+                // A grouped channel is hidden once all its versions are
+                displayedChannels.filterNot { channel -> channel.allIds.all { it in hiddenIds } }
             }
             // Channels of the grid, the panel and zapping: without the hidden categories
             val visibleChannels = remember(unhiddenChannels, hiddenGroups) {
@@ -228,10 +228,10 @@ class MainActivity : ComponentActivity() {
                                         currentScreen = CurrentScreen.Player(channel)
                                     },
                                     onToggleFavorite = { chId ->
-                                        configRepository.toggleFavoriteChannel(chId)
+                                        toggleFavorite(chId)
                                     },
                                     onHideChannel = { chId ->
-                                        configRepository.hideChannel(chId)
+                                        hideChannel(chId)
                                     },
                                     loadStreams = { ch -> viewModel.loadStreams(ch) },
                                     onSelectStream = { ch, stream ->
@@ -246,8 +246,8 @@ class MainActivity : ComponentActivity() {
                                     onHideCategory = { group ->
                                         configRepository.setGroupHidden(group, true)
                                     },
-                                    isCategoryRenamed = { category -> sourceGroupsOf(category).any { it in categoryNames } },
-                                    onRenameCategory = { category, name -> renameCategory(category, name) },
+                                    isCategoryRenamed = { category -> viewModel.isCategoryRenamed(category) },
+                                    onRenameCategory = { category, name -> viewModel.renameCategory(category, name) },
                                     onOpenSettings = {
                                         currentScreen = CurrentScreen.Settings
                                     },
@@ -296,17 +296,13 @@ class MainActivity : ComponentActivity() {
                         }
                         is CurrentScreen.Player -> {
                             // Up-to-date version of the channel (current EPG program, chosen stream)
-                            val liveChannel = channels.firstOrNull { it.id == screen.channel.id } ?: screen.channel
-                            // Dispatcharr API key of the channel source only (never sent to stream providers)
+                            val liveChannel = displayedChannels.firstOrNull { it.id == screen.channel.id } ?: screen.channel
                             val channelConfig = configsById[liveChannel.sourceId]
-                            val streamAuth = remember(channelConfig) {
-                                channelConfig?.takeIf { it.type == SourceType.DISPATCHARR }?.let { ApiKeyAuth.of(it) }
-                            }
                             PlayerScreen(
                                 channel = liveChannel,
                                 channels = visibleChannels,
                                 playerManager = playerManager,
-                                streamAuth = streamAuth,
+                                streamAuths = streamAuths,
                                 userAgent = channelConfig?.customUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
                                 resolveStreams = { ch -> viewModel.automaticStreamUrls(ch) },

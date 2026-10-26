@@ -6,8 +6,14 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sim7b.tele.data.UiText
+import io.github.sim7b.tele.data.bouquet.Bouquet
+import io.github.sim7b.tele.data.bouquet.BouquetPreference
+import io.github.sim7b.tele.data.bouquet.ChannelGrouping
+import io.github.sim7b.tele.data.bouquet.ChannelNames
 import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.failure
+import io.github.sim7b.tele.data.model.CategoryMode
+import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.DispatcharrEpgChannel
 import io.github.sim7b.tele.data.model.GuideProgram
@@ -33,6 +39,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
@@ -94,6 +102,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var sources: List<LoadedSource> = emptyList()
 
+    // Displayed channels: names, numbers and categories of the reference bouquet, versions of a same channel
+    // grouped, categories cleaned, renamed and merged / separated (see ChannelGrouping and Categories)
+    private val _displayChannels = MutableStateFlow<List<Channel>>(emptyList())
+    val displayChannels: StateFlow<List<Channel>> = _displayChannels.asStateFlow()
+    // Same channels before the renames: the categories a rename applies to
+    @Volatile
+    private var groupedChannels: List<Channel> = emptyList()
+    private val channelNames = ChannelNames(ChannelNames.homeTokens(Locale.getDefault()))
+    private val franceBouquet by lazy { Bouquet.france(Locale.getDefault()) }
+
+    private class DisplayInput(
+        val channels: List<Channel>,
+        val renames: Map<String, String>,
+        val mode: CategoryMode,
+        val bouquet: BouquetPreference,
+        val configs: List<SourceConfig>,
+        val favoriteIds: List<String>
+    )
+
     // EPG programs of every source by channel id (ids are unique across sources), to move the current program
     @Volatile
     private var programsByChannelId: Map<String, List<GuideProgram>> = emptyMap()
@@ -103,6 +130,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             configRepository.enabledConfigs.collect { configs -> syncSources(configs) }
+        }
+        viewModelScope.launch {
+            val settings = combine(configRepository.enabledConfigs, configRepository.favoriteIds) { configs, favorites -> configs to favorites }
+            combine(
+                _channels, configRepository.categoryNames, configRepository.categoryMode, configRepository.bouquet, settings
+            ) { channels, renames, mode, bouquet, (configs, favorites) ->
+                DisplayInput(channels, renames, mode, bouquet, configs, favorites)
+            }.collectLatest { input ->
+                _displayChannels.value = withContext(Dispatchers.Default) { buildDisplay(input) }
+            }
         }
         viewModelScope.launch {
             var ticks = 0
@@ -152,8 +189,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun sourceOf(channel: Channel): LoadedSource? = sources.firstOrNull { it.config.id == channel.sourceId }
 
+    /** Displayed channels from the loaded ones (off the main thread: tens of thousands of channels). */
+    private fun buildDisplay(input: DisplayInput): List<Channel> {
+        val bouquet = if (input.bouquet == BouquetPreference.FRANCE) franceBouquet else null
+        val sourceNames = input.configs.associate { it.id to it.name }
+        val resources = getApplication<Application>().resources
+        val grouped = ChannelGrouping(bouquet, bouquet?.names ?: channelNames).build(
+            channels = input.channels,
+            mergeAcrossSources = input.mode == CategoryMode.MERGE,
+            favoriteIds = input.favoriteIds.toSet(),
+            sourceNames = sourceNames,
+            categoryLabel = { resources.getString(it.labelRes) }
+        )
+        groupedChannels = grouped
+        return Categories.apply(grouped, input.renames, input.mode, sourceNames)
+    }
+
+    private fun sourceGroupsOf(category: String): Set<String> = Categories.sourceGroupsOf(
+        category,
+        groupedChannels,
+        configRepository.categoryNames.value,
+        configRepository.categoryMode.value,
+        configRepository.enabledConfigs.value.associate { it.id to it.name }
+    )
+
+    fun isCategoryRenamed(category: String): Boolean =
+        sourceGroupsOf(category).any { it in configRepository.categoryNames.value }
+
+    /** Renames displayed category [category] ([name] null or blank: back to its own name); it stays hidden if it was. */
+    fun renameCategory(category: String, name: String?) {
+        val groups = sourceGroupsOf(category)
+        configRepository.renameCategory(groups, name)
+        val grouped = groupedChannels
+        val sourceNames = configRepository.enabledConfigs.value.associate { it.id to it.name }
+        val renamed = Categories.apply(grouped, configRepository.categoryNames.value, configRepository.categoryMode.value, sourceNames)
+        val newNames = grouped.indices.filter { grouped[it].group in groups }.mapTo(HashSet()) { renamed[it].group }
+        configRepository.replaceHiddenGroup(category, newNames)
+    }
+
     /** Streams available for a channel (loaded on demand, when the menu opens). */
     suspend fun loadStreams(channel: Channel): Result<List<StreamSource>> {
+        // Grouped channel: its versions ("TF1 HD", "TF1 FHD"...), by quality preference
+        if (channel.memberIds.size > 1) return Result.success(configRepository.qualityPreference.value.sort(channel.availableStreams))
         // Xtream: TS / HLS variants already known
         if (channel.availableStreams.isNotEmpty()) return Result.success(channel.availableStreams)
         // M3U: a single stream per playlist entry
@@ -178,7 +255,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun automaticStreamUrls(channel: Channel): List<String> {
         val preference = configRepository.qualityPreference.value
-        if (!preference.reordersStreams || channel.selectedStreamUrl != null) return emptyList()
+        if (channel.selectedStreamUrl != null) return emptyList()
+        // Grouped channel: every version, preferred quality first (the next ones if it fails)
+        if (channel.memberIds.size > 1) return preference.sort(channel.availableStreams).map { it.url }
+        if (!preference.reordersStreams) return emptyList()
         val client = sourceOf(channel)?.dispatcharr ?: return emptyList()
         val serverId = channel.serverId ?: return emptyList()
         val key = streamsKey(channel, serverId)

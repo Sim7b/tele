@@ -65,6 +65,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.*
+import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -109,6 +110,7 @@ fun SettingsScreen(
     val currentTheme by repository.themeBackground.collectAsState()
     val currentAccent by repository.accentColor.collectAsState()
     val currentQuality by repository.qualityPreference.collectAsState()
+    val currentBouquet by repository.bouquet.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
 
@@ -314,6 +316,29 @@ fun SettingsScreen(
                                     description = stringResource(preference.descriptionRes),
                                     selected = preference == currentQuality,
                                     onClick = { repository.setQualityPreference(preference) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // SECTION 3C: REFERENCE BOUQUET (channel names, numbers, categories, grouped versions)
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_bouquet_title),
+                        description = stringResource(R.string.settings_bouquet_description)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            BouquetPreference.entries.forEach { preference ->
+                                OptionButton(
+                                    label = stringResource(preference.labelRes),
+                                    description = stringResource(preference.descriptionRes),
+                                    selected = preference == currentBouquet,
+                                    onClick = { repository.setBouquet(preference) },
                                     modifier = Modifier.weight(1f)
                                 )
                             }

@@ -312,4 +312,20 @@
     <string name="category_mode_separate">Séparer par source</string>
     <string name="category_mode_separate_description">Nom de la source ajouté : « Sport · Neo »</string>
     <string name="settings_deactivate">Désactiver</string>
+
+    <!-- Reference bouquet -->
+    <string name="bouquet_tnt">TNT</string>
+    <string name="bouquet_news">Info</string>
+    <string name="bouquet_sport">Sport</string>
+    <string name="bouquet_cinema">Cinéma</string>
+    <string name="bouquet_series">Séries &amp; divertissement</string>
+    <string name="bouquet_kids">Jeunesse</string>
+    <string name="bouquet_documentary">Découverte</string>
+    <string name="bouquet_music">Musique</string>
+    <string name="settings_bouquet_title">Bouquet de référence</string>
+    <string name="settings_bouquet_description">Reconnaît les chaînes (nom, numéro, catégorie) et regroupe leurs versions HD, FHD, 4K… en une seule chaîne</string>
+    <string name="bouquet_france">France (TNT + Canal+)</string>
+    <string name="bouquet_france_description">Noms, numéros et catégories du bouquet</string>
+    <string name="bouquet_none">Aucun</string>
+    <string name="bouquet_none_description">Noms et catégories des fournisseurs, nettoyés</string>
 </resources>
