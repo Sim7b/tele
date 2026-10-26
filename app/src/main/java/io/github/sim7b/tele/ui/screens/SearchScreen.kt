@@ -135,12 +135,18 @@ fun SearchScreen(
     val rows = remember(results) { results.chunked(SEARCH_COLUMNS) }
     val focusTargetId = lastFocusedId?.takeIf { id -> results.any { it.id == id } } ?: results.firstOrNull()?.id
 
+    // Back from the player: focus returns to the channel that was opened, once the results are recomputed
+    var restoreResultFocus by remember { mutableStateOf(lastFocusedId != null) }
     LaunchedEffect(Unit) {
         when {
             startWithVoice && !voiceStarted && voiceAvailable -> startVoice()
-            // Back from the player: focus returns to the channel that was opened
-            lastFocusedId != null -> resultFocus.requestFocusWithRetry()
-            else -> fieldFocus.requestFocusWithRetry()
+            !restoreResultFocus -> fieldFocus.requestFocusWithRetry()
+        }
+    }
+    LaunchedEffect(restoreResultFocus, focusTargetId) {
+        if (restoreResultFocus && focusTargetId != null) {
+            resultFocus.requestFocusWithRetry()
+            restoreResultFocus = false
         }
     }
     LaunchedEffect(focusResults, focusTargetId) {
