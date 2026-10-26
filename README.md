@@ -21,6 +21,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Appearance**: 6 backgrounds including a light theme, 6 accent colors, 3 interface densities.
+- **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → Updates** after the system confirmation.
 
 ![Stream picker](docs/screenshots/stream-picker.png)
 
@@ -46,6 +47,8 @@ adb install tele-vX.Y.Z.apk
 ```
 
 On first launch, open **Settings → Channel sources → Add a source**.
+
+Later versions install from the app itself (**Settings → Updates**). The first time, Android asks to allow Télé to install apps.
 
 Each pull request also builds a debug APK, available in the artifacts of its "Build APK" workflow run.
 
@@ -131,7 +134,7 @@ Technical choices:
 
 Sources, API keys and passwords are stored **only on the device**. The app contains no server and no default credentials.
 
-The only requests to a third-party service are poster searches on [TVMaze](https://www.tvmaze.com/api), and only when the source provides no artwork for a program. These requests only contain the program title.
+The only requests to a third-party service are poster searches on [TVMaze](https://www.tvmaze.com/api), and only when the source provides no artwork for a program. These requests only contain the program title. Update checks query the public GitHub API for the latest release of this repository and send no data about you or your sources.
 
 ## Disclaimer
 
