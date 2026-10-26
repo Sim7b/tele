@@ -75,7 +75,7 @@ class M3uParserTest {
             """.trimIndent()
         )
 
-        assertEquals(listOf("Arte", "Channel 2"), playlist.entries.map { it.name })
+        assertEquals(listOf("Arte", "#2"), playlist.entries.map { it.name })
         assertNull(playlist.entries[1].tvgId)
     }
 

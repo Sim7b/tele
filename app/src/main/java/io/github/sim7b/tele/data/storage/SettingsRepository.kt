@@ -146,7 +146,7 @@ class SettingsRepository(context: Context) {
                 val obj = root.optJSONObject(channelId) ?: return@mapNotNull null
                 val url = obj.optStringOrNull("url") ?: return@mapNotNull null
                 channelId to StreamSource(
-                    name = obj.optString("name", "Stream"),
+                    name = obj.optStringOrNull("name") ?: return@mapNotNull null,
                     url = url,
                     id = obj.optStringOrNull("id"),
                     provider = obj.optStringOrNull("provider")

@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -47,6 +48,8 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.storage.LogoToneStore
 import io.github.sim7b.tele.ui.theme.*
 import java.io.File
@@ -61,6 +64,11 @@ fun focusRing(shape: Shape, width: Dp = 2.dp): ClickableSurfaceBorder =
     ClickableSurfaceDefaults.border(
         focusedBorder = Border(BorderStroke(width, FocusBorderColor), shape = shape)
     )
+
+/** Label of a channel group: the channels without a category are shown in a localized "Other" group. */
+@Composable
+fun groupLabel(group: String): String =
+    if (group == Channel.NO_GROUP) stringResource(R.string.group_other) else group
 
 /** Network image with a crossfade when it appears. */
 @Composable

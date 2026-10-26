@@ -199,7 +199,7 @@ class DispatcharrClient(
                 val epgDataMap = epgDataDeferred.await()
                 val channelList = parsed.map { (channel, groupId, epgDataId) ->
                     channel.copy(
-                        group = groupsMap[groupId] ?: "General",
+                        group = groupsMap[groupId] ?: Channel.NO_GROUP,
                         tvgId = epgDataMap[epgDataId]?.tvgId ?: channel.tvgId
                     )
                 }.toMutableList()
@@ -219,12 +219,14 @@ class DispatcharrClient(
     private fun parseChannel(item: JSONObject): ParsedChannel? {
         val uuid = item.optStringOrNull("uuid") ?: item.optStringOrNull("id") ?: return null
         val logoId = item.optInt("effective_logo_id", item.optInt("logo_id", -1))
+        val channelNumber = item.optDouble("effective_channel_number", item.optDouble("channel_number", 0.0))
+            .takeIf { !it.isNaN() }?.toInt()?.takeIf { it > 0 }
         val channel = DispatcharrChannel(
             id = item.optStringOrNull("id") ?: uuid,
             uuid = uuid,
-            channelNumber = item.optDouble("effective_channel_number", item.optDouble("channel_number", 0.0))
-                .takeIf { !it.isNaN() }?.toInt()?.takeIf { it > 0 },
-            name = item.optStringOrNull("effective_name") ?: item.optStringOrNull("name") ?: "Unnamed channel",
+            channelNumber = channelNumber,
+            // Language-neutral fallback: the data layer has no access to the string resources
+            name = item.optStringOrNull("effective_name") ?: item.optStringOrNull("name") ?: "#${channelNumber ?: uuid.take(8)}",
             group = "",
             logoUrl = if (logoId > 0) "$baseUrl/api/channels/logos/$logoId/cache/" else item.optStringOrNull("logo_url"),
             streamUrl = "$baseUrl/proxy/ts/stream/$uuid",
@@ -310,6 +312,8 @@ class DispatcharrClient(
     }
 
     private fun parseProgram(obj: JSONObject, channelKey: String, fallbackId: String): GuideProgram? {
+        // A program without title is dropped, as in XMLTV guides
+        val title = obj.optStringOrNull("title") ?: return null
         val startIso = obj.optStringOrNull("start_time") ?: obj.optStringOrNull("start") ?: return null
         val endIso = obj.optStringOrNull("end_time") ?: obj.optStringOrNull("end") ?: return null
         val startMillis = EpgResolver.parseIsoToMillis(startIso)
@@ -322,7 +326,7 @@ class DispatcharrClient(
         return GuideProgram(
             id = obj.optStringOrNull("id") ?: fallbackId,
             channelUuid = channelKey,
-            title = obj.optStringOrNull("title") ?: "Program",
+            title = title,
             description = obj.optStringOrNull("description"),
             startTimeIso = startIso,
             endTimeIso = endIso,
@@ -381,7 +385,7 @@ class DispatcharrClient(
         val fetched = fetchObjects("$baseUrl/api/m3u/accounts/") { item ->
             val id = item.optInt("id", -1)
             if (id != -1) {
-                accounts[id] = (item.optStringOrNull("name") ?: "Source $id") to item.optBoolean("is_active", true)
+                accounts[id] = (item.optStringOrNull("name") ?: "#$id") to item.optBoolean("is_active", true)
             }
         }
         if (!fetched) return@withContext emptyMap()
@@ -417,7 +421,7 @@ class DispatcharrClient(
                     val url = item.optStringOrNull("url")
                         ?: item.optStringOrNull("stream_hash")?.let { "$baseUrl/proxy/ts/stream/$it" }
                         ?: continue
-                    val rawName = item.optStringOrNull("name") ?: "Stream ${i + 1}"
+                    val rawName = item.optStringOrNull("name") ?: "#${i + 1}"
 
                     streams.add(
                         StreamSource(

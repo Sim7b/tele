@@ -178,6 +178,8 @@
     <string name="home_featured">Featured</string>
     <string name="home_move_hint">"◀ ▶ ▲ ▼  Move      OK  Confirm"</string>
     <string name="home_category_all">All</string>
+    <!-- Group of the channels without a category -->
+    <string name="group_other">Other</string>
     <!-- java.time pattern of the date shown next to the clock -->
     <string name="home_date_pattern">EEEE, MMMM d</string>
 

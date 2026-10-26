@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.remote
 
+import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.SourceType
 import kotlinx.coroutines.runBlocking
@@ -52,6 +53,6 @@ class XtreamLoadTest {
         val channels = XtreamClient.loadChannels(config).getOrThrow().channels
 
         assertEquals(listOf("xt-12345678-10", "xt-12345678-20"), channels.map { it.id })
-        assertEquals(listOf("Other", "News"), channels.map { it.group })
+        assertEquals(listOf(Channel.NO_GROUP, "News"), channels.map { it.group })
     }
 }

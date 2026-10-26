@@ -71,7 +71,7 @@ object M3uClient {
             Channel(
                 id = id,
                 name = entry.name,
-                group = entry.group ?: "Other",
+                group = entry.group ?: Channel.NO_GROUP,
                 logoUrl = entry.logo,
                 streamUrl = entry.url,
                 tvgId = entry.tvgId ?: entry.tvgName,

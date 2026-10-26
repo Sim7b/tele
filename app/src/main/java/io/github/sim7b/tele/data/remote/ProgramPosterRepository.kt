@@ -1,9 +1,9 @@
 package io.github.sim7b.tele.data.remote
 
 import io.github.sim7b.tele.data.epg.EpgResolver
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -16,26 +16,46 @@ import java.util.concurrent.TimeUnit
  */
 object ProgramPosterRepository {
 
-    private val client = OkHttpClient.Builder()
+    private const val MAX_CACHED_TITLES = 2_000
+
+    // Derived from the shared client (connection pool), with short timeouts: artwork is optional
+    private val client = HttpClients.base.newBuilder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
 
-    // In-memory cache (including missing results, as an empty value) to avoid repeated requests
-    private val posterCache = ConcurrentHashMap<String, String>()
+    // Bounded in-memory cache (including missing results, as an empty value) to avoid repeated requests
+    private val posterCache = object : LinkedHashMap<String, String>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > MAX_CACHED_TITLES
+    }
+
+    // Lookups in progress: the tiles showing the same program share a single request
+    private val inFlight = ConcurrentHashMap<String, CompletableDeferred<String?>>()
 
     /**
      * URL of a landscape artwork (16:9 / backdrop) for a program title.
      */
     suspend fun getPosterUrl(rawTitle: String): String? = withContext(Dispatchers.IO) {
-        if (rawTitle.isBlank() || rawTitle == "Program") return@withContext null
+        if (rawTitle.isBlank()) return@withContext null
 
         val cleanTitle = cleanProgramTitle(rawTitle)
         if (cleanTitle.isBlank()) return@withContext null
 
         // Cache lookup
-        posterCache[cleanTitle]?.let { return@withContext it.ifBlank { null } }
+        synchronized(posterCache) { posterCache[cleanTitle] }?.let { return@withContext it.ifBlank { null } }
 
+        val pending = CompletableDeferred<String?>()
+        inFlight.putIfAbsent(cleanTitle, pending)?.let { return@withContext it.await() }
+        try {
+            fetchPosterUrl(cleanTitle).also { pending.complete(it) }
+        } finally {
+            // Cancelled or failed: the waiting tiles get no artwork this time
+            pending.complete(null)
+            inFlight.remove(cleanTitle, pending)
+        }
+    }
+
+    private fun fetchPosterUrl(cleanTitle: String): String? {
         var result: String? = null
         var definitive = true
         try {
@@ -63,9 +83,9 @@ object ProgramPosterRepository {
         }
 
         if (result != null || definitive) {
-            posterCache[cleanTitle] = result ?: ""
+            synchronized(posterCache) { posterCache[cleanTitle] = result ?: "" }
         }
-        result
+        return result
     }
 
     private fun extractLandscapeImage(json: JSONObject, cleanTitle: String): String? {
