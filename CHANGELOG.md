@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.4](https://github.com/Sim7b/tele/compare/v0.3.3...v0.3.4) (2026-10-26)
+
+### Features
+
+* **bouquet:** group channels and categories with a French reference bouquet ([125a32b](https://github.com/Sim7b/tele/commit/125a32b11575a5e0f3b159c11c9d91df6d989ed4))
+* **onboarding:** show a quick start guide on the first launch ([2971ce7](https://github.com/Sim7b/tele/commit/2971ce75bbda5283da92f8fd301efa0862cbbe91))
+* **player:** favor a stream quality in automatic mode ([c08413c](https://github.com/Sim7b/tele/commit/c08413c01fb5552597a2fd2e74060ac5ecbe2084))
+* **sources:** enable several sources at once and rename categories ([a9d7024](https://github.com/Sim7b/tele/commit/a9d70249f400a71d191fb55280e5c9029c11171f))
+
+### Bug Fixes
+
+* **bouquet:** crash at startup, category synonyms and version labels ([1193605](https://github.com/Sim7b/tele/commit/1193605e91234c7e973c6efe220aaee844202c52))
+
 ## [0.3.3](https://github.com/Sim7b/tele/compare/v0.3.2...v0.3.3) (2026-10-26)
 
 ### Features
