@@ -71,6 +71,8 @@ class TvPlayerManager(private val context: Context) {
     private val extractorsFactory = DefaultExtractorsFactory()
         .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
     private var retryCount = 0
+    // HLS playlist served without the .m3u8 extension: detected when the progressive extractors reject it
+    private var forceHls = false
     // Start of the current channel switch (measures the time to the first frame)
     private var zapStartedAt = 0L
     private val retryRunnable = Runnable { prepareCurrent() }
@@ -92,13 +94,14 @@ class TvPlayerManager(private val context: Context) {
     }
 
     private fun createPlayer(): ExoPlayer {
-        // Buffer tuned for very fast channel switching on Android TV (< 500 ms)
+        // Fast channel switching (playback starts with 500 ms buffered), then a comfortable buffer
+        // against network hiccups: the channel switch speed only depends on bufferForPlaybackMs
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                500,   // Min buffer before playback starts (instant channel switch)
-                3500,  // Max buffer
-                500,   // Buffer required after a rebuffer
-                500    // Buffer after a pause
+                15_000, // minBufferMs: buffer kept ahead of the playback position
+                30_000, // maxBufferMs
+                500,    // bufferForPlaybackMs: buffer required to start (channel switch)
+                2_500   // bufferForPlaybackAfterRebufferMs: buffer required to resume after a stall
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -156,6 +159,14 @@ class TvPlayerManager(private val context: Context) {
         if (playbackError.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
             player.seekToDefaultPosition()
             player.prepare()
+            return
+        }
+
+        if (playbackError.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED && !forceHls &&
+            currentUrl?.let { isHlsUrl(it) } == false
+        ) {
+            forceHls = true
+            prepareCurrent()
             return
         }
 
@@ -217,6 +228,7 @@ class TvPlayerManager(private val context: Context) {
         currentUserAgent = customUserAgent
         currentAuth = auth
         retryCount = 0
+        forceHls = false
         mainHandler.removeCallbacks(retryRunnable)
         _streamInfo.value = StreamInfo()
         prepareCurrent()
@@ -243,7 +255,7 @@ class TvPlayerManager(private val context: Context) {
             )
             .build()
 
-        val mediaSource: MediaSource = if (url.contains(".m3u8", ignoreCase = true)) {
+        val mediaSource: MediaSource = if (forceHls || isHlsUrl(url)) {
             HlsMediaSource.Factory(httpDataSourceFactory)
                 .setAllowChunklessPreparation(true)
                 .createMediaSource(mediaItem)
@@ -256,6 +268,8 @@ class TvPlayerManager(private val context: Context) {
         player.prepare()
         player.play()
     }
+
+    private fun isHlsUrl(url: String) = url.contains(".m3u8", ignoreCase = true)
 
     fun togglePlayPause() {
         val player = exoPlayer ?: return

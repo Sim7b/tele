@@ -8,6 +8,7 @@ import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.failure
 import io.github.sim7b.tele.data.model.*
 import io.github.sim7b.tele.data.optStringOrNull
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -89,9 +90,8 @@ class DispatcharrClient(
                     }
                 }
 
-                val body = HttpClients.jsonString(response.body)
                 val count = try {
-                    extractArray(body).length()
+                    JsonStreams.forEachObject(response.body.byteStream()) {}
                 } catch (e: Exception) {
                     return@withContext failure(R.string.error_not_dispatcharr_api)
                 }
@@ -104,29 +104,22 @@ class DispatcharrClient(
     }
 
     /**
-     * Accepts a raw JSON array or a paginated object ("results" / "data").
+     * Streams the objects of a list endpoint (raw array or paginated object) to [action];
+     * false when the request failed. [action] may have received part of the objects then.
      */
-    private fun extractArray(body: String): JSONArray {
-        return if (body.trimStart().startsWith("[")) {
-            JSONArray(body)
-        } else {
-            val root = JSONObject(body)
-            root.optJSONArray("data") ?: root.optJSONArray("results") ?: JSONArray()
-        }
-    }
-
-    private fun fetchArray(url: String): JSONArray? {
+    private suspend fun fetchObjects(url: String, action: (JSONObject) -> Unit): Boolean {
         val request = Request.Builder().url(url).get().build()
         return try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val body = HttpClients.jsonString(response.body)
-                extractArray(body)
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) return@executeCancellable false
+                JsonStreams.forEachObject(response.body.byteStream(), action = action)
+                true
             }
         } catch (e: Exception) {
-            // Exception type only: parsing errors carry the response body
+            if (e is CancellationException) throw e
+            // Exception type only: parsing errors may carry part of the response
             Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
-            null
+            false
         }
     }
 
@@ -134,16 +127,15 @@ class DispatcharrClient(
         groupsCache?.let { return@withContext it }
         if (baseUrl.isBlank()) return@withContext emptyMap()
 
-        val array = fetchArray("$baseUrl/api/channels/groups/") ?: return@withContext emptyMap()
         val groups = HashMap<Int, String>()
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
+        val fetched = fetchObjects("$baseUrl/api/channels/groups/") { item ->
             val id = item.optInt("id", -1)
             val name = item.optStringOrNull("name")
             if (id != -1 && name != null) {
                 groups[id] = name
             }
         }
+        if (!fetched) return@withContext emptyMap()
         groups.also { groupsCache = it }
     }
 
@@ -155,16 +147,15 @@ class DispatcharrClient(
         epgDataCache?.let { return@withContext it }
         if (baseUrl.isBlank()) return@withContext emptyMap()
 
-        val array = fetchArray("$baseUrl/api/epg/epgdata/") ?: return@withContext emptyMap()
         val epgData = HashMap<Int, DispatcharrEpgData>()
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
+        val fetched = fetchObjects("$baseUrl/api/epg/epgdata/") { item ->
             val id = item.optInt("id", -1)
-            val tvgId = item.optStringOrNull("tvg_id") ?: continue
-            if (id != -1) {
+            val tvgId = item.optStringOrNull("tvg_id")
+            if (id != -1 && tvgId != null) {
                 epgData[id] = DispatcharrEpgData(id, tvgId, item.optStringOrNull("name") ?: tvgId)
             }
         }
+        if (!fetched) return@withContext emptyMap()
         epgData.also { epgDataCache = it }
     }
 
@@ -186,7 +177,11 @@ class DispatcharrClient(
                     .get()
                     .build()
 
-                val body = client.newCall(request).executeCancellable { response ->
+                // Channels streamed while the reference tables load; group and EPG key resolved afterwards
+                val parsed = mutableListOf<ParsedChannel>()
+                // The uuid is the channel id in the app: it must stay unique (lazy list keys)
+                val seenUuids = HashSet<String>()
+                client.newCall(request).executeCancellable { response ->
                     if (!response.isSuccessful) {
                         throw UserFacingException(
                             when (response.code) {
@@ -195,56 +190,19 @@ class DispatcharrClient(
                             }
                         )
                     }
-                    HttpClients.jsonString(response.body)
+                    JsonStreams.forEachObject(response.body.byteStream()) { item ->
+                        parseChannel(item)?.takeIf { seenUuids.add(it.channel.uuid) }?.let { parsed.add(it) }
+                    }
                 }
 
                 val groupsMap = groupsDeferred.await()
                 val epgDataMap = epgDataDeferred.await()
-                val channelsArray = extractArray(body)
-                val channelList = mutableListOf<DispatcharrChannel>()
-                // The uuid is the channel id in the app: it must stay unique (lazy list keys)
-                val seenUuids = HashSet<String>()
-
-                for (i in 0 until channelsArray.length()) {
-                    val item = channelsArray.optJSONObject(i) ?: continue
-                    val uuid = item.optStringOrNull("uuid") ?: item.optStringOrNull("id") ?: continue
-                    if (!seenUuids.add(uuid)) continue
-                    val name = item.optStringOrNull("effective_name") ?: item.optStringOrNull("name") ?: "Unnamed channel"
-
-                    val groupId = item.optInt("effective_channel_group_id", item.optInt("channel_group_id", -1))
-                    val group = groupsMap[groupId] ?: "General"
-
-                    val logoId = item.optInt("effective_logo_id", item.optInt("logo_id", -1))
-                    val logoUrl = if (logoId > 0) {
-                        "$baseUrl/api/channels/logos/$logoId/cache/"
-                    } else {
-                        item.optStringOrNull("logo_url")
-                    }
-
-                    val epgDataId = item.optInt("effective_epg_data_id", item.optInt("epg_data_id", -1))
-                    val tvgId = epgDataMap[epgDataId]?.tvgId
-                        ?: item.optStringOrNull("effective_tvg_id")
-                        ?: item.optStringOrNull("tvg_id")
-                        ?: ""
-                    val streamUrl = "$baseUrl/proxy/ts/stream/$uuid"
-                    val channelNumber = item.optDouble("effective_channel_number", item.optDouble("channel_number", 0.0))
-                        .takeIf { !it.isNaN() }?.toInt()?.takeIf { it > 0 }
-                    val isRadio = item.optBoolean("effective_is_radio", item.optBoolean("is_radio", false))
-
-                    channelList.add(
-                        DispatcharrChannel(
-                            id = item.optStringOrNull("id") ?: uuid,
-                            uuid = uuid,
-                            channelNumber = channelNumber,
-                            name = name,
-                            group = group,
-                            logoUrl = logoUrl,
-                            streamUrl = streamUrl,
-                            tvgId = tvgId,
-                            isRadio = isRadio
-                        )
+                val channelList = parsed.map { (channel, groupId, epgDataId) ->
+                    channel.copy(
+                        group = groupsMap[groupId] ?: "General",
+                        tvgId = epgDataMap[epgDataId]?.tvgId ?: channel.tvgId
                     )
-                }
+                }.toMutableList()
 
                 channelList.sortBy { it.channelNumber ?: Int.MAX_VALUE }
 
@@ -253,6 +211,32 @@ class DispatcharrClient(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private data class ParsedChannel(val channel: DispatcharrChannel, val groupId: Int, val epgDataId: Int)
+
+    /** Channel of the API, before its group and EPG data are resolved from their tables. */
+    private fun parseChannel(item: JSONObject): ParsedChannel? {
+        val uuid = item.optStringOrNull("uuid") ?: item.optStringOrNull("id") ?: return null
+        val logoId = item.optInt("effective_logo_id", item.optInt("logo_id", -1))
+        val channel = DispatcharrChannel(
+            id = item.optStringOrNull("id") ?: uuid,
+            uuid = uuid,
+            channelNumber = item.optDouble("effective_channel_number", item.optDouble("channel_number", 0.0))
+                .takeIf { !it.isNaN() }?.toInt()?.takeIf { it > 0 },
+            name = item.optStringOrNull("effective_name") ?: item.optStringOrNull("name") ?: "Unnamed channel",
+            group = "",
+            logoUrl = if (logoId > 0) "$baseUrl/api/channels/logos/$logoId/cache/" else item.optStringOrNull("logo_url"),
+            streamUrl = "$baseUrl/proxy/ts/stream/$uuid",
+            // Replaced by the tvg_id of the linked EPGData when there is one
+            tvgId = item.optStringOrNull("effective_tvg_id") ?: item.optStringOrNull("tvg_id") ?: "",
+            isRadio = item.optBoolean("effective_is_radio", item.optBoolean("is_radio", false))
+        )
+        return ParsedChannel(
+            channel = channel,
+            groupId = item.optInt("effective_channel_group_id", item.optInt("channel_group_id", -1)),
+            epgDataId = item.optInt("effective_epg_data_id", item.optInt("epg_data_id", -1))
+        )
     }
 
     /**
@@ -279,38 +263,34 @@ class DispatcharrClient(
             .build()
 
         try {
-            val body = client.newCall(request).executeCancellable { response ->
-                if (!response.isSuccessful) throw UserFacingException(UiText.Res(R.string.error_server_http, response.code))
-                HttpClients.jsonString(response.body)
-            }
-
             val epgMap = mutableMapOf<String, MutableList<GuideProgram>>()
-            val dataArray = extractArray(body)
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) throw UserFacingException(UiText.Res(R.string.error_server_http, response.code))
+                var index = 0
+                JsonStreams.forEachObject(response.body.byteStream()) { item ->
+                    val i = index++
+                    // Case 1: channel object with a nested "programs" array
+                    if (item.has("programs")) {
+                        val channelKey = item.optStringOrNull("tvg_id")
+                            ?: item.optStringOrNull("channel_uuid")
+                            ?: item.optStringOrNull("uuid")
+                            ?: return@forEachObject
+                        val programsArray = item.optJSONArray("programs") ?: JSONArray()
+                        val progList = epgMap.getOrPut(channelKey) { mutableListOf() }
 
-            for (i in 0 until dataArray.length()) {
-                val item = dataArray.optJSONObject(i) ?: continue
-
-                // Case 1: channel object with a nested "programs" array
-                if (item.has("programs")) {
-                    val channelKey = item.optStringOrNull("tvg_id")
-                        ?: item.optStringOrNull("channel_uuid")
-                        ?: item.optStringOrNull("uuid")
-                        ?: continue
-                    val programsArray = item.optJSONArray("programs") ?: JSONArray()
-                    val progList = epgMap.getOrPut(channelKey) { mutableListOf() }
-
-                    for (j in 0 until programsArray.length()) {
-                        val progObj = programsArray.optJSONObject(j) ?: continue
-                        parseProgram(progObj, channelKey, "$channelKey-$j")?.let { progList.add(it) }
+                        for (j in 0 until programsArray.length()) {
+                            val progObj = programsArray.optJSONObject(j) ?: continue
+                            parseProgram(progObj, channelKey, "$channelKey-$j")?.let { progList.add(it) }
+                        }
                     }
-                }
-                // Case 2: flat array of individual programs (format of /api/epg/grid/)
-                else if (item.has("title")) {
-                    val key = item.optStringOrNull("tvg_id")
-                        ?: item.optStringOrNull("channel_uuid")
-                        ?: item.optStringOrNull("channel_id")
-                        ?: continue
-                    parseProgram(item, key, "$key-$i")?.let { epgMap.getOrPut(key) { mutableListOf() }.add(it) }
+                    // Case 2: flat array of individual programs (format of /api/epg/grid/)
+                    else if (item.has("title")) {
+                        val key = item.optStringOrNull("tvg_id")
+                            ?: item.optStringOrNull("channel_uuid")
+                            ?: item.optStringOrNull("channel_id")
+                            ?: return@forEachObject
+                        parseProgram(item, key, "$key-$i")?.let { epgMap.getOrPut(key) { mutableListOf() }.add(it) }
+                    }
                 }
             }
 
@@ -371,11 +351,11 @@ class DispatcharrClient(
                 ?.build()
                 ?: break
 
-            val results = fetchArray(url.toString()) ?: break
-            for (i in 0 until results.length()) {
-                val item = results.optJSONObject(i) ?: continue
-                val id = item.optStringOrNull("id") ?: continue
-                val props = item.optJSONObject("custom_properties") ?: continue
+            var count = 0
+            val fetched = fetchObjects(url.toString()) { item ->
+                count++
+                val id = item.optStringOrNull("id") ?: return@fetchObjects
+                val props = item.optJSONObject("custom_properties") ?: return@fetchObjects
                 val image = props.optStringOrNull("icon")
                 val category = props.optJSONArray("categories")?.let { array ->
                     (0 until array.length()).firstNotNullOfOrNull { array.optString(it).takeIf { c -> c.isNotBlank() } }
@@ -384,7 +364,7 @@ class DispatcharrClient(
                     artwork[id] = ProgramArtwork(imageUrl = image, category = category)
                 }
             }
-            if (results.length() < ARTWORK_PAGE_SIZE) break
+            if (!fetched || count < ARTWORK_PAGE_SIZE) break
         }
         artwork
     }
@@ -397,15 +377,14 @@ class DispatcharrClient(
         accountsCache?.let { return@withContext it }
         if (baseUrl.isBlank()) return@withContext emptyMap()
 
-        val array = fetchArray("$baseUrl/api/m3u/accounts/") ?: return@withContext emptyMap()
         val accounts = HashMap<Int, Pair<String, Boolean>>()
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
+        val fetched = fetchObjects("$baseUrl/api/m3u/accounts/") { item ->
             val id = item.optInt("id", -1)
             if (id != -1) {
                 accounts[id] = (item.optStringOrNull("name") ?: "Source $id") to item.optBoolean("is_active", true)
             }
         }
+        if (!fetched) return@withContext emptyMap()
         accounts.also { accountsCache = it }
     }
 
@@ -421,13 +400,14 @@ class DispatcharrClient(
         try {
             coroutineScope {
                 val accountsDeferred = async { fetchAccounts() }
-                val array = fetchArray("$baseUrl/api/channels/channels/$channelServerId/streams/")
-                    ?: throw UserFacingException(UiText.Res(R.string.error_channel_streams))
+                val items = mutableListOf<JSONObject>()
+                if (!fetchObjects("$baseUrl/api/channels/channels/$channelServerId/streams/") { items.add(it) }) {
+                    throw UserFacingException(UiText.Res(R.string.error_channel_streams))
+                }
                 val accounts = accountsDeferred.await()
 
                 val streams = mutableListOf<StreamSource>()
-                for (i in 0 until array.length()) {
-                    val item = array.optJSONObject(i) ?: continue
+                for ((i, item) in items.withIndex()) {
                     if (item.optBoolean("is_stale", false)) continue
 
                     val accountId = item.optInt("m3u_account", -1)
