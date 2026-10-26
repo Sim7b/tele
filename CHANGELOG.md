@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.6](https://github.com/Sim7b/tele/compare/v0.3.5...v0.3.6) (2026-10-26)
+
+### Features
+
+* **home:** preview the selected channel without sound ([18796a1](https://github.com/Sim7b/tele/commit/18796a10a63821f6d38acd4e1e26a85a24788c1b))
+
 ## [0.3.5](https://github.com/Sim7b/tele/compare/v0.3.4...v0.3.5) (2026-10-26)
 
 ### Bug Fixes
