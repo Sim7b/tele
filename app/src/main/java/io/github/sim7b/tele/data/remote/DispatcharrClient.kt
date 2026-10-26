@@ -16,7 +16,6 @@ import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.ConcurrentHashMap
 
 class DispatcharrClient(
     @Volatile private var currentConfig: SourceConfig? = null
@@ -46,17 +45,21 @@ class DispatcharrClient(
         .addNetworkInterceptor(apiKeyInterceptor)
         .build()
 
-    private val groupsCache = ConcurrentHashMap<Int, String>()
-    private val epgDataCache = ConcurrentHashMap<Int, DispatcharrEpgData>()
-    private val accountsCache = ConcurrentHashMap<Int, Pair<String, Boolean>>()
+    // Reference tables, cached once fetched successfully (immutable maps replaced as a whole)
+    @Volatile private var groupsCache: Map<Int, String>? = null
+    @Volatile private var epgDataCache: Map<Int, DispatcharrEpgData>? = null
+    @Volatile private var accountsCache: Map<Int, Pair<String, Boolean>>? = null
 
     fun setConfig(config: SourceConfig?) {
-        if (config != currentConfig) {
-            groupsCache.clear()
-            epgDataCache.clear()
-            accountsCache.clear()
-        }
+        if (config != currentConfig) clearCaches()
         this.currentConfig = config
+    }
+
+    /** Forgets the groups, EPG data and accounts (manual refresh: they may have changed on the server). */
+    fun clearCaches() {
+        groupsCache = null
+        epgDataCache = null
+        accountsCache = null
     }
 
     private val baseUrl: String
@@ -128,19 +131,20 @@ class DispatcharrClient(
     }
 
     private suspend fun fetchGroupsMap(): Map<Int, String> = withContext(Dispatchers.IO) {
-        if (groupsCache.isNotEmpty()) return@withContext groupsCache
+        groupsCache?.let { return@withContext it }
         if (baseUrl.isBlank()) return@withContext emptyMap()
 
-        val array = fetchArray("$baseUrl/api/channels/groups/") ?: return@withContext groupsCache
+        val array = fetchArray("$baseUrl/api/channels/groups/") ?: return@withContext emptyMap()
+        val groups = HashMap<Int, String>()
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val id = item.optInt("id", -1)
             val name = item.optStringOrNull("name")
             if (id != -1 && name != null) {
-                groupsCache[id] = name
+                groups[id] = name
             }
         }
-        groupsCache
+        groups.also { groupsCache = it }
     }
 
     /**
@@ -148,19 +152,20 @@ class DispatcharrClient(
      * while the EPG grid is indexed by the tvg_id of the EPGData.
      */
     private suspend fun fetchEpgDataMap(): Map<Int, DispatcharrEpgData> = withContext(Dispatchers.IO) {
-        if (epgDataCache.isNotEmpty()) return@withContext epgDataCache
+        epgDataCache?.let { return@withContext it }
         if (baseUrl.isBlank()) return@withContext emptyMap()
 
-        val array = fetchArray("$baseUrl/api/epg/epgdata/") ?: return@withContext epgDataCache
+        val array = fetchArray("$baseUrl/api/epg/epgdata/") ?: return@withContext emptyMap()
+        val epgData = HashMap<Int, DispatcharrEpgData>()
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val id = item.optInt("id", -1)
             val tvgId = item.optStringOrNull("tvg_id") ?: continue
             if (id != -1) {
-                epgDataCache[id] = DispatcharrEpgData(id, tvgId, item.optStringOrNull("name") ?: tvgId)
+                epgData[id] = DispatcharrEpgData(id, tvgId, item.optStringOrNull("name") ?: tvgId)
             }
         }
-        epgDataCache
+        epgData.also { epgDataCache = it }
     }
 
     /** EPGData list (to match by name the channels without epg_data_id). */
@@ -197,10 +202,13 @@ class DispatcharrClient(
                 val epgDataMap = epgDataDeferred.await()
                 val channelsArray = extractArray(body)
                 val channelList = mutableListOf<DispatcharrChannel>()
+                // The uuid is the channel id in the app: it must stay unique (lazy list keys)
+                val seenUuids = HashSet<String>()
 
                 for (i in 0 until channelsArray.length()) {
                     val item = channelsArray.optJSONObject(i) ?: continue
                     val uuid = item.optStringOrNull("uuid") ?: item.optStringOrNull("id") ?: continue
+                    if (!seenUuids.add(uuid)) continue
                     val name = item.optStringOrNull("effective_name") ?: item.optStringOrNull("name") ?: "Unnamed channel"
 
                     val groupId = item.optInt("effective_channel_group_id", item.optInt("channel_group_id", -1))
@@ -388,18 +396,19 @@ class DispatcharrClient(
 
     /** M3U accounts (providers): display name and active state, cached. */
     private suspend fun fetchAccounts(): Map<Int, Pair<String, Boolean>> = withContext(Dispatchers.IO) {
-        if (accountsCache.isNotEmpty()) return@withContext accountsCache
+        accountsCache?.let { return@withContext it }
         if (baseUrl.isBlank()) return@withContext emptyMap()
 
-        val array = fetchArray("$baseUrl/api/m3u/accounts/") ?: return@withContext accountsCache
+        val array = fetchArray("$baseUrl/api/m3u/accounts/") ?: return@withContext emptyMap()
+        val accounts = HashMap<Int, Pair<String, Boolean>>()
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val id = item.optInt("id", -1)
             if (id != -1) {
-                accountsCache[id] = (item.optStringOrNull("name") ?: "Source $id") to item.optBoolean("is_active", true)
+                accounts[id] = (item.optStringOrNull("name") ?: "Source $id") to item.optBoolean("is_active", true)
             }
         }
-        accountsCache
+        accounts.also { accountsCache = it }
     }
 
     /**

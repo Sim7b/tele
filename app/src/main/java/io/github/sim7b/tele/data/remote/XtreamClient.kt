@@ -80,9 +80,12 @@ object XtreamClient {
                 val idPrefix = "xt-${config.id.take(8)}-"
 
                 val channels = ArrayList<Channel>(streams.length())
+                // Some panels list a stream in several categories: ids must stay unique (lazy list keys)
+                val seenIds = HashSet<String>(streams.length() * 2)
                 for (i in 0 until streams.length()) {
                     val item = streams.optJSONObject(i) ?: continue
                     val streamId = item.optStringOrNull("stream_id") ?: continue
+                    if (!seenIds.add(streamId)) continue
                     val categoryId = item.optStringOrNull("category_id")
                         ?: item.optJSONArray("category_ids")?.optString(0)
                     val variants = formats.filter { it == "ts" || it == "m3u8" }.map { format ->
