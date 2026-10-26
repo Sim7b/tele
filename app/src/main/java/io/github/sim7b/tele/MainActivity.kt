@@ -38,6 +38,8 @@ import io.github.sim7b.tele.ui.screens.SettingsScreen
 import io.github.sim7b.tele.ui.screens.WelcomeScreen
 import io.github.sim7b.tele.ui.screens.pickFavoriteChannels
 import io.github.sim7b.tele.ui.theme.TeleTheme
+import io.github.sim7b.tele.update.UpdateState
+import io.github.sim7b.tele.update.UpdateViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -63,6 +65,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var playerManager: TvPlayerManager
     private val viewModel: MainViewModel by viewModels()
+    private val updateViewModel: UpdateViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +85,7 @@ class MainActivity : ComponentActivity() {
             val isLoadingChannels by viewModel.isLoading.collectAsState()
             val loadError by viewModel.loadError.collectAsState()
             val streamSlots by viewModel.streamSlots.collectAsState()
+            val updateState by updateViewModel.state.collectAsState()
 
             val userName by viewModel.userName.collectAsState()
             val context = LocalContext.current
@@ -186,6 +190,7 @@ class MainActivity : ComponentActivity() {
                                     isLoading = isLoadingChannels,
                                     loadError = loadError,
                                     streamSlots = streamSlots,
+                                    updateAvailable = updateState is UpdateState.Available,
                                     onChannelSelected = { channel ->
                                         currentScreen = CurrentScreen.Player(channel)
                                     },
@@ -224,6 +229,11 @@ class MainActivity : ComponentActivity() {
                                 categories = categoryCounts,
                                 onRefreshPlaylist = { viewModel.refresh() },
                                 onRefreshEpg = { viewModel.refresh() },
+                                installedVersion = updateViewModel.installedVersion,
+                                updatesSupported = updateViewModel.isSupported,
+                                updateState = updateState,
+                                onCheckUpdate = { updateViewModel.check() },
+                                onInstallUpdate = { release -> updateViewModel.install(release) },
                                 onBack = {
                                     currentScreen = CurrentScreen.Home
                                 }

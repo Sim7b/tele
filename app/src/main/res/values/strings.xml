@@ -226,4 +226,24 @@
 
     <!-- Common -->
     <string name="common_cancel">Cancel</string>
+
+    <!-- Updates -->
+    <string name="settings_update_title">Updates</string>
+    <string name="settings_update_description">Version %1$s. New versions are published on GitHub.</string>
+    <string name="settings_update_dev">Version %1$s (development build): in-app updates are disabled.</string>
+    <string name="settings_update_check">Check for updates</string>
+    <string name="settings_update_checking">Checking…</string>
+    <string name="settings_update_up_to_date">You have the latest version</string>
+    <string name="settings_update_available">Version %1$s is available</string>
+    <string name="settings_update_install">Install version %1$s</string>
+    <string name="settings_update_downloading">Downloading… %1$d%%</string>
+    <string name="settings_update_installing">Installing…</string>
+    <string name="home_settings_update">Settings, update available</string>
+    <string name="update_error_check">Unable to check for updates (HTTP %1$d)</string>
+    <string name="update_error_download">Download failed (HTTP %1$d)</string>
+    <string name="update_error_incomplete">Incomplete download, try again</string>
+    <string name="update_error_package">The downloaded file is not a newer version of Télé</string>
+    <string name="update_error_permission">Allow Télé to install apps, then try again</string>
+    <string name="update_error_install">Installation failed</string>
+    <string name="update_error_signature">Installation refused: this version is signed with another key. Uninstall Télé, then install the new version.</string>
 </resources>
