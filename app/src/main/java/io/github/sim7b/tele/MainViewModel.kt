@@ -127,6 +127,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Only the latest publication is applied (several sources may finish at the same time)
     private var publishGeneration = 0
 
+    // Streams of the Dispatcharr channels recently opened (source/server id -> time, streams).
+    // Declared before init {}: the first source sync runs while the ViewModel is being built.
+    private val streamsCache = ConcurrentHashMap<String, Pair<Long, List<StreamSource>>>()
+
     init {
         viewModelScope.launch {
             configRepository.enabledConfigs.collect { configs -> syncSources(configs) }
@@ -242,9 +246,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             freshSelection(channel.id, streams)?.let { selectStream(channel, it) }
         }.map { configRepository.qualityPreference.value.sort(it) }
     }
-
-    // Streams of the Dispatcharr channels recently opened (source/server id -> time, streams)
-    private val streamsCache = ConcurrentHashMap<String, Pair<Long, List<StreamSource>>>()
 
     private fun streamsKey(channel: Channel, serverId: String) = "${channel.sourceId}/$serverId"
 

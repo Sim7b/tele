@@ -64,7 +64,7 @@ class ChannelGrouping(private val bouquet: Bouquet?, private val names: ChannelN
         val primary = versions.firstOrNull { it.id in favoriteIds } ?: versions.first()
         val showSource = versions.map { it.sourceId }.distinct().size > 1
         val streams = versions.flatMap { version ->
-            val label = StreamNames.clean(version.name)
+            val label = names.versionDisplay(version.name)
             val provider = if (showSource) sourceNames[version.sourceId] else null
             val tags = StreamNames.qualityTags(version.name)
             if (version.availableStreams.isEmpty()) {

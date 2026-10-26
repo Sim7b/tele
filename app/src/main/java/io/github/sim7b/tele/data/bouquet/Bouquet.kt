@@ -7,17 +7,17 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Categories of the reference bouquets, close to the ones of the Canal+ offer. */
 enum class BouquetCategory(@param:StringRes val labelRes: Int, vararg synonyms: String) {
-    TNT(R.string.bouquet_tnt, "tnt", "generaliste", "chainetnt", "national", "general"),
-    NEWS(R.string.bouquet_news, "info", "news", "actualite", "information", "infocontinue"),
+    TNT(R.string.bouquet_tnt, "tnt", "generaliste", "chaine tnt"),
+    NEWS(R.string.bouquet_news, "info", "infos", "news", "actualites", "information", "info continue"),
     SPORT(R.string.bouquet_sport, "sport", "sportif"),
-    CINEMA(R.string.bouquet_cinema, "cinema", "film", "movie", "cine"),
-    SERIES(R.string.bouquet_series, "serie", "divertissement", "serieetdivertissement", "entertainment", "show"),
-    KIDS(R.string.bouquet_kids, "jeunesse", "enfant", "kid", "dessinanime", "cartoon", "junior"),
-    DOCUMENTARY(R.string.bouquet_documentary, "decouverte", "documentaire", "docu", "documentary", "nature", "histoire"),
+    CINEMA(R.string.bouquet_cinema, "cinema", "films", "movies", "cine"),
+    SERIES(R.string.bouquet_series, "series", "divertissement", "series et divertissement", "entertainment", "shows"),
+    KIDS(R.string.bouquet_kids, "jeunesse", "enfants", "kids", "dessins animes", "animation", "cartoon", "junior"),
+    DOCUMENTARY(R.string.bouquet_documentary, "decouverte", "documentaires", "docu", "documentary", "nature", "histoire"),
     MUSIC(R.string.bouquet_music, "musique", "music", "clip");
 
-    /** Category keys (see [ChannelNames.categoryKey]) of provider categories that mean this one. */
-    val synonymKeys: Set<String> = synonyms.toSet()
+    /** Provider category names that mean this one (compared as category keys, see [ChannelNames.categoryKey]). */
+    val synonyms: List<String> = synonyms.toList()
 }
 
 /** A channel of a reference bouquet: its proper name, its usual number and its known spellings. */
@@ -28,6 +28,11 @@ class BouquetChannel(val name: String, val category: BouquetCategory, val number
  * a close name (same digits, small edit distance), so that "TF1 FHD", "FR | TF1 HEVC" and "TF1 ᴴᴰ" are TF1.
  */
 class Bouquet(val channels: List<BouquetChannel>, val names: ChannelNames) {
+
+    // Category keys of the synonyms, normalized like the provider categories ("News" and "news" alike)
+    private val categoryByKey: Map<String, BouquetCategory> = buildMap {
+        BouquetCategory.entries.forEach { category -> category.synonyms.forEach { putIfAbsent(names.categoryKey(it), category) } }
+    }
 
     private val byKey: Map<String, BouquetChannel> = buildMap {
         channels.forEach { channel ->
@@ -67,8 +72,7 @@ class Bouquet(val channels: List<BouquetChannel>, val names: ChannelNames) {
 
     /** Category of a provider category name, when it means one of the bouquet ones ("FR | Sports" -> SPORT). */
     fun categoryOf(providerCategory: String): BouquetCategory? {
-        val key = names.categoryKey(providerCategory)
-        return BouquetCategory.entries.firstOrNull { key in it.synonymKeys }
+        return categoryByKey[names.categoryKey(providerCategory)]
     }
 
     companion object {

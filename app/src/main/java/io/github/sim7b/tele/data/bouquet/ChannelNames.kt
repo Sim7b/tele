@@ -31,6 +31,13 @@ class ChannelNames(homeTokens: Set<String>) {
     /** Readable channel name without quality nor country prefix ("FR | TF1 FHD" -> "TF1"). */
     fun channelDisplay(name: String): String = cleanDisplay(name, removeAllHomeWords = false)
 
+    /** Name of one version of a channel, quality kept, country removed ("FR | TF1 FHD" -> "TF1 FHD"). */
+    fun versionDisplay(name: String): String =
+        stripDecorations(name).split(Regex("""\s+"""))
+            .filter { it.isNotEmpty() && fold(it) !in homeCodes }
+            .joinToString(" ")
+            .ifEmpty { name.trim() }
+
     /** Comparison key of a category: also without country words and plurals ("France Sports" -> "sport"). */
     fun categoryKey(name: String): String =
         words(name, removeAllHomeWords = true).joinToString("") { singular(it) }

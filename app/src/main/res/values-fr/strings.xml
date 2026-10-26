@@ -164,6 +164,7 @@
     <!-- Meaning of the "Automatic" stream choice, per source type -->
     <string name="main_stream_auto_xtream">Format par défaut du fournisseur</string>
     <string name="main_stream_auto_m3u">Lien indiqué dans la playlist</string>
+    <string name="main_stream_auto_grouped">Meilleure version selon la qualité préférée, puis les suivantes en cas d\'échec</string>
 
     <!-- Home, player and channel panel -->
     <!-- Home screen -->

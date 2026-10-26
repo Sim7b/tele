@@ -20,6 +20,7 @@ class ChannelGroupingTest {
         assertEquals("canalplus", names.channelKey("CANAL+ HD"))
         assertTrue(names.channelKey("France 2") != names.channelKey("France 3"))
         assertEquals("TF1", names.channelDisplay("FR | TF1 FHD"))
+        assertEquals("TF1 FHD", names.versionDisplay("FR | TF1 FHD"))
     }
 
     @Test
@@ -44,6 +45,10 @@ class ChannelGroupingTest {
         assertNull(bouquet.match("Alpe d'Huez TV"))
         assertEquals(BouquetCategory.SPORT, bouquet.categoryOf("FR| SPORTS"))
         assertEquals(BouquetCategory.DOCUMENTARY, bouquet.categoryOf("Documentaires"))
+        assertEquals(BouquetCategory.NEWS, bouquet.categoryOf("News"))
+        assertEquals(BouquetCategory.NEWS, bouquet.categoryOf("FR | Infos"))
+        assertEquals(BouquetCategory.KIDS, bouquet.categoryOf("Animation"))
+        assertNull(bouquet.categoryOf("General"))
     }
 
     private fun channel(id: String, name: String, group: String, source: String = "a", number: Int? = null) =

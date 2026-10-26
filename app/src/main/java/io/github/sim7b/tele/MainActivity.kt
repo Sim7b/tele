@@ -136,11 +136,14 @@ class MainActivity : ComponentActivity() {
             // Meaning of the "Automatic" stream choice mode depending on the source of the channel
             val autoXtream = stringResource(R.string.main_stream_auto_xtream)
             val autoM3u = stringResource(R.string.main_stream_auto_m3u)
+            val autoGrouped = stringResource(R.string.main_stream_auto_grouped)
             val autoDispatcharr = DISPATCHARR_AUTOMATIC
             val automaticStreamDescription: (Channel) -> String = { channel ->
-                when (configsById[channel.sourceId]?.type) {
-                    SourceType.XTREAM -> autoXtream
-                    SourceType.M3U -> autoM3u
+                when {
+                    // Grouped channel: its versions, by quality preference
+                    channel.memberIds.size > 1 -> autoGrouped
+                    configsById[channel.sourceId]?.type == SourceType.XTREAM -> autoXtream
+                    configsById[channel.sourceId]?.type == SourceType.M3U -> autoM3u
                     else -> autoDispatcharr
                 }
             }
