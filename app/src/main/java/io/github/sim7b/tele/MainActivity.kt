@@ -280,6 +280,7 @@ class MainActivity : ComponentActivity() {
                                 streamAuth = streamAuth,
                                 userAgent = activeConfig?.customUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
+                                resolveStreams = { ch -> viewModel.automaticStreamUrls(ch) },
                                 onSelectStream = { stream -> viewModel.selectStream(liveChannel, stream) },
                                 onSelectChannel = { selected -> currentScreen = CurrentScreen.Player(selected, screen.returnTo) },
                                 automaticStreamDescription = automaticStreamDescription,

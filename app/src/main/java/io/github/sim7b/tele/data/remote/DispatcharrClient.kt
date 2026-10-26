@@ -432,7 +432,8 @@ class DispatcharrClient(
                             id = item.optStringOrNull("id"),
                             provider = account?.first,
                             qualityTags = StreamNames.qualityTags(rawName),
-                            details = item.optJSONObject("stream_stats")?.let { StreamNames.describeStats(it) }
+                            details = item.optJSONObject("stream_stats")?.let { StreamNames.describeStats(it) },
+                            measuredHeight = StreamQuality.parseHeight(item.optJSONObject("stream_stats")?.optStringOrNull("resolution"))
                         )
                     )
                 }

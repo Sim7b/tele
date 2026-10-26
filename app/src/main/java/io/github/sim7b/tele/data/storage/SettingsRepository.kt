@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.annotation.StringRes
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.optStringOrNull
@@ -95,6 +96,10 @@ class SettingsRepository(context: Context) {
     // Declared before init {} so that it is not reset after the preferences are loaded.
     private var legacyFavoritesUnordered = false
 
+    // Qualities favored for the stream chosen automatically (Dispatcharr)
+    private val _qualityPreference = MutableStateFlow(QualityPreference.SERVER_ORDER)
+    val qualityPreference: StateFlow<QualityPreference> = _qualityPreference.asStateFlow()
+
     // Quick start guide already shown (or skipped): it only opens by itself on the first launch
     private val _guideSeen = MutableStateFlow(false)
     val guideSeen: StateFlow<Boolean> = _guideSeen.asStateFlow()
@@ -145,6 +150,9 @@ class SettingsRepository(context: Context) {
 
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
+        _qualityPreference.value = prefs.getString(KEY_QUALITY_PREFERENCE, null)
+            ?.let { saved -> QualityPreference.entries.firstOrNull { it.name == saved } }
+            ?: QualityPreference.SERVER_ORDER
         val savedDensity = prefs.getString(KEY_UI_DENSITY, UiDensity.NORMAL.name)
         _uiDensity.value = try { UiDensity.valueOf(savedDensity ?: UiDensity.NORMAL.name) } catch (e: Exception) { UiDensity.NORMAL }
 
@@ -224,6 +232,11 @@ class SettingsRepository(context: Context) {
     fun setAccentColor(accent: AppAccentColor) {
         prefs.edit().putString(KEY_ACCENT_COLOR, accent.name).apply()
         _accentColor.value = accent
+    }
+
+    fun setQualityPreference(preference: QualityPreference) {
+        prefs.edit().putString(KEY_QUALITY_PREFERENCE, preference.name).apply()
+        _qualityPreference.value = preference
     }
 
     fun setGuideSeen() {
@@ -409,6 +422,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_SELECTED_STREAMS = "iptv_selected_streams"
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
         private const val KEY_GUIDE_SEEN = "guide_seen"
+        private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"
         private const val CHANNEL_CACHE_FILE = "channel_cache.jsonl"
     }
 }

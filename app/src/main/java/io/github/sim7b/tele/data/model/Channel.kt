@@ -9,7 +9,9 @@ data class StreamSource(
     val id: String? = null,
     val provider: String? = null,
     val qualityTags: List<String> = emptyList(),
-    val details: String? = null
+    val details: String? = null,
+    // Video height measured by Dispatcharr the last time the stream went through its proxy
+    val measuredHeight: Int? = null
 )
 
 data class EpgProgram(

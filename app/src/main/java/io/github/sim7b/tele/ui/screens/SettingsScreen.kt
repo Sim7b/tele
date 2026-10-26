@@ -64,6 +64,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.*
+import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.storage.AppAccentColor
 import io.github.sim7b.tele.data.storage.AppThemeBackground
@@ -104,6 +105,7 @@ fun SettingsScreen(
     val currentDensity by repository.uiDensity.collectAsState()
     val currentTheme by repository.themeBackground.collectAsState()
     val currentAccent by repository.accentColor.collectAsState()
+    val currentQuality by repository.qualityPreference.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
 
@@ -286,6 +288,29 @@ fun SettingsScreen(
                                     description = stringResource(density.descriptionRes),
                                     selected = density == currentDensity,
                                     onClick = { repository.setUiDensity(density) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // SECTION 3B: STREAM QUALITY (Dispatcharr automatic choice)
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_quality_title),
+                        description = stringResource(R.string.settings_quality_description)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            QualityPreference.entries.forEach { preference ->
+                                OptionButton(
+                                    label = stringResource(preference.labelRes),
+                                    description = stringResource(preference.descriptionRes),
+                                    selected = preference == currentQuality,
+                                    onClick = { repository.setQualityPreference(preference) },
                                     modifier = Modifier.weight(1f)
                                 )
                             }

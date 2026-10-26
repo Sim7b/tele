@@ -287,4 +287,16 @@
     <string name="settings_help_title">Aide</string>
     <string name="settings_help_description">Les principaux gestes à la télécommande, en quelques pages</string>
     <string name="settings_show_guide">Revoir le guide de démarrage</string>
+
+    <!-- Stream quality preference -->
+    <string name="settings_quality_title">Qualité des flux</string>
+    <string name="settings_quality_description">Dispatcharr : flux choisi automatiquement pour chaque chaîne, et ordre de la liste des flux</string>
+    <string name="quality_server_order">Ordre du serveur</string>
+    <string name="quality_server_order_description">Comme réglé dans Dispatcharr</string>
+    <string name="quality_best">La meilleure</string>
+    <string name="quality_best_description">4K, puis Full HD, HD, SD</string>
+    <string name="quality_fhd_max">Full HD maximum</string>
+    <string name="quality_fhd_max_description">La 4K en dernier recours</string>
+    <string name="quality_hd_max">HD maximum</string>
+    <string name="quality_hd_max_description">Économise la bande passante</string>
 </resources>

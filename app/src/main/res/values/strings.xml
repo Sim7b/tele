@@ -287,4 +287,16 @@
     <string name="settings_help_title">Help</string>
     <string name="settings_help_description">The main remote control gestures, in a few pages</string>
     <string name="settings_show_guide">Show the quick start guide</string>
+
+    <!-- Stream quality preference -->
+    <string name="settings_quality_title">Stream quality</string>
+    <string name="settings_quality_description">Dispatcharr: stream chosen automatically for each channel, and order of the stream list</string>
+    <string name="quality_server_order">Server order</string>
+    <string name="quality_server_order_description">As set in Dispatcharr</string>
+    <string name="quality_best">Best</string>
+    <string name="quality_best_description">4K, then Full HD, HD, SD</string>
+    <string name="quality_fhd_max">Full HD max</string>
+    <string name="quality_fhd_max_description">4K only as a last resort</string>
+    <string name="quality_hd_max">HD max</string>
+    <string name="quality_hd_max_description">Saves bandwidth</string>
 </resources>
