@@ -51,12 +51,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         configRepository.activeConfig.value?.takeIf { it.type == SourceType.DISPATCHARR }
     )
 
-    private val _channels = MutableStateFlow(
-        withSelectedStreams(configRepository.activeConfig.value?.let { configRepository.getCachedChannels(it.id) } ?: emptyList())
-    )
+    // Cached channels are read off the main thread at startup (see showCachedChannels)
+    private val _channels = MutableStateFlow<List<Channel>>(emptyList())
     val channels: StateFlow<List<Channel>> = _channels.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(_channels.value.isEmpty())
+    private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _loadError = MutableStateFlow<UiText?>(null)
@@ -76,7 +75,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile
     private var programsByChannelId: Map<String, List<GuideProgram>> = emptyMap()
     private var loadJob: Job? = null
-    private var loadedConfigId: String? = configRepository.activeConfig.value?.id
+    // Null at startup: the first load shows the cached channels of the active source
+    private var loadedConfigId: String? = null
     // XMLTV guides of the Xtream / M3U source, kept for the periodic guide reload
     private var playlistGuideUrls: List<String> = emptyList()
 
@@ -168,7 +168,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             loadedConfigId = config?.id
             programsByChannelId = emptyMap()
             playlistGuideUrls = emptyList()
-            _channels.value = config?.let { withSelectedStreams(configRepository.getCachedChannels(it.id)) } ?: emptyList()
+            _channels.value = emptyList()
+            config?.let { showCachedChannels(it) }
             _userName.value = config?.let { configRepository.getUserDisplayName(it.id) }
         }
 
@@ -194,6 +195,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             _isLoading.value = false
             _initialSyncDone.value = true
+        }
+    }
+
+    /** Shows the cached channels of [config] while it loads, unless the load has already published its own. */
+    private fun showCachedChannels(config: SourceConfig) {
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { configRepository.getCachedChannels(config.id) }
+            if (cached.isEmpty() || loadedConfigId != config.id) return@launch
+            val withStreams = withContext(Dispatchers.Default) { withSelectedStreams(cached) }
+            _channels.update { current -> if (current.isEmpty() && loadedConfigId == config.id) withStreams else current }
         }
     }
 
