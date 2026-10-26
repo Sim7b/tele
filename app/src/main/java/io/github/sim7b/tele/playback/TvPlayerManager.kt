@@ -150,9 +150,12 @@ class TvPlayerManager(private val context: Context) {
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         _isPlaying.value = playing
+                        // Radio-like streams have no video frame: playing audio is the proof they work
+                        if (playing && !currentTracks.isTypeSupported(C.TRACK_TYPE_VIDEO)) markPlaying()
                     }
 
                     override fun onRenderedFirstFrame() {
+                        markPlaying()
                         if (zapStartedAt > 0) {
                             Log.i(PERF_TAG, "Channel switch: first frame in ${SystemClock.elapsedRealtime() - zapStartedAt} ms")
                             zapStartedAt = 0
@@ -162,9 +165,6 @@ class TvPlayerManager(private val context: Context) {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         _isLoading.value = playbackState == Player.STATE_BUFFERING
                         if (playbackState == Player.STATE_READY) {
-                            retryCount = 0
-                            hasPlayed = true
-                            _reconnection.value = null
                             _error.value = null
                             updateStreamInfo()
                         }
@@ -182,11 +182,26 @@ class TvPlayerManager(private val context: Context) {
     }
 
     /**
+     * The stream really plays (first frame shown, or audio of a stream without video): the attempt budget is
+     * restored. Not on STATE_READY: a broken HLS stream can reach it, then fail, without ever playing.
+     */
+    private fun markPlaying() {
+        retryCount = 0
+        hasPlayed = true
+        _reconnection.value = null
+    }
+
+    /**
      * Retries with a backoff ([ReconnectPolicy]); a definitive refusal or the last failed attempt shows the error.
      */
     private fun handlePlaybackError(playbackError: PlaybackException) {
         val player = exoPlayer ?: return
-        if (playbackError.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+        // Fell behind the live window: back to the live edge, within the same attempt budget (a broken
+        // HLS playlist can raise it in a loop, which used to leave an endless spinner)
+        if (playbackError.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW &&
+            retryCount < ReconnectPolicy.maxAttempts(hasPlayed)
+        ) {
+            retryCount++
             player.seekToDefaultPosition()
             player.prepare()
             return
@@ -229,6 +244,8 @@ class TvPlayerManager(private val context: Context) {
         playbackError.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
             playbackError.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
             UiText.Res(R.string.player_error_connection_failed)
+        playbackError.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW ->
+            UiText.Res(R.string.player_error_live_window)
         playbackError.errorCode in PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED..PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ||
             playbackError.errorCode in PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
             UiText.Res(R.string.player_error_unsupported_format)

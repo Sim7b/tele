@@ -78,6 +78,7 @@
     <string name="player_error_connection_limit">Limite de connexions du fournisseur atteinte (HTTP %1$d)</string>
     <string name="player_error_http">Le serveur du flux a répondu HTTP %1$d</string>
     <string name="player_error_connection_failed">Connexion au flux impossible</string>
+    <string name="player_error_live_window">Le direct du fournisseur est désynchronisé</string>
     <string name="player_error_unsupported_format">Format du flux non pris en charge</string>
     <string name="player_error_generic">Erreur de lecture (%1$s)</string>
 

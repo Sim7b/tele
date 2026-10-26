@@ -79,6 +79,7 @@
     <string name="player_error_connection_limit">Provider connection limit reached (HTTP %1$d)</string>
     <string name="player_error_http">The stream server responded HTTP %1$d</string>
     <string name="player_error_connection_failed">Unable to connect to the stream</string>
+    <string name="player_error_live_window">The provider\'s live stream is out of sync</string>
     <string name="player_error_unsupported_format">Unsupported stream format</string>
     <string name="player_error_generic">Playback error (%1$s)</string>
 
