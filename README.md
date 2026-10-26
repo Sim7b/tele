@@ -10,6 +10,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 
 - **Home**: 8 favorite tiles with the artwork of the current program, categories and channel grid (program, times, progress).
 - Reorderable **favorites** on the grid, hideable **channels** and **categories**.
+- **Search** by channel name, number or current program, typed with the TV keyboard or spoken (microphone button, or the remote's search key).
 - **Player** (Media3 / ExoPlayer, hardware decoding):
   - channel switching with ↑ / ↓ and CH+ / CH−;
   - info banner: current and next program, resolution, codecs;
