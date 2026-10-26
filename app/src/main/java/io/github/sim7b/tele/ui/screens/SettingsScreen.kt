@@ -4,6 +4,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.data.toUiText
 import io.github.sim7b.tele.data.UiText
 import androidx.activity.compose.BackHandler
@@ -71,11 +72,13 @@ import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
+import io.github.sim7b.tele.update.UpdateState
+import io.github.sim7b.tele.data.update.AppRelease
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * Settings: manual sync, appearance, density, hidden channels and categories,
+ * Settings: app updates, manual sync, appearance, density, hidden channels and categories,
  * and channel source management (add, connection test, activation, deletion).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -86,6 +89,11 @@ fun SettingsScreen(
     categories: List<Pair<String, Int>> = emptyList(),
     onRefreshPlaylist: () -> Unit = {},
     onRefreshEpg: () -> Unit = {},
+    installedVersion: String = "",
+    updatesSupported: Boolean = false,
+    updateState: UpdateState = UpdateState.Idle,
+    onCheckUpdate: () -> Unit = {},
+    onInstallUpdate: (AppRelease) -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -163,6 +171,17 @@ fun SettingsScreen(
                 contentPadding = PaddingValues(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // SECTION 0: APP UPDATES (first, so an available update is in sight)
+                item {
+                    UpdateSection(
+                        installedVersion = installedVersion,
+                        supported = updatesSupported,
+                        state = updateState,
+                        onCheck = onCheckUpdate,
+                        onInstall = onInstallUpdate
+                    )
+                }
+
                 // SECTION 1: MANUAL SYNC
                 item {
                     SettingsSection(
@@ -1097,6 +1116,88 @@ private fun TvInputField(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * App updates: installed version, check button, then the available version with its highlights
+ * and an install button; download progress and errors are shown inline.
+ */
+@Composable
+private fun UpdateSection(
+    installedVersion: String,
+    supported: Boolean,
+    state: UpdateState,
+    onCheck: () -> Unit,
+    onInstall: (AppRelease) -> Unit
+) {
+    SettingsSection(
+        title = stringResource(R.string.settings_update_title),
+        description = if (supported) {
+            stringResource(R.string.settings_update_description, installedVersion)
+        } else {
+            stringResource(R.string.settings_update_dev, installedVersion)
+        }
+    ) {
+        if (!supported) return@SettingsSection
+        val release = when (state) {
+            is UpdateState.Available -> state.release
+            is UpdateState.Failed -> state.release
+            else -> null
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (release != null) {
+                ActionButton(
+                    label = stringResource(R.string.settings_update_install, release.version),
+                    icon = Icons.Filled.Refresh,
+                    primary = true,
+                    onClick = { onInstall(release) }
+                )
+            } else if (state !is UpdateState.Downloading && state !is UpdateState.Installing) {
+                ActionButton(
+                    label = stringResource(R.string.settings_update_check),
+                    icon = Icons.Filled.Refresh,
+                    onClick = onCheck
+                )
+            }
+            val status = when (state) {
+                UpdateState.Idle -> null
+                UpdateState.Checking -> stringResource(R.string.settings_update_checking)
+                UpdateState.UpToDate -> stringResource(R.string.settings_update_up_to_date)
+                is UpdateState.Available -> stringResource(R.string.settings_update_available, state.release.version)
+                is UpdateState.Downloading ->
+                    stringResource(R.string.settings_update_downloading, (state.progress * 100).toInt().coerceIn(0, 100))
+                is UpdateState.Installing -> stringResource(R.string.settings_update_installing)
+                is UpdateState.Failed -> state.message.resolve()
+            }
+            if (status != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = status,
+                    fontSize = 12.sp,
+                    color = if (state is UpdateState.Failed) LiveRed.copy(alpha = 0.85f) else TextSecondary
+                )
+            }
+        }
+        if (state is UpdateState.Available && state.release.highlights.isNotEmpty()) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+                modifier = Modifier.padding(top = 12.dp)
+            ) {
+                state.release.highlights.forEach { point ->
+                    Text(
+                        text = "·  $point",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

@@ -225,4 +225,24 @@
 
     <!-- Common -->
     <string name="common_cancel">Annuler</string>
+
+    <!-- Updates -->
+    <string name="settings_update_title">Mises à jour</string>
+    <string name="settings_update_description">Version %1$s. Les nouvelles versions sont publiées sur GitHub.</string>
+    <string name="settings_update_dev">Version %1$s (version de développement) : les mises à jour intégrées sont désactivées.</string>
+    <string name="settings_update_check">Rechercher une mise à jour</string>
+    <string name="settings_update_checking">Recherche…</string>
+    <string name="settings_update_up_to_date">Vous avez la dernière version</string>
+    <string name="settings_update_available">La version %1$s est disponible</string>
+    <string name="settings_update_install">Installer la version %1$s</string>
+    <string name="settings_update_downloading">Téléchargement… %1$d %%</string>
+    <string name="settings_update_installing">Installation…</string>
+    <string name="home_settings_update">Paramètres, mise à jour disponible</string>
+    <string name="update_error_check">Impossible de rechercher les mises à jour (HTTP %1$d)</string>
+    <string name="update_error_download">Échec du téléchargement (HTTP %1$d)</string>
+    <string name="update_error_incomplete">Téléchargement incomplet, réessayez</string>
+    <string name="update_error_package">Le fichier téléchargé n\'est pas une version plus récente de Télé</string>
+    <string name="update_error_permission">Autorisez Télé à installer des applications, puis réessayez</string>
+    <string name="update_error_install">Échec de l\'installation</string>
+    <string name="update_error_signature">Installation refusée : cette version est signée avec une autre clé. Désinstallez Télé, puis installez la nouvelle version.</string>
 </resources>

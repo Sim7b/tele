@@ -97,6 +97,7 @@ fun HomeScreen(
     isLoading: Boolean,
     loadError: UiText? = null,
     streamSlots: StreamSlots? = null,
+    updateAvailable: Boolean = false,
     onChannelSelected: (Channel) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onHideChannel: (String) -> Unit,
@@ -246,11 +247,25 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.width(14.dp))
                 }
 
-                RoundIconButton(
-                    icon = Icons.Filled.Settings,
-                    contentDescription = stringResource(R.string.home_settings),
-                    onClick = onOpenSettings
-                )
+                // Discreet accent dot on the settings button when an app update is available
+                Box {
+                    RoundIconButton(
+                        icon = Icons.Filled.Settings,
+                        contentDescription = stringResource(
+                            if (updateAvailable) R.string.home_settings_update else R.string.home_settings
+                        ),
+                        onClick = onOpenSettings
+                    )
+                    if (updateAvailable) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(AccentCyan)
+                        )
+                    }
+                }
             }
 
             if (isLoading && !hasContent) {
