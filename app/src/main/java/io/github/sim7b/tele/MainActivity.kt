@@ -34,6 +34,7 @@ import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.DISPATCHARR_AUTOMATIC
 import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.PlayerScreen
+import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.screens.SettingsScreen
 import io.github.sim7b.tele.ui.screens.WelcomeScreen
 import io.github.sim7b.tele.ui.screens.pickFavoriteChannels
@@ -51,7 +52,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 sealed class CurrentScreen {
     object Home : CurrentScreen()
     object Settings : CurrentScreen()
-    data class Player(val channel: Channel) : CurrentScreen()
+    data class Search(val startWithVoice: Boolean) : CurrentScreen()
+
+    /** Playback; Back returns to [returnTo] (the home screen, or the search the channel was opened from). */
+    data class Player(val channel: Channel, val returnTo: CurrentScreen = Home) : CurrentScreen()
 }
 
 private const val WELCOME_MIN_MS = 1_800L
@@ -150,11 +154,11 @@ class MainActivity : ComponentActivity() {
             }
 
             // Zapping by id (not by object equality, which changes on every EPG update)
-            fun zap(from: Channel, step: Int) {
+            fun zap(from: Channel, step: Int, returnTo: CurrentScreen) {
                 if (visibleChannels.isEmpty()) return
                 val index = visibleChannels.indexOfFirst { it.id == from.id }
                 val nextIndex = if (index == -1) 0 else Math.floorMod(index + step, visibleChannels.size)
-                currentScreen = CurrentScreen.Player(visibleChannels[nextIndex])
+                currentScreen = CurrentScreen.Player(visibleChannels[nextIndex], returnTo)
             }
 
             TeleTheme(
@@ -216,6 +220,9 @@ class MainActivity : ComponentActivity() {
                                     onOpenSettings = {
                                         currentScreen = CurrentScreen.Settings
                                     },
+                                    onOpenSearch = { voice ->
+                                        currentScreen = CurrentScreen.Search(startWithVoice = voice)
+                                    },
                                     onRefresh = {
                                         viewModel.refresh()
                                     }
@@ -239,6 +246,22 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
+                        is CurrentScreen.Search -> {
+                            // State kept (query, focused result) when coming back from the player
+                            saveableStateHolder.SaveableStateProvider("search") {
+                                SearchScreen(
+                                    channels = unhiddenChannels,
+                                    startWithVoice = screen.startWithVoice,
+                                    onChannelSelected = { channel ->
+                                        currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Search(startWithVoice = false))
+                                    },
+                                    onBack = {
+                                        saveableStateHolder.removeState("search")
+                                        currentScreen = CurrentScreen.Home
+                                    }
+                                )
+                            }
+                        }
                         is CurrentScreen.Player -> {
                             // Up-to-date version of the channel (current EPG program, chosen stream)
                             val liveChannel = channels.firstOrNull { it.id == screen.channel.id } ?: screen.channel
@@ -250,13 +273,13 @@ class MainActivity : ComponentActivity() {
                                 userAgent = activeConfig?.customUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
                                 onSelectStream = { stream -> viewModel.selectStream(liveChannel, stream) },
-                                onSelectChannel = { selected -> currentScreen = CurrentScreen.Player(selected) },
+                                onSelectChannel = { selected -> currentScreen = CurrentScreen.Player(selected, screen.returnTo) },
                                 automaticStreamDescription = automaticStreamDescription,
                                 onBack = {
-                                    currentScreen = CurrentScreen.Home
+                                    currentScreen = screen.returnTo
                                 },
-                                onNextChannel = { zap(liveChannel, +1) },
-                                onPreviousChannel = { zap(liveChannel, -1) }
+                                onNextChannel = { zap(liveChannel, +1, screen.returnTo) },
+                                onPreviousChannel = { zap(liveChannel, -1, screen.returnTo) }
                             )
                         }
                     }

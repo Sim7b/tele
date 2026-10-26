@@ -245,4 +245,17 @@
     <string name="update_error_permission">Autorisez Télé à installer des applications, puis réessayez</string>
     <string name="update_error_install">Échec de l\'installation</string>
     <string name="update_error_signature">Installation refusée : cette version est signée avec une autre clé. Désinstallez Télé, puis installez la nouvelle version.</string>
+
+    <!-- Search -->
+    <string name="home_search">Rechercher</string>
+    <string name="search_placeholder">Chaîne, numéro ou programme</string>
+    <string name="search_hint">Tapez ou dites le nom d\'une chaîne ou d\'un programme</string>
+    <string name="search_no_results">Aucun résultat pour « %1$s »</string>
+    <string name="search_voice">Recherche vocale</string>
+    <string name="search_voice_prompt">Dites une chaîne ou un programme</string>
+    <plurals name="search_results">
+        <item quantity="one">%1$d résultat</item>
+        <item quantity="many">%1$d résultats</item>
+        <item quantity="other">%1$d résultats</item>
+    </plurals>
 </resources>

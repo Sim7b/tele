@@ -246,4 +246,16 @@
     <string name="update_error_permission">Allow Télé to install apps, then try again</string>
     <string name="update_error_install">Installation failed</string>
     <string name="update_error_signature">Installation refused: this version is signed with another key. Uninstall Télé, then install the new version.</string>
+
+    <!-- Search -->
+    <string name="home_search">Search</string>
+    <string name="search_placeholder">Channel, number or program</string>
+    <string name="search_hint">Type or say the name of a channel or a program</string>
+    <string name="search_no_results">No results for “%1$s”</string>
+    <string name="search_voice">Voice search</string>
+    <string name="search_voice_prompt">Say a channel or a program</string>
+    <plurals name="search_results">
+        <item quantity="one">%1$d result</item>
+        <item quantity="other">%1$d results</item>
+    </plurals>
 </resources>

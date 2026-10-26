@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
@@ -54,6 +55,7 @@ import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -107,6 +109,7 @@ fun HomeScreen(
     onHideCategory: (String) -> Unit,
     automaticStreamDescription: String,
     onOpenSettings: () -> Unit,
+    onOpenSearch: (voice: Boolean) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -179,6 +182,20 @@ fun HomeScreen(
         }
     }
 
+    // Down from the favorites always lands on the selected category: the 2D focus search would pick
+    // the nearest item below, a grid channel under the right columns (the chips are short and on the left)
+    val categoryFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    fun focusSelectedCategory() {
+        scope.launch {
+            val index = categories.indexOf(effectiveCategory).coerceAtLeast(0)
+            if (categoriesState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                categoriesState.scrollToItem(index)
+            }
+            categoryFocus.requestFocusWithRetry()
+        }
+    }
+
     fun Modifier.trackFocus(key: String): Modifier = this
         .then(if (key == focusTargetKey) Modifier.focusRequester(restoreFocusRequester) else Modifier)
         .onFocusChanged { if (it.isFocused) lastFocusedKey = key }
@@ -187,6 +204,11 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
+                // Search key of the remote (or keyboard): voice search directly
+                if (movingChannelId == null && hasContent && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_SEARCH) {
+                    if (event.type == KeyEventType.KeyUp) onOpenSearch(true)
+                    return@onPreviewKeyEvent true
+                }
                 // In move mode, the arrows move the tile instead of moving the focus
                 if (movingChannelId == null) return@onPreviewKeyEvent false
                 val keyCode = event.nativeKeyEvent.keyCode
@@ -245,6 +267,15 @@ fun HomeScreen(
                 streamSlots?.let { slots ->
                     StreamSlotsBadge(slots)
                     Spacer(modifier = Modifier.width(14.dp))
+                }
+
+                if (hasContent) {
+                    RoundIconButton(
+                        icon = Icons.Filled.Search,
+                        contentDescription = stringResource(R.string.home_search),
+                        onClick = { onOpenSearch(false) }
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                 }
 
                 // Discreet accent dot on the settings button when an app update is available
@@ -355,13 +386,15 @@ fun HomeScreen(
                                 }
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                favoriteChannels.chunked(4).forEach { favRow ->
+                                favoriteChannels.chunked(FAVORITE_COLUMNS).forEachIndexed { rowIndex, favRow ->
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        for (channel in favRow) {
+                                        for ((column, channel) in favRow.withIndex()) {
                                             val isMoving = channel.id == movingChannelId
+                                            // No favorite below this one: Down goes to the categories
+                                            val isBottom = (rowIndex + 1) * FAVORITE_COLUMNS + column >= favoriteChannels.size
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -376,6 +409,12 @@ fun HomeScreen(
                                                     modifier = Modifier
                                                         .then(if (isMoving) Modifier.focusRequester(movingFocus) else Modifier)
                                                         .trackFocus(FAVORITE_KEY_PREFIX + channel.id)
+                                                        .onPreviewKeyEvent { event ->
+                                                            val down = event.type == KeyEventType.KeyDown &&
+                                                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                                            if (down && isBottom) focusSelectedCategory()
+                                                            down && isBottom
+                                                        }
                                                 )
                                             }
                                         }
@@ -403,7 +442,8 @@ fun HomeScreen(
                                     text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else groupLabel(category),
                                     isSelected = category == effectiveCategory,
                                     onClick = { selectedCategory = category },
-                                    onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category })
+                                    onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category }),
+                                    modifier = if (category == effectiveCategory) Modifier.focusRequester(categoryFocus) else Modifier
                                 )
                             }
                         }
