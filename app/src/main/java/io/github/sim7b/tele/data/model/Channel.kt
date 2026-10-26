@@ -43,7 +43,9 @@ data class Channel(
     val selectedStreamName: String? = null,
     // Dispatcharr numeric id (required to list the channel streams)
     val serverId: String? = null,
-    val number: Int? = null
+    val number: Int? = null,
+    // Id of the source (SourceConfig) the channel comes from, when several sources are enabled
+    val sourceId: String = ""
 ) {
     val activeStreamUrl: String
         get() = selectedStreamUrl ?: streamUrl

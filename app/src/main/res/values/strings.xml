@@ -52,6 +52,7 @@
     <string name="error_playlist_not_found">Playlist not found (HTTP 404)</string>
     <string name="error_guide_unavailable">EPG guide unavailable: %1$s</string>
     <string name="error_load_channels">Unable to load the channels: %1$s</string>
+    <string name="error_with_source">%1$s: %2$s</string>
     <string name="error_sync_channels_for_streams">Sync the channels to show their streams</string>
 
     <!-- Connection test -->
@@ -121,8 +122,8 @@
     <string name="settings_add_source">Add a source</string>
     <string name="settings_edit_source">Edit source</string>
     <string name="settings_unnamed">Unnamed</string>
-    <string name="settings_active">Active</string>
-    <string name="settings_activate">Activate</string>
+    <string name="settings_active">Enabled</string>
+    <string name="settings_activate">Enable</string>
     <string name="settings_edit">Edit</string>
     <string name="settings_delete">Delete</string>
 
@@ -299,4 +300,16 @@
     <string name="quality_fhd_max_description">4K only as a last resort</string>
     <string name="quality_hd_max">HD max</string>
     <string name="quality_hd_max_description">Saves bandwidth</string>
+
+    <!-- Category renaming and multiple sources -->
+    <string name="card_rename_category">Rename</string>
+    <string name="card_reset_category_name">Restore the original name</string>
+    <string name="card_category_name_hint">Category name</string>
+    <string name="card_category_rename_hint">Type the new name, then confirm with OK on the keyboard. Leave it empty to restore the original name.</string>
+    <string name="settings_category_mode">Same name in several sources</string>
+    <string name="category_mode_merge">Merge</string>
+    <string name="category_mode_merge_description">One category for every source</string>
+    <string name="category_mode_separate">Separate by source</string>
+    <string name="category_mode_separate_description">Source name added: “Sport · Neo”</string>
+    <string name="settings_deactivate">Disable</string>
 </resources>

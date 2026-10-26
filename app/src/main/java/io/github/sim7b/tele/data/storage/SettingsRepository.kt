@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.annotation.StringRes
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -64,13 +65,28 @@ class SettingsRepository(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     // Sources, chosen streams and channel cache hold credentials: encrypted with a Keystore key
     private val secrets = SecretBox.androidKeystore()
-    private val channelCache = ChannelCache(File(context.noBackupFilesDir, CHANNEL_CACHE_FILE), secrets)
+    private val cacheDir: File = context.noBackupFilesDir
+    // Single cache file of the versions with one active source, read once to start without a spinner
+    private val legacyChannelCache = ChannelCache(File(cacheDir, CHANNEL_CACHE_FILE), secrets)
+
+    /** Channel cache of one source (one file per source, several sources can be enabled). */
+    private fun channelCache(configId: String) =
+        ChannelCache(File(cacheDir, "channel_cache_${configId.filter { it.isLetterOrDigit() || it == '-' }}.jsonl"), secrets)
 
     private val _configs = MutableStateFlow<List<SourceConfig>>(emptyList())
     val configs: StateFlow<List<SourceConfig>> = _configs.asStateFlow()
 
-    private val _activeConfig = MutableStateFlow<SourceConfig?>(null)
-    val activeConfig: StateFlow<SourceConfig?> = _activeConfig.asStateFlow()
+    // Enabled sources, in the order of the list: their channels are shown together
+    private val _enabledConfigs = MutableStateFlow<List<SourceConfig>>(emptyList())
+    val enabledConfigs: StateFlow<List<SourceConfig>> = _enabledConfigs.asStateFlow()
+
+    // Categories renamed on the device (source group -> displayed name)
+    private val _categoryNames = MutableStateFlow<Map<String, String>>(emptyMap())
+    val categoryNames: StateFlow<Map<String, String>> = _categoryNames.asStateFlow()
+
+    // Same category name in several enabled sources: merged or one per source
+    private val _categoryMode = MutableStateFlow(CategoryMode.MERGE)
+    val categoryMode: StateFlow<CategoryMode> = _categoryMode.asStateFlow()
 
     private val _uiDensity = MutableStateFlow<UiDensity>(UiDensity.NORMAL)
     val uiDensity: StateFlow<UiDensity> = _uiDensity.asStateFlow()
@@ -131,7 +147,7 @@ class SettingsRepository(context: Context) {
         }
 
         _configs.value = list
-        _activeConfig.value = list.firstOrNull { it.isActive } ?: list.firstOrNull()
+        _enabledConfigs.value = list.filter { it.isActive }
         // Sources saved in plain text by the previous versions: encrypted from now on
         if (stored != null && !secrets.isEncrypted(stored) && list.isNotEmpty()) persistConfigs(list)
     }
@@ -150,6 +166,17 @@ class SettingsRepository(context: Context) {
 
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
+        _categoryNames.value = try {
+            prefs.getString(KEY_CATEGORY_NAMES, null)?.let { raw ->
+                val json = JSONObject(raw)
+                json.keys().asSequence().associateWith { json.optString(it) }.filterValues { it.isNotBlank() }
+            }.orEmpty()
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read the category names: ${e.javaClass.simpleName}")
+            emptyMap()
+        }
+        _categoryMode.value = CategoryMode.entries.firstOrNull { it.name == prefs.getString(KEY_CATEGORY_MODE, null) }
+            ?: CategoryMode.MERGE
         _qualityPreference.value = prefs.getString(KEY_QUALITY_PREFERENCE, null)
             ?.let { saved -> QualityPreference.entries.firstOrNull { it.name == saved } }
             ?: QualityPreference.SERVER_ORDER
@@ -319,24 +346,25 @@ class SettingsRepository(context: Context) {
         _hiddenIds.value = emptySet()
     }
 
-    /** Saves the channels and current programs of the active source (to call off the main thread). */
+    /** Saves the channels and current programs of source [configId] (to call off the main thread). */
     fun saveCachedChannels(configId: String, channels: List<Channel>) {
         try {
-            channelCache.save(configId, channels)
+            channelCache(configId).save(configId, channels)
+            legacyChannelCache.clear()
         } catch (e: Exception) {
             Log.w(TAG, "Unable to save the channel cache: ${e.javaClass.simpleName}")
         }
     }
 
     /**
-     * Cached channels of server [configId] (empty when the cache belongs to another server), to call off
-     * the main thread. Programs that ended since caching are dropped.
+     * Cached channels of source [configId] (also from the single cache file of the previous versions),
+     * to call off the main thread. Programs that ended since caching are dropped.
      */
     fun getCachedChannels(configId: String, now: Long = System.currentTimeMillis()): List<Channel> {
         // Cache of the previous versions, kept in the preferences: dropped, the next sync rebuilds it
         if (prefs.contains(KEY_CACHED_CHANNELS)) prefs.edit().remove(KEY_CACHED_CHANNELS).apply()
         return try {
-            channelCache.load(configId, now)
+            channelCache(configId).load(configId, now).ifEmpty { legacyChannelCache.load(configId, now) }
         } catch (e: Exception) {
             Log.w(TAG, "Unable to read the channel cache: ${e.javaClass.simpleName}")
             emptyList()
@@ -349,47 +377,52 @@ class SettingsRepository(context: Context) {
         prefs.edit().putString(KEY_CONFIGS, secrets.encrypt(array.toString())).apply()
 
         _configs.value = list
-        _activeConfig.value = list.firstOrNull { it.isActive } ?: list.firstOrNull()
+        _enabledConfigs.value = list.filter { it.isActive }
     }
 
+    /** Adds a source (enabled, next to the others) or updates an existing one (its state is kept). */
     fun saveOrUpdateConfig(config: SourceConfig) {
         val current = _configs.value.toMutableList()
         val index = current.indexOfFirst { it.id == config.id }
-
-        val shouldBeActive = if (current.isEmpty()) true else config.isActive
-        val finalConfig = config.copy(isActive = shouldBeActive)
-
-        if (shouldBeActive) {
-            for (i in 0 until current.size) {
-                current[i] = current[i].copy(isActive = false)
-            }
-        }
-
         if (index != -1) {
-            current[index] = finalConfig
+            current[index] = config.copy(isActive = current[index].isActive)
         } else {
-            current.add(finalConfig)
+            current.add(config.copy(isActive = true))
         }
-
         persistConfigs(current)
     }
 
-    fun setActiveConfig(configId: String) {
-        val current = _configs.value.map {
-            it.copy(isActive = (it.id == configId))
-        }
-        persistConfigs(current)
+    /** Enables or disables a source: the channels of every enabled source are shown together. */
+    fun setSourceEnabled(configId: String, enabled: Boolean) {
+        persistConfigs(_configs.value.map { if (it.id == configId) it.copy(isActive = enabled) else it })
     }
 
     fun deleteConfig(configId: String) {
-        val current = _configs.value.filterNot { it.id == configId }
-        val updated = if (current.isNotEmpty() && current.none { it.isActive }) {
-            current.mapIndexed { idx, item -> item.copy(isActive = (idx == 0)) }
-        } else {
-            current
-        }
-        persistConfigs(updated)
+        persistConfigs(_configs.value.filterNot { it.id == configId })
         forgetSourceData(configId)
+        channelCache(configId).clear()
+    }
+
+    /** Displayed name of the source groups [groups] ([name] blank: back to the source name). */
+    fun renameCategory(groups: Set<String>, name: String?) {
+        val newName = name?.trim()?.takeIf { it.isNotEmpty() }
+        val current = _categoryNames.value.toMutableMap()
+        groups.forEach { group -> if (newName == null || newName == group) current.remove(group) else current[group] = newName }
+        prefs.edit().putString(KEY_CATEGORY_NAMES, JSONObject(current as Map<*, *>).toString()).apply()
+        _categoryNames.value = current
+    }
+
+    /** A renamed (or regrouped) category stays hidden under its new displayed names. */
+    fun replaceHiddenGroup(oldDisplay: String, newDisplays: Set<String>) {
+        if (oldDisplay !in _hiddenGroups.value) return
+        val current = _hiddenGroups.value - oldDisplay + newDisplays
+        prefs.edit().putStringSet(KEY_HIDDEN_GROUPS, current).apply()
+        _hiddenGroups.value = current
+    }
+
+    fun setCategoryMode(mode: CategoryMode) {
+        prefs.edit().putString(KEY_CATEGORY_MODE, mode.name).apply()
+        _categoryMode.value = mode
     }
 
     /**
@@ -423,6 +456,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
         private const val KEY_GUIDE_SEEN = "guide_seen"
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"
+        private const val KEY_CATEGORY_NAMES = "category_names"
+        private const val KEY_CATEGORY_MODE = "category_mode"
         private const val CHANNEL_CACHE_FILE = "channel_cache.jsonl"
     }
 }

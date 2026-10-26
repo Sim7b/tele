@@ -48,6 +48,7 @@
     <string name="error_playlist_not_found">Playlist introuvable (HTTP 404)</string>
     <string name="error_guide_unavailable">Guide EPG indisponible : %1$s</string>
     <string name="error_load_channels">Impossible de charger les chaînes : %1$s</string>
+    <string name="error_with_source">%1$s : %2$s</string>
     <string name="error_sync_channels_for_streams">Synchronisez les chaînes pour afficher leurs flux</string>
 
     <!-- Connection test -->
@@ -121,7 +122,7 @@
     <string name="settings_add_source">Ajouter une source</string>
     <string name="settings_edit_source">Modifier la source</string>
     <string name="settings_unnamed">Sans nom</string>
-    <string name="settings_active">Actif</string>
+    <string name="settings_active">Activée</string>
     <string name="settings_activate">Activer</string>
     <string name="settings_edit">Modifier</string>
     <string name="settings_delete">Supprimer</string>
@@ -299,4 +300,16 @@
     <string name="quality_fhd_max_description">La 4K en dernier recours</string>
     <string name="quality_hd_max">HD maximum</string>
     <string name="quality_hd_max_description">Économise la bande passante</string>
+
+    <!-- Category renaming and multiple sources -->
+    <string name="card_rename_category">Renommer</string>
+    <string name="card_reset_category_name">Rétablir le nom d\'origine</string>
+    <string name="card_category_name_hint">Nom de la catégorie</string>
+    <string name="card_category_rename_hint">Saisissez le nouveau nom puis validez avec OK sur le clavier. Laissez vide pour rétablir le nom d\'origine.</string>
+    <string name="settings_category_mode">Même nom dans plusieurs sources</string>
+    <string name="category_mode_merge">Fusionner</string>
+    <string name="category_mode_merge_description">Une seule catégorie pour toutes les sources</string>
+    <string name="category_mode_separate">Séparer par source</string>
+    <string name="category_mode_separate_description">Nom de la source ajouté : « Sport · Neo »</string>
+    <string name="settings_deactivate">Désactiver</string>
 </resources>
