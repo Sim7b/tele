@@ -179,6 +179,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         SourceType.M3U -> M3uClient.probe(config)
     }
 
+    /**
+     * Earlier versions saved the provider URL of a chosen Dispatcharr stream, played without
+     * Dispatcharr (no stats, no connection limits): those selections go back to automatic mode.
+     */
+    private fun dropDirectSelections(channels: List<Channel>) {
+        val selections = configRepository.selectedStreams.value
+        channels.forEach { channel ->
+            val selected = selections[channel.id] ?: return@forEach
+            if (!dispatcharrClient.isProxyUrl(selected.url)) configRepository.setSelectedStream(channel.id, null)
+        }
+    }
+
     private fun withSelectedStreams(channels: List<Channel>): List<Channel> {
         val selections = configRepository.selectedStreams.value
         return channels.map { channel ->
@@ -261,6 +273,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         channelsResult.onSuccess { dChannels ->
             val channels = dChannels.map { it.toChannel() }
+            dropDirectSelections(channels)
             val programs = matchDispatcharrGuide(channels, epgResult.getOrNull().orEmpty())
             publish(channels, programs, epgResult.exceptionOrNull()?.let { UiText.Res(R.string.error_guide_unavailable, it.toUiText()) })
             _isLoading.value = false

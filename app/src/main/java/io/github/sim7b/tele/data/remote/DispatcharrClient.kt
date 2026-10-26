@@ -394,7 +394,9 @@ class DispatcharrClient(
 
     /**
      * Streams available for a channel, in Dispatcharr priority order.
-     * The stream is played from its original URL, as Dispatcharr does with the "Redirect" profile.
+     * Each stream is played through the Dispatcharr proxy (by stream hash), so Dispatcharr counts the
+     * viewer, shows its stats and applies the provider connection limits. skip_redirect asks Dispatcharr
+     * to proxy it even when the stream profile is Redirect (ignored for users without that right).
      */
     suspend fun getChannelStreams(channelServerId: String): Result<List<StreamSource>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
@@ -418,8 +420,8 @@ class DispatcharrClient(
                     val account = accounts[accountId]
                     if (account != null && !account.second) continue
 
-                    val url = item.optStringOrNull("url")
-                        ?: item.optStringOrNull("stream_hash")?.let { "$baseUrl/proxy/ts/stream/$it" }
+                    val url = item.optStringOrNull("stream_hash")?.let { proxyStreamUrl(it) }
+                        ?: item.optStringOrNull("url")
                         ?: continue
                     val rawName = item.optStringOrNull("name") ?: "#${i + 1}"
 
@@ -440,6 +442,12 @@ class DispatcharrClient(
             Result.failure(e)
         }
     }
+
+    /** Proxy URL of a single Dispatcharr stream. */
+    fun proxyStreamUrl(streamHash: String): String = "$baseUrl/proxy/ts/stream/$streamHash?skip_redirect=true"
+
+    /** True when [url] is played through this Dispatcharr server (and not straight from a provider). */
+    fun isProxyUrl(url: String): Boolean = baseUrl.isNotBlank() && url.startsWith("$baseUrl/proxy/")
 
     /**
      * Playback slots of the provider accounts (free / total), read live: never cached, since
