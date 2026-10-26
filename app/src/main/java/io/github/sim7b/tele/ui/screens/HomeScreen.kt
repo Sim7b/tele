@@ -4,7 +4,13 @@ import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.R
 import android.view.KeyEvent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -34,6 +40,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.*
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.SourceConfig
+import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.ui.components.CategoryActionDialog
 import io.github.sim7b.tele.ui.components.ChannelActionMenuDialog
@@ -89,6 +96,7 @@ fun HomeScreen(
     favoriteIds: List<String> = emptyList(),
     isLoading: Boolean,
     loadError: UiText? = null,
+    streamSlots: StreamSlots? = null,
     onChannelSelected: (Channel) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onHideChannel: (String) -> Unit,
@@ -231,6 +239,11 @@ fun HomeScreen(
                         modifier = Modifier.widthIn(max = 420.dp)
                     )
                     Spacer(modifier = Modifier.width(18.dp))
+                }
+
+                streamSlots?.let { slots ->
+                    StreamSlotsBadge(slots)
+                    Spacer(modifier = Modifier.width(14.dp))
                 }
 
                 RoundIconButton(
@@ -478,6 +491,37 @@ private fun HeaderClock() {
             fontSize = 13.sp,
             color = TextSecondary,
             modifier = Modifier.padding(bottom = 4.dp)
+        )
+    }
+}
+
+/**
+ * Discreet Dispatcharr slots indicator: green dot when a playback slot is free, red when all are
+ * taken, followed by the number of free slots.
+ */
+@Composable
+private fun StreamSlotsBadge(slots: StreamSlots) {
+    val description = stringResource(R.string.home_stream_slots, slots.free, slots.total)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(SurfaceDark)
+            .padding(horizontal = 9.dp, vertical = 4.dp)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(if (slots.free > 0) SlotFreeGreen else LiveRed)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = slots.free.toString(),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextSecondary
         )
     }
 }
