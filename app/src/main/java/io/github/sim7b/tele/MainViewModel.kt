@@ -9,6 +9,7 @@ import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.failure
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.DispatcharrEpgChannel
 import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.ProgramArtwork
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -75,6 +76,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var programsByChannelId: Map<String, List<GuideProgram>> = emptyMap()
     private var loadJob: Job? = null
     private var loadedConfigId: String? = configRepository.activeConfig.value?.id
+    // XMLTV guides of the Xtream / M3U source, kept for the periodic guide reload
+    private var playlistGuideUrls: List<String> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -86,18 +89,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(EPG_TICK_MS)
                 refreshCurrentPrograms()
                 ticks++
-                when (configRepository.activeConfig.value?.type) {
+                // The guide only covers a limited window (the TV may stay on for days): reload it periodically
+                if (ticks % GUIDE_RELOAD_TICKS == 0) {
+                    reloadGuide()
+                } else if (ticks % ARTWORK_REFRESH_TICKS == 0 &&
+                    configRepository.activeConfig.value?.type == SourceType.DISPATCHARR
+                ) {
                     // Artwork only covers the next hours: renew it regularly
-                    SourceType.DISPATCHARR -> if (ticks % ARTWORK_REFRESH_TICKS == 0) refreshArtwork()
-                    // The XMLTV guide is only kept over a limited window: reload it periodically
-                    SourceType.XTREAM, SourceType.M3U -> if (ticks % GUIDE_RELOAD_TICKS == 0) refresh()
-                    null -> Unit
+                    refreshArtwork()
                 }
             }
         }
     }
 
+    /** Manual refresh: everything is reloaded, including the reference tables cached by the client. */
     fun refresh() {
+        dispatcharrClient.clearCaches()
         loadChannels(configRepository.activeConfig.value)
     }
 
@@ -159,6 +166,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Source change: do not show the channels of the previous one
             loadedConfigId = config?.id
             programsByChannelId = emptyMap()
+            playlistGuideUrls = emptyList()
             _channels.value = config?.let { withSelectedStreams(configRepository.getCachedChannels(it.id)) } ?: emptyList()
             _userName.value = config?.let { configRepository.getUserDisplayName(it.id) }
         }
@@ -205,22 +213,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Log.i(TvPlayerManager.PERF_TAG, "Load: channels + guide in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
         channelsResult.onSuccess { dChannels ->
-            val (channels, programs) = withContext(Dispatchers.Default) {
-                val epgByKey = epgResult.getOrNull()
-                    ?.associate { it.channelUuid to it.programs }
-                    ?: emptyMap()
-                val epgKeyByName = buildNameIndex(epgByKey.keys)
-                val programsMap = HashMap<String, List<GuideProgram>>()
-                val result = dChannels.map { dChan ->
-                    val baseChannel = dChan.toChannel()
-                    programsMap[baseChannel.id] = epgByKey[dChan.tvgId]
-                        ?: epgByKey[dChan.uuid]
-                        ?: epgKeyByName[EpgResolver.normalizeName(dChan.name)]?.let { epgByKey[it] }
-                        ?: emptyList()
-                    baseChannel
-                }
-                result to programsMap
-            }
+            val channels = dChannels.map { it.toChannel() }
+            val programs = matchDispatcharrGuide(channels, epgResult.getOrNull().orEmpty())
             publish(channels, programs, epgResult.exceptionOrNull()?.let { UiText.Res(R.string.error_guide_unavailable, it.toUiText()) })
             _isLoading.value = false
 
@@ -243,13 +237,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         result.onSuccess { source ->
             source.userName?.let { displayFirstName(null, it) }?.let { saveUserName(config, it) }
-            publish(source.channels, emptyMap(), null)
+            playlistGuideUrls = source.guideUrls
+            // The guide already loaded for this source stays shown while the new one downloads
+            publish(source.channels, programsByChannelId, null)
             _isLoading.value = false
             Log.i(TvPlayerManager.PERF_TAG, "Load: ${source.channels.size} channels in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
-            val userAgent = config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT
-            val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent)
-            programsByChannelId = guide.programs
+            val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent(config))
+            // A guide that failed to download does not erase the previous one
+            if (guide.programs.isNotEmpty() || guide.error == null) programsByChannelId = guide.programs
             refreshCurrentPrograms()
             _loadError.value = guide.error
             Log.i(
@@ -261,6 +257,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _loadError.value = UiText.Res(R.string.error_load_channels, error.toUiText())
         }
     }
+
+    /**
+     * Periodic guide reload, without reloading the channels. Skipped while a load is running;
+     * a failed reload keeps the previous guide.
+     */
+    private fun reloadGuide() {
+        val config = configRepository.activeConfig.value ?: return
+        if (loadJob?.isActive == true || _channels.value.isEmpty()) return
+
+        loadJob = viewModelScope.launch {
+            when (config.type) {
+                SourceType.DISPATCHARR -> {
+                    val now = System.currentTimeMillis()
+                    val artworkDeferred = async { dispatcharrClient.getProgramArtwork(now, now + ARTWORK_WINDOW_MS) }
+                    dispatcharrClient.getEpgGrid().onSuccess { epg ->
+                        programsByChannelId = matchDispatcharrGuide(_channels.value, epg)
+                        refreshCurrentPrograms()
+                    }
+                    applyArtwork(artworkDeferred.await())
+                }
+                SourceType.XTREAM, SourceType.M3U -> {
+                    val guide = GuideLoader.load(playlistGuideUrls, _channels.value, userAgent(config))
+                    if (guide.programs.isNotEmpty()) {
+                        programsByChannelId = guide.programs
+                        refreshCurrentPrograms()
+                    }
+                }
+            }
+            saveCache(config)
+        }
+    }
+
+    /**
+     * Programs of each channel (by app channel id) from the Dispatcharr grid: by tvg_id, channel uuid,
+     * else by normalized name.
+     */
+    private suspend fun matchDispatcharrGuide(
+        channels: List<Channel>,
+        epg: List<DispatcharrEpgChannel>
+    ): Map<String, List<GuideProgram>> = withContext(Dispatchers.Default) {
+        val epgByKey = epg.associate { it.channelUuid to it.programs }
+        val epgKeyByName = buildNameIndex(epgByKey.keys)
+        val programsMap = HashMap<String, List<GuideProgram>>()
+        channels.forEach { channel ->
+            programsMap[channel.id] = channel.tvgId?.let { epgByKey[it] }
+                ?: epgByKey[channel.id]
+                ?: epgKeyByName[EpgResolver.normalizeName(channel.name)]?.let { epgByKey[it] }
+                ?: emptyList()
+        }
+        programsMap
+    }
+
+    private fun userAgent(config: SourceConfig) =
+        config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT
 
     /** Publishes the channels with their current program and the stream selected by the user. */
     private fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: UiText?) {
