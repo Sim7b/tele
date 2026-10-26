@@ -17,10 +17,12 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - **channel panel** (← key) with the guide, over the live stream;
   - automatic reconnection when a stream drops (also when the network comes back), explicit error messages, OK to retry.
 - **Stream picker** (long press on a channel, or OK during playback): Dispatcharr streams with provider and quality, or TS / HLS variants with Xtream. The choice is saved per channel.
+- **Stream quality** setting (best, Full HD max, HD max or server order): with Dispatcharr, automatic mode plays the preferred quality first (resolution measured by Dispatcharr, else read from the stream name) and moves to the next stream if it fails.
 - **EPG guide**:
   - Dispatcharr: server grid, program artwork and categories;
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
+- **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → Help**.
 - **Appearance**: 6 backgrounds including a light theme, 6 accent colors, 3 interface densities.
 - **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → Updates** after the system confirmation.
 - **Credentials encrypted** on the device with a key kept in the Android Keystore.

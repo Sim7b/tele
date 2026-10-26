@@ -34,6 +34,7 @@ import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.DISPATCHARR_AUTOMATIC
 import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.PlayerScreen
+import io.github.sim7b.tele.ui.screens.QuickGuide
 import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.screens.SettingsScreen
 import io.github.sim7b.tele.ui.screens.WelcomeScreen
@@ -101,6 +102,12 @@ class MainActivity : ComponentActivity() {
             }
             // "Good morning/Good evening" welcome shown only once per app launch
             var showWelcome by rememberSaveable { mutableStateOf(true) }
+            // Quick start guide: by itself after the first welcome, then from the settings
+            val guideSeen by configRepository.guideSeen.collectAsState()
+            var showGuide by rememberSaveable { mutableStateOf(false) }
+            LaunchedEffect(showWelcome, guideSeen) {
+                if (!showWelcome && !guideSeen) showGuide = true
+            }
 
             // The welcome stays until the guide and the favorites' artwork are loaded (time-bounded)
             LaunchedEffect(Unit) {
@@ -236,6 +243,7 @@ class MainActivity : ComponentActivity() {
                                 categories = categoryCounts,
                                 onRefreshPlaylist = { viewModel.refresh() },
                                 onRefreshEpg = { viewModel.refresh() },
+                                onShowGuide = { showGuide = true },
                                 installedVersion = updateViewModel.installedVersion,
                                 updatesSupported = updateViewModel.isSupported,
                                 updateState = updateState,
@@ -272,6 +280,7 @@ class MainActivity : ComponentActivity() {
                                 streamAuth = streamAuth,
                                 userAgent = activeConfig?.customUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
+                                resolveStreams = { ch -> viewModel.automaticStreamUrls(ch) },
                                 onSelectStream = { stream -> viewModel.selectStream(liveChannel, stream) },
                                 onSelectChannel = { selected -> currentScreen = CurrentScreen.Player(selected, screen.returnTo) },
                                 automaticStreamDescription = automaticStreamDescription,
@@ -282,6 +291,13 @@ class MainActivity : ComponentActivity() {
                                 onPreviousChannel = { zap(liveChannel, -1, screen.returnTo) }
                             )
                         }
+                    }
+
+                    if (showGuide) {
+                        QuickGuide(onClose = {
+                            showGuide = false
+                            configRepository.setGuideSeen()
+                        })
                     }
 
                     AnimatedVisibility(

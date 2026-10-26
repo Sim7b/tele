@@ -57,6 +57,8 @@ class TvPlayerManager(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var currentUrl: String? = null
+    // Next streams to try when the current one fails for good (automatic choice by quality)
+    private val fallbackUrls = ArrayDeque<String>()
     private var currentUserAgent: String? = null
     @Volatile
     private var currentAuth: ApiKeyAuth? = null
@@ -228,6 +230,14 @@ class TvPlayerManager(private val context: Context) {
             if (hasPlayed) _reconnection.value = Reconnection(retryCount, maxAttempts)
             mainHandler.removeCallbacks(retryRunnable)
             mainHandler.postDelayed(retryRunnable, delayMs)
+        } else if (fallbackUrls.isNotEmpty()) {
+            // Next stream of the channel, with a fresh attempt budget
+            currentUrl = fallbackUrls.removeFirst()
+            retryCount = 0
+            hasPlayed = false
+            forceHls = false
+            _reconnection.value = null
+            prepareCurrent()
         } else {
             _isLoading.value = false
             _reconnection.value = null
@@ -272,7 +282,13 @@ class TvPlayerManager(private val context: Context) {
         return mime.substringAfter('/').uppercase()
     }
 
-    fun playStream(url: String, customUserAgent: String? = null, auth: ApiKeyAuth? = null) {
+    /**
+     * Plays [url]; when it fails for good (refused, or every retry spent), [fallbacks] are tried in order
+     * before the error is shown.
+     */
+    fun playStream(url: String, customUserAgent: String? = null, auth: ApiKeyAuth? = null, fallbacks: List<String> = emptyList()) {
+        fallbackUrls.clear()
+        fallbackUrls.addAll(fallbacks)
         zapStartedAt = SystemClock.elapsedRealtime()
         currentUrl = url
         currentUserAgent = customUserAgent
@@ -344,6 +360,7 @@ class TvPlayerManager(private val context: Context) {
     fun stop() {
         mainHandler.removeCallbacks(retryRunnable)
         currentUrl = null
+        fallbackUrls.clear()
         retryCount = 0
         _reconnection.value = null
         exoPlayer?.run {

@@ -61,6 +61,7 @@ import io.github.sim7b.tele.ui.components.Tag
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val ZAP_DEBOUNCE_MS = 300L
 
@@ -74,6 +75,8 @@ fun PlayerScreen(
     streamAuth: ApiKeyAuth? = null,
     userAgent: String? = null,
     loadStreams: suspend () -> Result<List<StreamSource>>,
+    // Streams to try in automatic mode, best quality first (empty: the channel URL as is)
+    resolveStreams: suspend (Channel) -> List<String> = { emptyList() },
     onSelectStream: (StreamSource?) -> Unit,
     onSelectChannel: (Channel) -> Unit,
     automaticStreamDescription: String,
@@ -99,6 +102,8 @@ fun PlayerScreen(
     val currentStreamUrl by rememberUpdatedState(streamUrl)
     val currentStreamAuth by rememberUpdatedState(streamAuth)
     val currentUserAgent by rememberUpdatedState(userAgent)
+    val currentChannel by rememberUpdatedState(channel)
+    val scope = rememberCoroutineScope()
 
     fun revealOverlay() {
         showOverlay = true
@@ -115,7 +120,13 @@ fun PlayerScreen(
         val isQuickZap = now - lastStartRequestAt.longValue < ZAP_DEBOUNCE_MS
         lastStartRequestAt.longValue = now
         if (isQuickZap) delay(ZAP_DEBOUNCE_MS)
-        playerManager.playStream(streamUrl, customUserAgent = userAgent, auth = streamAuth)
+        val urls = resolveStreams(channel)
+        playerManager.playStream(
+            urls.firstOrNull() ?: streamUrl,
+            customUserAgent = userAgent,
+            auth = streamAuth,
+            fallbacks = urls.drop(1)
+        )
     }
 
     // Automatically hide the overlay after 5 seconds
@@ -143,7 +154,16 @@ fun PlayerScreen(
                 }
                 Lifecycle.Event.ON_START -> if (stoppedInBackground) {
                     stoppedInBackground = false
-                    playerManager.playStream(currentStreamUrl, customUserAgent = currentUserAgent, auth = currentStreamAuth)
+                    // Same automatic choice as at the channel start
+                    scope.launch {
+                        val urls = resolveStreams(currentChannel)
+                        playerManager.playStream(
+                            urls.firstOrNull() ?: currentStreamUrl,
+                            customUserAgent = currentUserAgent,
+                            auth = currentStreamAuth,
+                            fallbacks = urls.drop(1)
+                        )
+                    }
                     revealOverlay()
                 }
                 else -> Unit

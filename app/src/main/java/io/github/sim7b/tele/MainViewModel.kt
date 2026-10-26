@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -138,8 +140,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val serverId = channel.serverId
             ?: return failure(R.string.error_sync_channels_for_streams)
         return dispatcharrClient.getChannelStreams(serverId).onSuccess { streams ->
+            streamsCache[serverId] = SystemClock.elapsedRealtime() to streams
             freshSelection(channel.id, streams)?.let { selectStream(channel, it) }
-        }
+        }.map { configRepository.qualityPreference.value.sort(it) }
+    }
+
+    // Streams of the Dispatcharr channels recently opened (server id -> time, streams)
+    private val streamsCache = ConcurrentHashMap<String, Pair<Long, List<StreamSource>>>()
+
+    /**
+     * URLs to play for [channel] in automatic mode, by quality preference: its streams through the Dispatcharr
+     * proxy, best first, then the channel itself (Dispatcharr failover) as a last resort. Empty when the
+     * server order applies (manual choice, other source, "server order" preference, streams unavailable).
+     */
+    suspend fun automaticStreamUrls(channel: Channel): List<String> {
+        val preference = configRepository.qualityPreference.value
+        if (!preference.reordersStreams || channel.selectedStreamUrl != null) return emptyList()
+        if (configRepository.activeConfig.value?.type != SourceType.DISPATCHARR) return emptyList()
+        val serverId = channel.serverId ?: return emptyList()
+        val cached = streamsCache[serverId]?.takeIf { SystemClock.elapsedRealtime() - it.first < STREAMS_CACHE_MS }?.second
+        val streams = cached ?: withTimeoutOrNull(STREAMS_TIMEOUT_MS) {
+            dispatcharrClient.getChannelStreams(serverId).getOrNull()
+        }?.also { streamsCache[serverId] = SystemClock.elapsedRealtime() to it }
+        if (streams.isNullOrEmpty()) return emptyList()
+        return preference.sort(streams).map { it.url } + channel.streamUrl
     }
 
     /**
@@ -206,6 +230,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadChannels(config: SourceConfig?) {
         // A new load replaces the previous one (prevents an old response from overwriting the latest one)
         loadJob?.cancel()
+        streamsCache.clear()
 
         if (config?.id != loadedConfigId) {
             // Source change: do not show the channels of the previous one
@@ -498,5 +523,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val ARTWORK_WINDOW_MS = 4 * 60 * 60 * 1000L
         private const val ARTWORK_REFRESH_TICKS = 120 // every hour
         private const val GUIDE_RELOAD_TICKS = 720 // every 6 hours
+        // Channel streams kept for the automatic choice: zapping back to a channel costs no request
+        private const val STREAMS_CACHE_MS = 10 * 60 * 1000L
+        // Past this delay the channel plays in server order rather than making the user wait
+        private const val STREAMS_TIMEOUT_MS = 2_000L
     }
 }

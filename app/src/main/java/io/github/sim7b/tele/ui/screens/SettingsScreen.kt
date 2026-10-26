@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +64,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.*
+import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.storage.AppAccentColor
 import io.github.sim7b.tele.data.storage.AppThemeBackground
@@ -89,6 +91,7 @@ fun SettingsScreen(
     categories: List<Pair<String, Int>> = emptyList(),
     onRefreshPlaylist: () -> Unit = {},
     onRefreshEpg: () -> Unit = {},
+    onShowGuide: () -> Unit = {},
     installedVersion: String = "",
     updatesSupported: Boolean = false,
     updateState: UpdateState = UpdateState.Idle,
@@ -102,6 +105,7 @@ fun SettingsScreen(
     val currentDensity by repository.uiDensity.collectAsState()
     val currentTheme by repository.themeBackground.collectAsState()
     val currentAccent by repository.accentColor.collectAsState()
+    val currentQuality by repository.qualityPreference.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
 
@@ -291,6 +295,29 @@ fun SettingsScreen(
                     }
                 }
 
+                // SECTION 3B: STREAM QUALITY (Dispatcharr automatic choice)
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_quality_title),
+                        description = stringResource(R.string.settings_quality_description)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            QualityPreference.entries.forEach { preference ->
+                                OptionButton(
+                                    label = stringResource(preference.labelRes),
+                                    description = stringResource(preference.descriptionRes),
+                                    selected = preference == currentQuality,
+                                    onClick = { repository.setQualityPreference(preference) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // SECTION 4: HIDDEN CHANNELS
                 if (hiddenIds.isNotEmpty()) {
                     item {
@@ -387,6 +414,20 @@ fun SettingsScreen(
                             refocusAfterDelete++
                         }
                     )
+                }
+
+                // LAST SECTION: HELP
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_help_title),
+                        description = stringResource(R.string.settings_help_description)
+                    ) {
+                        ActionButton(
+                            label = stringResource(R.string.settings_show_guide),
+                            icon = Icons.Filled.Info,
+                            onClick = onShowGuide
+                        )
+                    }
                 }
             }
         }
