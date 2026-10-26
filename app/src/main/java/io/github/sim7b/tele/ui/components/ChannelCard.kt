@@ -80,6 +80,8 @@ fun FavoriteChannelCard(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     isMoving: Boolean = false,
+    // Muted live preview shown over the artwork (focused for 2 s on the home screen)
+    preview: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -128,6 +130,10 @@ fun FavoriteChannelCard(
                 )
             } else {
                 LogoBackdrop(channel = channel, modifier = Modifier.fillMaxSize())
+            }
+
+            preview?.let { video ->
+                Box(modifier = Modifier.fillMaxSize()) { video() }
             }
 
             // Scrim for text readability (transparent at the top, dark at the bottom)
@@ -228,6 +234,8 @@ fun CompactChannelCard(
     channel: Channel,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    // Muted live preview in place of the logo (focused for 2 s on the home screen)
+    preview: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -254,14 +262,24 @@ fun CompactChannelCard(
                 .padding(horizontal = 9.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            LogoPlate(
-                logoUrl = channel.logoUrl,
-                name = channel.name,
-                corner = 7.dp,
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(1.15f)
-            )
+            if (preview != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(Color.Black)
+                ) { preview() }
+            } else {
+                LogoPlate(
+                    logoUrl = channel.logoUrl,
+                    name = channel.name,
+                    corner = 7.dp,
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(1.15f)
+                )
+            }
 
             Spacer(modifier = Modifier.width(11.dp))
 

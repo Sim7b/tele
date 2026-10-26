@@ -110,6 +110,7 @@ fun SettingsScreen(
     val currentTheme by repository.themeBackground.collectAsState()
     val currentAccent by repository.accentColor.collectAsState()
     val currentQuality by repository.qualityPreference.collectAsState()
+    val channelPreview by repository.channelPreview.collectAsState()
     val currentBouquet by repository.bouquet.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
@@ -293,6 +294,32 @@ fun SettingsScreen(
                                     description = stringResource(density.descriptionRes),
                                     selected = density == currentDensity,
                                     onClick = { repository.setUiDensity(density) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // SECTION 3A: HOME PREVIEW (muted, after 2 s on a channel)
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_preview_title),
+                        description = stringResource(R.string.settings_preview_description)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(
+                                Triple(true, R.string.settings_preview_on, R.string.settings_preview_on_description),
+                                Triple(false, R.string.settings_preview_off, R.string.settings_preview_off_description)
+                            ).forEach { (enabled, label, description) ->
+                                OptionButton(
+                                    label = stringResource(label),
+                                    description = stringResource(description),
+                                    selected = channelPreview == enabled,
+                                    onClick = { repository.setChannelPreview(enabled) },
                                     modifier = Modifier.weight(1f)
                                 )
                             }

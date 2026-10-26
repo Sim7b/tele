@@ -121,6 +121,10 @@ class SettingsRepository(context: Context) {
     private val _qualityPreference = MutableStateFlow(QualityPreference.SERVER_ORDER)
     val qualityPreference: StateFlow<QualityPreference> = _qualityPreference.asStateFlow()
 
+    // Muted preview of the channel focused for 2 s on the home screen
+    private val _channelPreview = MutableStateFlow(true)
+    val channelPreview: StateFlow<Boolean> = _channelPreview.asStateFlow()
+
     // Quick start guide already shown (or skipped): it only opens by itself on the first launch
     private val _guideSeen = MutableStateFlow(false)
     val guideSeen: StateFlow<Boolean> = _guideSeen.asStateFlow()
@@ -171,6 +175,7 @@ class SettingsRepository(context: Context) {
 
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
+        _channelPreview.value = prefs.getBoolean(KEY_CHANNEL_PREVIEW, true)
         _categoryNames.value = try {
             prefs.getString(KEY_CATEGORY_NAMES, null)?.let { raw ->
                 val json = JSONObject(raw)
@@ -271,6 +276,11 @@ class SettingsRepository(context: Context) {
     fun setQualityPreference(preference: QualityPreference) {
         prefs.edit().putString(KEY_QUALITY_PREFERENCE, preference.name).apply()
         _qualityPreference.value = preference
+    }
+
+    fun setChannelPreview(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CHANNEL_PREVIEW, enabled).apply()
+        _channelPreview.value = enabled
     }
 
     fun setGuideSeen() {
@@ -467,6 +477,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_SELECTED_STREAMS = "iptv_selected_streams"
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
         private const val KEY_GUIDE_SEEN = "guide_seen"
+        private const val KEY_CHANNEL_PREVIEW = "home_channel_preview"
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"
         private const val KEY_CATEGORY_NAMES = "category_names"
         private const val KEY_CATEGORY_MODE = "category_mode"

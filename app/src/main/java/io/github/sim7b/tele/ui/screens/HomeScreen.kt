@@ -68,6 +68,8 @@ private const val FAVORITE_SLOTS = 8
 private const val FAVORITE_KEY_PREFIX = "fav:"
 private const val LIST_KEY_PREFIX = "list:"
 private const val FAVORITE_COLUMNS = 4
+// Focus time on a card before its muted preview starts
+private const val PREVIEW_DELAY_MS = 2_000L
 
 /**
  * The 8 top tiles: the favorites in the chosen order (even if their category is hidden),
@@ -116,6 +118,10 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenSearch: (voice: Boolean) -> Unit,
     onRefresh: () -> Unit,
+    // Muted preview of the card focused for 2 s: enabled flag, start / stop (null), and its video surface
+    previewEnabled: Boolean = false,
+    onPreviewChannel: (Channel?) -> Unit = {},
+    previewSurface: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Saved states: restored when coming back from the player or the settings
@@ -207,9 +213,32 @@ fun HomeScreen(
         numberEntry.cancel()
     }
 
-    fun Modifier.trackFocus(key: String): Modifier = this
+    // Card focused right now (key and channel), and the card showing the muted preview
+    var focusedCard by remember { mutableStateOf<Pair<String, Channel>?>(null) }
+    var previewKey by remember { mutableStateOf<String?>(null) }
+    val previewAllowed = previewEnabled && movingChannelId == null
+    LaunchedEffect(focusedCard?.first, previewAllowed) {
+        if (previewKey != null) {
+            previewKey = null
+            onPreviewChannel(null)
+        }
+        val (key, channel) = focusedCard ?: return@LaunchedEffect
+        if (!previewAllowed) return@LaunchedEffect
+        delay(PREVIEW_DELAY_MS)
+        previewKey = key
+        onPreviewChannel(channel)
+    }
+
+    fun Modifier.trackFocus(key: String, channel: Channel): Modifier = this
         .then(if (key == focusTargetKey) Modifier.focusRequester(restoreFocusRequester) else Modifier)
-        .onFocusChanged { if (it.isFocused) lastFocusedKey = key }
+        .onFocusChanged {
+            if (it.isFocused) {
+                lastFocusedKey = key
+                focusedCard = key to channel
+            } else if (focusedCard?.first == key) {
+                focusedCard = null
+            }
+        }
 
     Box(
         modifier = modifier
@@ -418,9 +447,10 @@ fun HomeScreen(
                                                     onClick = { onChannelSelected(channel) },
                                                     onLongClick = { actionMenuChannel = channel },
                                                     isMoving = isMoving,
+                                                    preview = if (previewKey == FAVORITE_KEY_PREFIX + channel.id) previewSurface else null,
                                                     modifier = Modifier
                                                         .then(if (isMoving) Modifier.focusRequester(movingFocus) else Modifier)
-                                                        .trackFocus(FAVORITE_KEY_PREFIX + channel.id)
+                                                        .trackFocus(FAVORITE_KEY_PREFIX + channel.id, channel)
                                                         .onPreviewKeyEvent { event ->
                                                             val down = event.type == KeyEventType.KeyDown &&
                                                                 event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
@@ -478,7 +508,8 @@ fun HomeScreen(
                                         channel = channel,
                                         onClick = { onChannelSelected(channel) },
                                         onLongClick = { actionMenuChannel = channel },
-                                        modifier = Modifier.trackFocus(LIST_KEY_PREFIX + channel.id)
+                                        preview = if (previewKey == LIST_KEY_PREFIX + channel.id) previewSurface else null,
+                                        modifier = Modifier.trackFocus(LIST_KEY_PREFIX + channel.id, channel)
                                     )
                                 }
                             }

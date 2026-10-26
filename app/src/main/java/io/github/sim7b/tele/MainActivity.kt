@@ -32,6 +32,7 @@ import io.github.sim7b.tele.data.model.SourceType
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.DISPATCHARR_AUTOMATIC
+import io.github.sim7b.tele.ui.components.PreviewVideo
 import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.PlayerScreen
 import io.github.sim7b.tele.ui.screens.QuickGuide
@@ -42,10 +43,12 @@ import io.github.sim7b.tele.ui.screens.pickFavoriteChannels
 import io.github.sim7b.tele.ui.theme.TeleTheme
 import io.github.sim7b.tele.update.UpdateState
 import io.github.sim7b.tele.update.UpdateViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -92,6 +95,7 @@ class MainActivity : ComponentActivity() {
             val loadError by viewModel.loadError.collectAsState()
             val streamSlots by viewModel.streamSlots.collectAsState()
             val updateState by updateViewModel.state.collectAsState()
+            val channelPreview by configRepository.channelPreview.collectAsState()
 
             val userName by viewModel.userName.collectAsState()
             val context = LocalContext.current
@@ -152,6 +156,25 @@ class MainActivity : ComponentActivity() {
             // only goes to its own server (origin check on every request)
             val streamAuths = remember(enabledConfigs) {
                 enabledConfigs.filter { it.type == SourceType.DISPATCHARR }.mapNotNull { ApiKeyAuth.of(it) }
+            }
+
+            // Muted home preview: same stream as the one played when the channel opens, so it keeps going
+            val previewScope = rememberCoroutineScope()
+            var previewJob by remember { mutableStateOf<Job?>(null) }
+            fun previewChannel(channel: Channel?) {
+                previewJob?.cancel()
+                if (channel == null) {
+                    playerManager.stopPreview()
+                    return
+                }
+                previewJob = previewScope.launch {
+                    val url = viewModel.automaticStreamUrls(channel).firstOrNull() ?: channel.activeStreamUrl
+                    playerManager.preview(url, configsById[channel.sourceId]?.customUserAgent, streamAuths)
+                }
+            }
+            // Settings and search: no preview behind them (the player takes it over, see playStream)
+            LaunchedEffect(currentScreen) {
+                if (currentScreen is CurrentScreen.Settings || currentScreen is CurrentScreen.Search) previewChannel(null)
             }
 
             // Hiding / favoriting a grouped channel applies to all its versions ("TF1 HD", "TF1 FHD")
@@ -259,7 +282,10 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onRefresh = {
                                         viewModel.refresh()
-                                    }
+                                    },
+                                    previewEnabled = channelPreview && !showWelcome && !showGuide,
+                                    onPreviewChannel = { channel -> previewChannel(channel) },
+                                    previewSurface = { PreviewVideo(playerManager) }
                                 )
                             }
                         }
@@ -349,6 +375,12 @@ class MainActivity : ComponentActivity() {
                 context.imageLoader.execute(ImageRequest.Builder(context).data(url).build())
             }
         }.awaitAll()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // App in the background (Home key, standby): no preview left playing on the home screen
+        playerManager.stopPreview()
     }
 
     override fun onDestroy() {

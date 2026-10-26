@@ -329,4 +329,12 @@
     <string name="bouquet_france_description">Names, numbers and categories of the bouquet</string>
     <string name="bouquet_none">None</string>
     <string name="bouquet_none_description">Provider names and categories, cleaned up</string>
+
+    <!-- Home channel preview -->
+    <string name="settings_preview_title">Channel preview</string>
+    <string name="settings_preview_description">On the home screen, the channel selected for 2 seconds plays without sound. It uses a provider connection (Dispatcharr slot) while it plays.</string>
+    <string name="settings_preview_on">On</string>
+    <string name="settings_preview_on_description">After 2 s, muted</string>
+    <string name="settings_preview_off">Off</string>
+    <string name="settings_preview_off_description">Saves connections</string>
 </resources>

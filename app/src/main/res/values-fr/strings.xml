@@ -329,4 +329,12 @@
     <string name="bouquet_france_description">Noms, numéros et catégories du bouquet</string>
     <string name="bouquet_none">Aucun</string>
     <string name="bouquet_none_description">Noms et catégories des fournisseurs, nettoyés</string>
+
+    <!-- Home channel preview -->
+    <string name="settings_preview_title">Aperçu des chaînes</string>
+    <string name="settings_preview_description">À l\'accueil, la chaîne sélectionnée depuis 2 secondes se lance sans le son. Elle utilise une connexion du fournisseur (slot Dispatcharr) pendant l\'aperçu.</string>
+    <string name="settings_preview_on">Activé</string>
+    <string name="settings_preview_on_description">Au bout de 2 s, sans le son</string>
+    <string name="settings_preview_off">Désactivé</string>
+    <string name="settings_preview_off_description">Économise les connexions</string>
 </resources>
