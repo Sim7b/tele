@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1](https://github.com/Sim7b/tele/compare/v0.3.0...v0.3.1) (2026-10-26)
+
+### Features
+
+* **update:** install new versions from the GitHub releases ([25d37b7](https://github.com/Sim7b/tele/commit/25d37b74d97067306d78eb46bcca4c376e8be432))
+
 ## [0.3.0](https://github.com/Sim7b/tele/compare/v0.2.0...v0.3.0) (2026-10-26)
 
 ### Features
