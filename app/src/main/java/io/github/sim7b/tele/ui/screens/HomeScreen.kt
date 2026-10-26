@@ -54,6 +54,7 @@ import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -176,6 +177,20 @@ fun HomeScreen(
             restoreFocusRequester.requestFocusWithRetry()
         } else {
             emptyStateFocusRequester.requestFocusWithRetry()
+        }
+    }
+
+    // Down from the favorites always lands on the selected category: the 2D focus search would pick
+    // the nearest item below, a grid channel under the right columns (the chips are short and on the left)
+    val categoryFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    fun focusSelectedCategory() {
+        scope.launch {
+            val index = categories.indexOf(effectiveCategory).coerceAtLeast(0)
+            if (categoriesState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                categoriesState.scrollToItem(index)
+            }
+            categoryFocus.requestFocusWithRetry()
         }
     }
 
@@ -355,13 +370,15 @@ fun HomeScreen(
                                 }
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                favoriteChannels.chunked(4).forEach { favRow ->
+                                favoriteChannels.chunked(FAVORITE_COLUMNS).forEachIndexed { rowIndex, favRow ->
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        for (channel in favRow) {
+                                        for ((column, channel) in favRow.withIndex()) {
                                             val isMoving = channel.id == movingChannelId
+                                            // No favorite below this one: Down goes to the categories
+                                            val isBottom = (rowIndex + 1) * FAVORITE_COLUMNS + column >= favoriteChannels.size
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -376,6 +393,12 @@ fun HomeScreen(
                                                     modifier = Modifier
                                                         .then(if (isMoving) Modifier.focusRequester(movingFocus) else Modifier)
                                                         .trackFocus(FAVORITE_KEY_PREFIX + channel.id)
+                                                        .onPreviewKeyEvent { event ->
+                                                            val down = event.type == KeyEventType.KeyDown &&
+                                                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                                            if (down && isBottom) focusSelectedCategory()
+                                                            down && isBottom
+                                                        }
                                                 )
                                             }
                                         }
@@ -403,7 +426,8 @@ fun HomeScreen(
                                     text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else groupLabel(category),
                                     isSelected = category == effectiveCategory,
                                     onClick = { selectedCategory = category },
-                                    onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category })
+                                    onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category }),
+                                    modifier = if (category == effectiveCategory) Modifier.focusRequester(categoryFocus) else Modifier
                                 )
                             }
                         }
