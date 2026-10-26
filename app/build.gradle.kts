@@ -32,6 +32,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        // Only native code: Conscrypt. Android TV devices are ARM; x86_64 for the emulator
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -108,6 +112,8 @@ dependencies {
 
     // HTTP Client (OkHttp for resilient IPTV streams)
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    // TLS 1.3 on Android 9 and older (their system TLS stops at 1.2), see TlsCompat
+    implementation("org.conscrypt:conscrypt-android:2.8.0")
 
     // Streaming JSON reader (okio-based, shared with OkHttp) for the large provider lists
     implementation("com.squareup.moshi:moshi:1.15.2")

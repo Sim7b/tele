@@ -24,10 +24,12 @@ object HttpClients {
     private const val MAX_JSON_BYTES = 32L * 1024 * 1024
     private const val MAX_JSON_DEPTH = 64
 
-    val base: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    // TLS 1.3 and recent Let's Encrypt roots on Android 9 and older (see TlsCompat)
+    val base: OkHttpClient = TlsCompat.apply(
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+    ).build()
 
     /**
      * JSON body, bounded in size and nesting depth: org.json parses recursively, so a deeply nested
