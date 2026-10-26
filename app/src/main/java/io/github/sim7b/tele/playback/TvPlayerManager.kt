@@ -1,6 +1,8 @@
 package io.github.sim7b.tele.playback
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -45,6 +47,9 @@ data class StreamInfo(
     val bitrateKbps: Int? = null
 )
 
+/** Automatic reconnection in progress after the stream dropped: retry [attempt] of [maxAttempts]. */
+data class Reconnection(val attempt: Int, val maxAttempts: Int)
+
 @OptIn(UnstableApi::class)
 class TvPlayerManager(private val context: Context) {
 
@@ -71,6 +76,8 @@ class TvPlayerManager(private val context: Context) {
     private val extractorsFactory = DefaultExtractorsFactory()
         .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)
     private var retryCount = 0
+    // The current stream has played at least once: a drop gets more (and visible) reconnection attempts
+    private var hasPlayed = false
     // HLS playlist served without the .m3u8 extension: detected when the progressive extractors reject it
     private var forceHls = false
     // Start of the current channel switch (measures the time to the first frame)
@@ -88,6 +95,27 @@ class TvPlayerManager(private val context: Context) {
 
     private val _streamInfo = MutableStateFlow(StreamInfo())
     val streamInfo: StateFlow<StreamInfo> = _streamInfo.asStateFlow()
+
+    private val _reconnection = MutableStateFlow<Reconnection?>(null)
+    val reconnection: StateFlow<Reconnection?> = _reconnection.asStateFlow()
+
+    // Network back after a failure (Wi-Fi or router restart): the stream is retried right away
+    private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            mainHandler.post {
+                if (_error.value != null && currentUrl != null) retry()
+            }
+        }
+    }
+
+    init {
+        try {
+            connectivityManager?.registerDefaultNetworkCallback(networkCallback)
+        } catch (e: RuntimeException) {
+            Log.w(PERF_TAG, "Network callback unavailable: ${e.javaClass.simpleName}")
+        }
+    }
 
     fun getPlayer(): ExoPlayer {
         return exoPlayer ?: createPlayer().also { exoPlayer = it }
@@ -135,6 +163,8 @@ class TvPlayerManager(private val context: Context) {
                         _isLoading.value = playbackState == Player.STATE_BUFFERING
                         if (playbackState == Player.STATE_READY) {
                             retryCount = 0
+                            hasPlayed = true
+                            _reconnection.value = null
                             _error.value = null
                             updateStreamInfo()
                         }
@@ -152,7 +182,7 @@ class TvPlayerManager(private val context: Context) {
     }
 
     /**
-     * Dispatcharr fails over to a backup stream on the server side: retry with a short backoff.
+     * Retries with a backoff ([ReconnectPolicy]); a definitive refusal or the last failed attempt shows the error.
      */
     private fun handlePlaybackError(playbackError: PlaybackException) {
         val player = exoPlayer ?: return
@@ -174,15 +204,18 @@ class TvPlayerManager(private val context: Context) {
         // Definitive refusals from the provider: no point retrying
         val isDefinitive = httpCode in DEFINITIVE_HTTP_ERRORS
 
-        if (!isDefinitive && retryCount < MAX_RETRIES && currentUrl != null) {
-            val delayMs = 1000L shl retryCount
+        val maxAttempts = ReconnectPolicy.maxAttempts(hasPlayed)
+        if (!isDefinitive && retryCount < maxAttempts && currentUrl != null) {
+            val delayMs = ReconnectPolicy.delayMs(retryCount)
             retryCount++
             _isLoading.value = true
             _error.value = null
+            if (hasPlayed) _reconnection.value = Reconnection(retryCount, maxAttempts)
             mainHandler.removeCallbacks(retryRunnable)
             mainHandler.postDelayed(retryRunnable, delayMs)
         } else {
             _isLoading.value = false
+            _reconnection.value = null
             _error.value = describeError(playbackError, httpCode)
         }
     }
@@ -228,9 +261,21 @@ class TvPlayerManager(private val context: Context) {
         currentUserAgent = customUserAgent
         currentAuth = auth
         retryCount = 0
+        hasPlayed = false
         forceHls = false
         mainHandler.removeCallbacks(retryRunnable)
+        _reconnection.value = null
         _streamInfo.value = StreamInfo()
+        prepareCurrent()
+    }
+
+    /** New series of attempts on the current stream (OK on the error message, network back). */
+    fun retry() {
+        if (currentUrl == null) return
+        retryCount = 0
+        mainHandler.removeCallbacks(retryRunnable)
+        _reconnection.value = null
+        _isLoading.value = true
         prepareCurrent()
     }
 
@@ -283,6 +328,7 @@ class TvPlayerManager(private val context: Context) {
         mainHandler.removeCallbacks(retryRunnable)
         currentUrl = null
         retryCount = 0
+        _reconnection.value = null
         exoPlayer?.run {
             stop()
             clearMediaItems()
@@ -295,13 +341,17 @@ class TvPlayerManager(private val context: Context) {
 
     fun release() {
         mainHandler.removeCallbacks(retryRunnable)
+        try {
+            connectivityManager?.unregisterNetworkCallback(networkCallback)
+        } catch (e: RuntimeException) {
+            Log.w(PERF_TAG, "Network callback not registered: ${e.javaClass.simpleName}")
+        }
         exoPlayer?.release()
         exoPlayer = null
     }
 
     companion object {
         const val PERF_TAG = "TVPerf"
-        private const val MAX_RETRIES = 3
         private val DEFINITIVE_HTTP_ERRORS = setOf(401, 403, 404, 410)
     }
 }

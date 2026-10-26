@@ -187,6 +187,8 @@
     <!-- Player -->
     <string name="player_playback_failed">Lecture impossible</string>
     <string name="player_other_stream_hint">Maintenez OK pour choisir un autre flux</string>
+    <string name="player_retry_hint">Appuyez sur OK pour réessayer</string>
+    <string name="player_reconnecting">Reconnexion… %1$d/%2$d</string>
     <string name="player_live">DIRECT</string>
     <string name="player_next_program">"Ensuite %1$s  ·  %2$s"</string>
     <string name="player_stream_name">Flux : %1$s</string>

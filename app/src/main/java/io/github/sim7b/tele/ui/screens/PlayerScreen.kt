@@ -85,6 +85,7 @@ fun PlayerScreen(
     val isLoading by playerManager.isLoading.collectAsState()
     val errorMessage by playerManager.error.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
+    val reconnection by playerManager.reconnection.collectAsState()
 
     var showOverlay by remember { mutableStateOf(true) }
     // Incremented on every requested display to restart the hide delay
@@ -199,9 +200,13 @@ fun PlayerScreen(
                         onPreviousChannel()
                         true
                     }
-                    // OK: shows the banner; long press: stream choice
+                    // OK: shows the banner (retries after an error); long press: stream choice
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                        if (repeatCount == 1) showStreamPicker = true else if (repeatCount == 0) revealOverlay()
+                        when {
+                            repeatCount == 1 -> showStreamPicker = true
+                            repeatCount == 0 && errorMessage != null -> playerManager.retry()
+                            repeatCount == 0 -> revealOverlay()
+                        }
                         true
                     }
                     KeyEvent.KEYCODE_MENU -> {
@@ -287,10 +292,34 @@ fun PlayerScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
+                    text = stringResource(R.string.player_retry_hint),
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
                     text = stringResource(R.string.player_other_stream_hint),
                     color = Color.White.copy(alpha = 0.85f),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Discreet reconnection indicator after a drop (the spinner shows the loading itself)
+        reconnection?.let { attempt ->
+            if (errorMessage == null) {
+                Text(
+                    text = stringResource(R.string.player_reconnecting, attempt.attempt, attempt.maxAttempts),
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(top = 84.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
                 )
             }
         }

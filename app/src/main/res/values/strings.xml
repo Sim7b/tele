@@ -187,6 +187,8 @@
     <!-- Player -->
     <string name="player_playback_failed">Unable to play</string>
     <string name="player_other_stream_hint">Hold OK to choose another stream</string>
+    <string name="player_retry_hint">Press OK to retry</string>
+    <string name="player_reconnecting">Reconnecting… %1$d/%2$d</string>
     <string name="player_live">LIVE</string>
     <string name="player_next_program">"Next %1$s  ·  %2$s"</string>
     <string name="player_fps" translatable="false">%1$d FPS</string>
