@@ -125,7 +125,7 @@ Technical choices:
 - Tooling is pinned in `mise.toml` (JDK, Node for semantic-release, [prek](https://github.com/j178/prek)), with a 7-day minimum release age.
 - Install the git hooks once: `prek install --install-hooks` (YAML, GitHub Actions security with zizmor, conventional commit messages).
 - Tests and lint: `./gradlew testDebugUnitTest lintDebug`.
-- Commits follow [Conventional Commits](https://www.conventionalcommits.org): on each push to `main`, [semantic-release](https://semantic-release.gitbook.io) computes the version, updates `CHANGELOG.md` and `gradle.properties`, builds the signed APK and publishes the GitHub release.
+- Commits follow [Conventional Commits](https://www.conventionalcommits.org): on each push to `main`, [semantic-release](https://semantic-release.gitbook.io) computes the version (`feat`, `fix` and `perf` bump the patch number, breaking changes the minor one), updates `CHANGELOG.md` and `gradle.properties`, builds the signed APK and publishes the GitHub release.
 
 ## Privacy
 

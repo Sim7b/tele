@@ -58,7 +58,7 @@ For each modification to the project, perform the following checks and adjustmen
 
 ## Commits and Releases
 
-- Commit messages follow Conventional Commits (checked by the `committed` hook): `feat` and `fix` trigger a release, `perf` too; `build`, `chore`, `ci`, `docs`, `refactor`, `style` and `test` do not
+- Commit messages follow Conventional Commits (checked by the `committed` hook): `feat`, `fix` and `perf` trigger a patch release (0.2.0 → 0.2.1), a breaking change a minor one (0.2.x → 0.3.0); `build`, `chore`, `ci`, `docs`, `refactor`, `style` and `test` do not
 - Releases are automatic on `main` (semantic-release): never edit `appVersion` in `gradle.properties` or `CHANGELOG.md` by hand
 - The release APK is signed in CI with the key stored in the repository secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`)
 
