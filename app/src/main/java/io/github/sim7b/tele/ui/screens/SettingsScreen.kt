@@ -59,8 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.tv.material3.*
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.storage.AppAccentColor
@@ -157,7 +157,7 @@ fun SettingsScreen(
                 )
             }
 
-            TvLazyColumn(
+            LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
