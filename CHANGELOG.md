@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.3](https://github.com/Sim7b/tele/compare/v0.3.2...v0.3.3) (2026-10-26)
+
+### Features
+
+* **player:** reconnect automatically when a stream drops ([cc534a3](https://github.com/Sim7b/tele/commit/cc534a39cad066cc21666e500203c8727d54b85a))
+* **player:** switch channels with the remote digits ([5f81956](https://github.com/Sim7b/tele/commit/5f81956d470f8d9eb94d267e108bb92a60b66e5f))
+
+### Bug Fixes
+
+* **player:** stop the endless spinner on broken live streams ([c22bf36](https://github.com/Sim7b/tele/commit/c22bf36b6c9519101a6ccd9c5f68faf9020ad039))
+* **security:** encrypt the stored credentials ([594b056](https://github.com/Sim7b/tele/commit/594b056aa42675e8437635729832c4a41a1cea20))
+* **security:** refuse plain HTTP to GitHub and TVMaze ([44ff651](https://github.com/Sim7b/tele/commit/44ff65165491f70556ff7c2ce2cf2aab3d70357b))
+
+### Performance Improvements
+
+* ship a baseline profile for the app code ([f9369b1](https://github.com/Sim7b/tele/commit/f9369b1b4c5ed2c094dced25dab48233ef71e1a8))
+
 ## [0.3.2](https://github.com/Sim7b/tele/compare/v0.3.1...v0.3.2) (2026-10-26)
 
 ### Features
