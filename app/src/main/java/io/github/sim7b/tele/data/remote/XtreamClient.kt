@@ -14,8 +14,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Call
 import okhttp3.Request
-import org.json.JSONArray
+import okhttp3.Response
 import org.json.JSONObject
 
 /**
@@ -67,11 +68,12 @@ object XtreamClient {
         val account = authenticate(config).getOrElse { return@withContext Result.failure(it) }
         try {
             coroutineScope {
-                val categoriesDeferred = async { JSONArray(get(apiUrl(config, "get_live_categories"), config)) }
-                val streams = JSONArray(get(apiUrl(config, "get_live_streams"), config))
-                val categories = categoriesDeferred.await().let { array ->
-                    (0 until array.length()).mapNotNull { array.optJSONObject(it) }
-                        .associate { it.optString("category_id") to (it.optStringOrNull("category_name") ?: "Other") }
+                val categoriesDeferred = async {
+                    val categories = HashMap<String, String>()
+                    forEachObject(apiUrl(config, "get_live_categories"), config) {
+                        categories[it.optString("category_id")] = it.optStringOrNull("category_name") ?: "Other"
+                    }
+                    categories
                 }
 
                 // TS first (progressive playback, fast start), else HLS
@@ -79,13 +81,14 @@ object XtreamClient {
                 val preferred = if ("ts" in formats) "ts" else formats.firstOrNull { it == "m3u8" } ?: "ts"
                 val idPrefix = "xt-${config.id.take(8)}-"
 
-                val channels = ArrayList<Channel>(streams.length())
+                // Streamed: large accounts list 100,000+ live streams; categories resolved afterwards
+                val channels = ArrayList<Channel>()
+                val categoryIds = ArrayList<String?>()
                 // Some panels list a stream in several categories: ids must stay unique (lazy list keys)
-                val seenIds = HashSet<String>(streams.length() * 2)
-                for (i in 0 until streams.length()) {
-                    val item = streams.optJSONObject(i) ?: continue
-                    val streamId = item.optStringOrNull("stream_id") ?: continue
-                    if (!seenIds.add(streamId)) continue
+                val seenIds = HashSet<String>()
+                forEachObject(apiUrl(config, "get_live_streams"), config) { item ->
+                    val streamId = item.optStringOrNull("stream_id") ?: return@forEachObject
+                    if (!seenIds.add(streamId)) return@forEachObject
                     val categoryId = item.optStringOrNull("category_id")
                         ?: item.optJSONArray("category_ids")?.optString(0)
                     val variants = formats.filter { it == "ts" || it == "m3u8" }.map { format ->
@@ -97,11 +100,12 @@ object XtreamClient {
                             qualityTags = listOf(if (format == "ts") "TS" else "HLS")
                         )
                     }
+                    categoryIds.add(categoryId)
                     channels.add(
                         Channel(
                             id = idPrefix + streamId,
                             name = item.optStringOrNull("name") ?: "Channel $streamId",
-                            group = categories[categoryId] ?: "Other",
+                            group = "",
                             logoUrl = item.optStringOrNull("stream_icon"),
                             streamUrl = streamUrl(config, streamId, preferred),
                             tvgId = item.optStringOrNull("epg_channel_id"),
@@ -109,6 +113,10 @@ object XtreamClient {
                             number = item.optStringOrNull("num")?.toIntOrNull()
                         )
                     )
+                }
+                val categories = categoriesDeferred.await()
+                for (i in channels.indices) {
+                    channels[i] = channels[i].copy(group = categories[categoryIds[i]] ?: "Other")
                 }
                 channels.sortBy { it.number ?: Int.MAX_VALUE }
 
@@ -152,22 +160,38 @@ object XtreamClient {
             .build()
             .toString()
 
-    private suspend fun get(url: HttpUrl, config: SourceConfig): String {
+    /** Streams the objects of a list action to [action] (see [JsonStreams]). */
+    private suspend fun forEachObject(url: HttpUrl, config: SourceConfig, action: (JSONObject) -> Unit) {
+        request(url, config).executeCancellable { response ->
+            checkResponse(response)
+            JsonStreams.forEachObject(response.body.byteStream(), action = action)
+        }
+    }
+
+    private fun request(url: HttpUrl, config: SourceConfig): Call {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT)
             .get()
             .build()
-        return HttpClients.base.newCall(request).executeCancellable { response ->
-            if (!response.isSuccessful) {
-                throw UserFacingException(
-                    when (response.code) {
-                        401, 403 -> UiText.Res(R.string.error_xtream_credentials_refused_http, response.code)
-                        404 -> UiText.Res(R.string.error_xtream_not_found)
-                        else -> UiText.Res(R.string.error_server_http, response.code)
-                    }
-                )
-            }
+        return HttpClients.base.newCall(request)
+    }
+
+    private fun checkResponse(response: Response) {
+        if (!response.isSuccessful) {
+            throw UserFacingException(
+                when (response.code) {
+                    401, 403 -> UiText.Res(R.string.error_xtream_credentials_refused_http, response.code)
+                    404 -> UiText.Res(R.string.error_xtream_not_found)
+                    else -> UiText.Res(R.string.error_server_http, response.code)
+                }
+            )
+        }
+    }
+
+    private suspend fun get(url: HttpUrl, config: SourceConfig): String {
+        return request(url, config).executeCancellable { response ->
+            checkResponse(response)
             val body = HttpClients.jsonString(response.body)
             if (body.isBlank()) throw UserFacingException(UiText.Res(R.string.error_empty_response))
             body

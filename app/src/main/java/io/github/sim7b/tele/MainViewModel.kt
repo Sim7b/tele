@@ -117,7 +117,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (configRepository.activeConfig.value?.type != SourceType.DISPATCHARR) return Result.success(emptyList())
         val serverId = channel.serverId
             ?: return failure(R.string.error_sync_channels_for_streams)
-        return dispatcharrClient.getChannelStreams(serverId)
+        return dispatcharrClient.getChannelStreams(serverId).onSuccess { streams ->
+            freshSelection(channel.id, streams)?.let { selectStream(channel, it) }
+        }
+    }
+
+    /**
+     * Up-to-date version of the stream selected for a channel, when its URL changed (provider token,
+     * new Xtream password): the selection follows its stream id. Null when there is nothing to update.
+     */
+    private fun freshSelection(channelId: String, streams: List<StreamSource>): StreamSource? {
+        val selected = configRepository.selectedStreams.value[channelId] ?: return null
+        val fresh = streams.firstOrNull { it.id != null && it.id == selected.id } ?: return null
+        return fresh.takeIf { it.url != selected.url }
     }
 
     /**
@@ -327,6 +339,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Publishes the channels with their current program and the stream selected by the user. */
     private suspend fun publish(channels: List<Channel>, programs: Map<String, List<GuideProgram>>, error: UiText?) {
         programsByChannelId = programs
+        // Xtream: stream variants come with the channels, the selections follow their new URLs
+        val selections = configRepository.selectedStreams.value
+        if (selections.isNotEmpty()) {
+            val updates = withContext(Dispatchers.Default) {
+                channels.mapNotNull { channel ->
+                    if (channel.availableStreams.isEmpty() || channel.id !in selections) return@mapNotNull null
+                    freshSelection(channel.id, channel.availableStreams)?.let { channel.id to it }
+                }
+            }
+            updates.forEach { (channelId, stream) -> configRepository.setSelectedStream(channelId, stream) }
+        }
         // Off the main thread: playlists may hold tens of thousands of channels
         val published = withContext(Dispatchers.Default) {
             val now = System.currentTimeMillis()
