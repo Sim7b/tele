@@ -19,6 +19,13 @@
         android:name="android.hardware.microphone"
         android:required="false" />
 
+    <!-- Voice search: lets the app see the speech recognizer (package visibility, Android 11+) -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
+
     <application
         android:name=".TeleApplication"
         android:allowBackup="false"

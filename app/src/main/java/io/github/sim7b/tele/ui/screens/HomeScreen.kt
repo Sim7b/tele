@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
@@ -108,6 +109,7 @@ fun HomeScreen(
     onHideCategory: (String) -> Unit,
     automaticStreamDescription: String,
     onOpenSettings: () -> Unit,
+    onOpenSearch: (voice: Boolean) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -202,6 +204,11 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
+                // Search key of the remote (or keyboard): voice search directly
+                if (movingChannelId == null && hasContent && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_SEARCH) {
+                    if (event.type == KeyEventType.KeyUp) onOpenSearch(true)
+                    return@onPreviewKeyEvent true
+                }
                 // In move mode, the arrows move the tile instead of moving the focus
                 if (movingChannelId == null) return@onPreviewKeyEvent false
                 val keyCode = event.nativeKeyEvent.keyCode
@@ -260,6 +267,15 @@ fun HomeScreen(
                 streamSlots?.let { slots ->
                     StreamSlotsBadge(slots)
                     Spacer(modifier = Modifier.width(14.dp))
+                }
+
+                if (hasContent) {
+                    RoundIconButton(
+                        icon = Icons.Filled.Search,
+                        contentDescription = stringResource(R.string.home_search),
+                        onClick = { onOpenSearch(false) }
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                 }
 
                 // Discreet accent dot on the settings button when an app update is available
