@@ -81,11 +81,16 @@ class MainActivity : ComponentActivity() {
             val channels by viewModel.channels.collectAsState()
             val isLoadingChannels by viewModel.isLoading.collectAsState()
             val loadError by viewModel.loadError.collectAsState()
+            val streamSlots by viewModel.streamSlots.collectAsState()
 
             val userName by viewModel.userName.collectAsState()
             val context = LocalContext.current
 
             var currentScreen by remember { mutableStateOf<CurrentScreen>(CurrentScreen.Home) }
+            // Back on the home screen: refresh the slots right away (leaving the player frees one)
+            LaunchedEffect(currentScreen is CurrentScreen.Home) {
+                if (currentScreen is CurrentScreen.Home) viewModel.refreshStreamSlots()
+            }
             // "Good morning/Good evening" welcome shown only once per app launch
             var showWelcome by rememberSaveable { mutableStateOf(true) }
 
@@ -180,6 +185,7 @@ class MainActivity : ComponentActivity() {
                                     favoriteIds = favoriteIds,
                                     isLoading = isLoadingChannels,
                                     loadError = loadError,
+                                    streamSlots = streamSlots,
                                     onChannelSelected = { channel ->
                                         currentScreen = CurrentScreen.Player(channel)
                                     },

@@ -442,6 +442,18 @@ class DispatcharrClient(
     }
 
     /**
+     * Playback slots of the provider accounts (free / total), read live: never cached, since
+     * [StreamSlots.used] changes with every viewer. Null when unavailable (no admin rights, error)
+     * or when no account has a stream limit.
+     */
+    suspend fun getStreamSlots(): StreamSlots? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) return@withContext null
+        val accounts = mutableListOf<JSONObject>()
+        if (!fetchObjects("$baseUrl/api/m3u/accounts/") { accounts.add(it) }) return@withContext null
+        StreamSlots.fromAccounts(accounts)
+    }
+
+    /**
      * First name and username of the account linked to the API key (null if unavailable).
      */
     suspend fun getCurrentUser(): Pair<String?, String?>? = withContext(Dispatchers.IO) {

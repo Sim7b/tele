@@ -1,5 +1,7 @@
 package io.github.sim7b.tele.data.model
 
+import org.json.JSONObject
+
 /**
  * Channel returned by the Dispatcharr API.
  */
@@ -73,3 +75,36 @@ data class DispatcharrEpgChannel(
     val channelName: String,
     val programs: List<GuideProgram>
 )
+
+/**
+ * Playback slots of the Dispatcharr provider accounts: [total] simultaneous streams allowed by the
+ * active M3U profiles that have a limit, of which [used] are currently taken.
+ */
+data class StreamSlots(val used: Int, val total: Int) {
+    val free: Int
+        get() = (total - used).coerceAtLeast(0)
+
+    companion object {
+        /**
+         * Sums the limited, active profiles of the active accounts (`/api/m3u/accounts/` items).
+         * A profile with `max_streams` 0 is unlimited and not counted; null when no profile has a limit.
+         */
+        fun fromAccounts(accounts: List<JSONObject>): StreamSlots? {
+            var used = 0
+            var total = 0
+            for (account in accounts) {
+                if (!account.optBoolean("is_active", true)) continue
+                val profiles = account.optJSONArray("profiles") ?: continue
+                for (i in 0 until profiles.length()) {
+                    val profile = profiles.optJSONObject(i) ?: continue
+                    if (!profile.optBoolean("is_active", true)) continue
+                    val max = profile.optInt("max_streams", 0)
+                    if (max <= 0) continue
+                    total += max
+                    used += profile.optInt("current_viewers", 0).coerceIn(0, max)
+                }
+            }
+            return if (total > 0) StreamSlots(used, total) else null
+        }
+    }
+}

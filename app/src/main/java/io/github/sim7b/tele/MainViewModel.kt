@@ -14,6 +14,7 @@ import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.ProgramArtwork
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.SourceType
+import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.remote.DispatcharrClient
 import io.github.sim7b.tele.data.remote.GuideLoader
@@ -71,6 +72,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _initialSyncDone = MutableStateFlow(false)
     val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
 
+    // Free / total playback slots of the Dispatcharr provider accounts (null: not shown)
+    private val _streamSlots = MutableStateFlow<StreamSlots?>(null)
+    val streamSlots: StateFlow<StreamSlots?> = _streamSlots.asStateFlow()
+    private var slotsJob: Job? = null
+
     // EPG programs by channel id, kept to move the "current program" forward
     @Volatile
     private var programsByChannelId: Map<String, List<GuideProgram>> = emptyMap()
@@ -89,6 +95,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive) {
                 delay(EPG_TICK_MS)
                 refreshCurrentPrograms()
+                refreshStreamSlots()
                 ticks++
                 // The guide only covers a limited window (the TV may stay on for days): reload it periodically
                 if (ticks % GUIDE_RELOAD_TICKS == 0) {
@@ -101,6 +108,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    /**
+     * Reloads the Dispatcharr playback slots (cheap request). Called every 30 s and when the home
+     * screen is shown again, since leaving the player frees a slot.
+     */
+    fun refreshStreamSlots() {
+        if (configRepository.activeConfig.value?.type != SourceType.DISPATCHARR) {
+            _streamSlots.value = null
+            return
+        }
+        if (slotsJob?.isActive == true) return
+        slotsJob = viewModelScope.launch { _streamSlots.value = dispatcharrClient.getStreamSlots() }
     }
 
     /** Manual refresh: everything is reloaded, including the reference tables cached by the client. */
@@ -186,6 +206,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         dispatcharrClient.setConfig(config?.takeIf { it.type == SourceType.DISPATCHARR })
+        slotsJob?.cancel()
+        _streamSlots.value = null
+        refreshStreamSlots()
 
         if (config == null) {
             programsByChannelId = emptyMap()

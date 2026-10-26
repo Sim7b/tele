@@ -38,6 +38,7 @@ val LocalAppColors = staticCompositionLocalOf { DefaultAppColors }
 val BackgroundDark = Color(0xFF080B10)
 val AccentBlue = Color(0xFF3B82F6)
 val LiveRed = Color(0xFFEF4444)
+val SlotFreeGreen = Color(0xFF22C55E)
 
 val SurfaceDark: Color
     @Composable @ReadOnlyComposable get() = LocalAppColors.current.surface
