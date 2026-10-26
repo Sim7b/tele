@@ -2,8 +2,10 @@ package io.github.sim7b.tele.data.remote
 
 import io.github.sim7b.tele.data.model.SourceConfig
 import kotlinx.coroutines.runBlocking
+import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -74,5 +76,24 @@ class DispatcharrClientTest {
 
         assertEquals("secret", dispatcharr.takeRequest().headers["X-API-Key"])
         assertNull(provider.takeRequest().headers["X-API-Key"])
+    }
+
+    @Test
+    fun `chosen streams are played through the Dispatcharr proxy, not from the provider`() = runBlocking {
+        dispatcharr.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.url.encodedPath) {
+                "/api/m3u/accounts/" -> MockResponse.Builder().body("""[{"id": 1, "name": "Neo", "is_active": true}]""").build()
+                else -> MockResponse.Builder().body(
+                    """[{"id": 7, "name": "FR - TF1 FHD", "m3u_account": 1, "stream_hash": "abc123",
+                        "url": "http://provider.example/live/user/pass/1.ts"}]"""
+                ).build()
+            }
+        }
+
+        val streams = DispatcharrClient(config("secret")).getChannelStreams("42").getOrThrow()
+
+        val base = config("secret").normalizedUrl
+        assertEquals("$base/proxy/ts/stream/abc123?skip_redirect=true", streams.single().url)
+        assertEquals("Neo", streams.single().provider)
     }
 }

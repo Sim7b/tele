@@ -1,6 +1,6 @@
 # Télé
 
-IPTV player for **Android TV / Google TV**, designed for the remote: live TV, program guide and fast channel switching, in a clean interface. On the device, the app is called "TV". The interface is available in English and French.
+IPTV player for **Android TV / Google TV**, designed for the remote: live TV, program guide and fast channel switching, in a clean interface. The interface is available in English and French.
 
 Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)** server, an **Xtream Codes** subscription or an **M3U playlist**.
 
