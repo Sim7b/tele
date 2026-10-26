@@ -104,7 +104,7 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Coroutines for background M3U streaming & network operations
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // HTTP Client (OkHttp for resilient IPTV streams)
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
