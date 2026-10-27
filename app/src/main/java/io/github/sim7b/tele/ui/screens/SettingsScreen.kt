@@ -1,6 +1,15 @@
 package io.github.sim7b.tele.ui.screens
 
 import androidx.compose.ui.platform.LocalResources
+import androidx.annotation.StringRes
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
+import io.github.sim7b.tele.data.model.PreviewDelay
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import io.github.sim7b.tele.R
@@ -86,9 +95,18 @@ import io.github.sim7b.tele.data.update.AppRelease
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+/** Sections of the settings, listed on the left. */
+private enum class SettingsPage(@param:StringRes val labelRes: Int, @param:StringRes val hintRes: Int, val icon: ImageVector) {
+    SOURCES(R.string.settings_nav_sources, R.string.settings_nav_sources_hint, Icons.Filled.List),
+    CHANNELS(R.string.settings_nav_channels, R.string.settings_nav_channels_hint, Icons.Filled.Star),
+    PLAYBACK(R.string.settings_nav_playback, R.string.settings_nav_playback_hint, Icons.Filled.PlayArrow),
+    APPEARANCE(R.string.settings_nav_appearance, R.string.settings_nav_appearance_hint, Icons.Filled.Create),
+    SYSTEM(R.string.settings_nav_system, R.string.settings_nav_system_hint, Icons.Filled.Info)
+}
+
 /**
- * Settings: app updates, manual sync, appearance, density, hidden channels and categories,
- * and channel source management (add, connection test, activation, deletion).
+ * Settings, by section: a menu on the left (the focused section is shown), its settings on the right.
+ * → enters the section, ← goes back to the menu, on the section it was opened from.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -115,13 +133,17 @@ fun SettingsScreen(
     val currentTheme by repository.themeBackground.collectAsState()
     val currentAccent by repository.accentColor.collectAsState()
     val currentQuality by repository.qualityPreference.collectAsState()
-    val channelPreview by repository.channelPreview.collectAsState()
+    val previewDelay by repository.previewDelay.collectAsState()
     val currentBouquet by repository.bouquet.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
 
-    val backButtonFocus = remember { FocusRequester() }
-    // After a source is deleted, focus returns to "Add a source" (not to the top of the screen)
+    // An available update opens the settings on its section
+    var page by rememberSaveable {
+        mutableStateOf(if (updateState is UpdateState.Available) SettingsPage.SYSTEM else SettingsPage.SOURCES)
+    }
+    val pageFocus = remember { SettingsPage.entries.associateWith { FocusRequester() } }
+    // After a source is deleted, focus returns to "Add a source" (not to the menu)
     val addSourceFocus = remember { FocusRequester() }
     var refocusAfterDelete by remember { mutableIntStateOf(0) }
     LaunchedEffect(refocusAfterDelete) {
@@ -142,7 +164,7 @@ fun SettingsScreen(
     }
 
     LaunchedEffect(Unit) {
-        backButtonFocus.requestFocusWithRetry()
+        pageFocus.getValue(page).requestFocusWithRetry()
     }
 
     val resources = LocalResources.current
@@ -180,390 +202,351 @@ fun SettingsScreen(
                 ActionButton(
                     label = stringResource(R.string.settings_back),
                     icon = Icons.Filled.ArrowBack,
-                    onClick = onBack,
-                    modifier = Modifier.focusRequester(backButtonFocus)
+                    onClick = onBack
                 )
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // SECTION 0: APP UPDATES (first, so an available update is in sight)
-                item {
-                    UpdateSection(
-                        installedVersion = installedVersion,
-                        supported = updatesSupported,
-                        state = updateState,
-                        onCheck = onCheckUpdate,
-                        onInstall = onInstallUpdate
-                    )
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Menu: focusing a section shows it; coming back from the right lands on the open one
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .width(230.dp)
+                        // Entering the menu (← from a section) lands on the open section, not the nearest one
+                        .focusProperties { onEnter = { pageFocus.getValue(page).requestFocus() } }
+                        .focusGroup()
+                ) {
+                    SettingsPage.entries.forEach { entry ->
+                        SettingsNavItem(
+                            page = entry,
+                            selected = entry == page,
+                            badge = entry == SettingsPage.SYSTEM && updateState is UpdateState.Available,
+                            onFocused = { page = entry },
+                            modifier = Modifier.focusRequester(pageFocus.getValue(entry))
+                        )
+                    }
                 }
 
-                // SECTION 1: MANUAL SYNC
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_sync_title),
-                        description = stringResource(R.string.settings_sync_description)
+                Spacer(modifier = Modifier.width(24.dp))
+
+                // Content of the open section, from its top
+                key(page) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentPadding = PaddingValues(bottom = 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            ActionButton(
-                                label = stringResource(R.string.settings_refresh_channels),
-                                icon = Icons.Filled.Refresh,
-                                onClick = {
-                                    onRefreshPlaylist()
-                                    syncMessage = resources.getString(R.string.settings_refresh_channels_started)
+                        when (page) {
+                            SettingsPage.SOURCES -> {
+                                item {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                        SectionLabel(text = stringResource(R.string.settings_sources_title), modifier = Modifier.weight(1f))
+                                        ActionButton(
+                                            label = stringResource(R.string.settings_add_source),
+                                            icon = Icons.Filled.Add,
+                                            onClick = {
+                                                editingConfig = SourceConfig(
+                                                    id = UUID.randomUUID().toString(),
+                                                    name = "",
+                                                    serverUrl = "",
+                                                    apiKey = ""
+                                                )
+                                                isAddingNew = true
+                                            },
+                                            modifier = Modifier.focusRequester(addSourceFocus)
+                                        )
+                                    }
                                 }
-                            )
-                            ActionButton(
-                                label = stringResource(R.string.settings_refresh_guide),
-                                icon = Icons.Filled.DateRange,
-                                onClick = {
-                                    onRefreshEpg()
-                                    syncMessage = resources.getString(R.string.settings_refresh_guide_started)
+                                items(configs, key = { it.id }) { config ->
+                                    ServerConfigCard(
+                                        config = config,
+                                        isActive = config.isActive,
+                                        accentColorObj = accentColorObj,
+                                        onToggleEnabled = { repository.setSourceEnabled(config.id, !config.isActive) },
+                                        onEdit = {
+                                            editingConfig = config
+                                            isAddingNew = false
+                                        },
+                                        onDelete = {
+                                            repository.deleteConfig(config.id)
+                                            refocusAfterDelete++
+                                        },
+                                        onMoveUp = if (config.id != configs.first().id) ({ repository.moveSource(config.id, -1) }) else null,
+                                        onMoveDown = if (config.id != configs.last().id) ({ repository.moveSource(config.id, +1) }) else null
+                                    )
                                 }
-                            )
-                            if (syncMessage != null) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(text = syncMessage!!, fontSize = 12.sp, color = TextSecondary)
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_sync_title),
+                                        description = stringResource(R.string.settings_sync_description)
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            ActionButton(
+                                                label = stringResource(R.string.settings_refresh_channels),
+                                                icon = Icons.Filled.Refresh,
+                                                onClick = {
+                                                    onRefreshPlaylist()
+                                                    syncMessage = resources.getString(R.string.settings_refresh_channels_started)
+                                                }
+                                            )
+                                            ActionButton(
+                                                label = stringResource(R.string.settings_refresh_guide),
+                                                icon = Icons.Filled.DateRange,
+                                                onClick = {
+                                                    onRefreshEpg()
+                                                    syncMessage = resources.getString(R.string.settings_refresh_guide_started)
+                                                }
+                                            )
+                                        }
+                                        syncMessage?.let {
+                                            Text(text = it, fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
+                                        }
+                                    }
+                                }
+                                // Another TV: send / receive the whole configuration on the local network
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_transfer_title),
+                                        description = stringResource(R.string.settings_transfer_description)
+                                    ) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            ActionButton(
+                                                label = stringResource(R.string.settings_transfer_send),
+                                                icon = Icons.Filled.Share,
+                                                onClick = { showSendConfig = true }
+                                            )
+                                            ActionButton(
+                                                label = stringResource(R.string.settings_transfer_receive),
+                                                icon = Icons.Filled.Add,
+                                                onClick = { showReceiveConfig = true }
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        }
-                    }
-                }
 
-                // SECTION 2: THEME AND ACCENT COLOR
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_appearance_title),
-                        description = stringResource(R.string.settings_appearance_description)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.settings_background),
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 14.dp)
-                        ) {
-                            AppThemeBackground.entries.forEach { theme ->
-                                OptionButton(
-                                    label = stringResource(theme.labelRes),
-                                    selected = theme == currentTheme,
-                                    swatch = Color(theme.backgroundColorHex),
-                                    onClick = { repository.setThemeBackground(theme) },
-                                    modifier = Modifier.weight(1f)
-                                )
+                            SettingsPage.CHANNELS -> {
+                                // Reference bouquet: channel names, numbers, categories, grouped versions
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_bouquet_title),
+                                        description = stringResource(R.string.settings_bouquet_description)
+                                    ) {
+                                        OptionGrid(BouquetPreference.entries, columns = 3) { preference, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(preference.labelRes),
+                                                selected = preference == currentBouquet,
+                                                onClick = { repository.setBouquet(preference) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                        Text(
+                                            text = stringResource(currentBouquet.descriptionRes),
+                                            fontSize = 11.sp,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(top = 8.dp)
+                                        )
+                                        if (currentBouquet != BouquetPreference.NONE) {
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            if (unmatchedChannels.isEmpty()) {
+                                                Text(
+                                                    text = stringResource(R.string.settings_unmatched_all_recognized),
+                                                    fontSize = 11.sp,
+                                                    color = TextSecondary
+                                                )
+                                            } else {
+                                                ActionButton(
+                                                    label = pluralStringResource(
+                                                        R.plurals.settings_unmatched_button,
+                                                        unmatchedChannels.size,
+                                                        unmatchedChannels.size
+                                                    ),
+                                                    icon = Icons.Filled.Info,
+                                                    onClick = { showUnmatched = true }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                // Displayed categories
+                                if (categories.isNotEmpty()) {
+                                    item {
+                                        SettingsSection(
+                                            title = stringResource(R.string.settings_categories_title),
+                                            description = stringResource(R.string.settings_categories_description)
+                                        ) {
+                                            // Same category name in several enabled sources: one category, or one per source
+                                            if (enabledConfigs.size > 1) {
+                                                Text(
+                                                    text = stringResource(R.string.settings_category_mode),
+                                                    fontSize = 12.sp,
+                                                    color = TextSecondary,
+                                                    modifier = Modifier.padding(bottom = 6.dp)
+                                                )
+                                                OptionGrid(CategoryMode.entries, columns = 2) { mode, cellModifier ->
+                                                    OptionButton(
+                                                        label = stringResource(mode.labelRes),
+                                                        description = stringResource(mode.descriptionRes),
+                                                        selected = mode == categoryMode,
+                                                        onClick = { repository.setCategoryMode(mode) },
+                                                        modifier = cellModifier
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(14.dp))
+                                            }
+                                            OptionGrid(categories, columns = 3) { (group, count), cellModifier ->
+                                                CategoryToggle(
+                                                    label = groupLabel(group),
+                                                    channelCount = count,
+                                                    visible = group !in hiddenGroups,
+                                                    onClick = { repository.setGroupHidden(group, group !in hiddenGroups) },
+                                                    modifier = cellModifier
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (hiddenIds.isNotEmpty()) {
+                                    item {
+                                        SettingsSection(
+                                            title = stringResource(R.string.settings_hidden_channels_title),
+                                            description = pluralStringResource(
+                                                R.plurals.settings_hidden_channels_description,
+                                                hiddenIds.size,
+                                                hiddenIds.size
+                                            )
+                                        ) {
+                                            ActionButton(
+                                                label = stringResource(R.string.settings_unhide_all),
+                                                icon = Icons.Filled.Refresh,
+                                                onClick = { repository.unhideAllChannels() }
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        }
 
-                        Text(
-                            text = stringResource(R.string.settings_accent_color),
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            AppAccentColor.entries.forEach { accent ->
-                                OptionButton(
-                                    label = stringResource(accent.labelRes),
-                                    selected = accent == currentAccent,
-                                    swatch = Color(accent.colorHex),
-                                    onClick = { repository.setAccentColor(accent) },
-                                    modifier = Modifier.weight(1f)
-                                )
+                            SettingsPage.PLAYBACK -> {
+                                // Stream quality (Dispatcharr automatic choice)
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_quality_title),
+                                        description = stringResource(R.string.settings_quality_description)
+                                    ) {
+                                        OptionGrid(QualityPreference.entries, columns = 2) { preference, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(preference.labelRes),
+                                                description = stringResource(preference.descriptionRes),
+                                                selected = preference == currentQuality,
+                                                onClick = { repository.setQualityPreference(preference) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
+                                // Home preview: muted, after the chosen focus time on a channel
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_preview_title),
+                                        description = stringResource(R.string.settings_preview_description)
+                                    ) {
+                                        OptionGrid(PreviewDelay.entries, columns = 3) { delay, cellModifier ->
+                                            OptionButton(
+                                                label = previewDelayLabel(delay),
+                                                selected = delay == previewDelay,
+                                                onClick = { repository.setPreviewDelay(delay) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        }
-                    }
-                }
 
-                // SECTION 3: INTERFACE DENSITY
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_density_title),
-                        description = stringResource(R.string.settings_density_description)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            UiDensity.entries.forEach { density ->
-                                OptionButton(
-                                    label = stringResource(density.labelRes),
-                                    description = stringResource(density.descriptionRes),
-                                    selected = density == currentDensity,
-                                    onClick = { repository.setUiDensity(density) },
-                                    modifier = Modifier.weight(1f)
-                                )
+                            SettingsPage.APPEARANCE -> {
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_appearance_title),
+                                        description = stringResource(R.string.settings_appearance_description)
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.settings_background),
+                                            fontSize = 12.sp,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(bottom = 6.dp)
+                                        )
+                                        OptionGrid(AppThemeBackground.entries, columns = 3) { theme, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(theme.labelRes),
+                                                selected = theme == currentTheme,
+                                                swatch = Color(theme.backgroundColorHex),
+                                                onClick = { repository.setThemeBackground(theme) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                        Text(
+                                            text = stringResource(R.string.settings_accent_color),
+                                            fontSize = 12.sp,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
+                                        )
+                                        OptionGrid(AppAccentColor.entries, columns = 3) { accent, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(accent.labelRes),
+                                                selected = accent == currentAccent,
+                                                swatch = Color(accent.colorHex),
+                                                onClick = { repository.setAccentColor(accent) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_density_title),
+                                        description = stringResource(R.string.settings_density_description)
+                                    ) {
+                                        OptionGrid(UiDensity.entries, columns = 3) { density, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(density.labelRes),
+                                                description = stringResource(density.descriptionRes),
+                                                selected = density == currentDensity,
+                                                onClick = { repository.setUiDensity(density) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        }
-                    }
-                }
 
-                // SECTION 3A: HOME PREVIEW (muted, after 2 s on a channel)
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_preview_title),
-                        description = stringResource(R.string.settings_preview_description)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            listOf(
-                                Triple(true, R.string.settings_preview_on, R.string.settings_preview_on_description),
-                                Triple(false, R.string.settings_preview_off, R.string.settings_preview_off_description)
-                            ).forEach { (enabled, label, description) ->
-                                OptionButton(
-                                    label = stringResource(label),
-                                    description = stringResource(description),
-                                    selected = channelPreview == enabled,
-                                    onClick = { repository.setChannelPreview(enabled) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // SECTION 3B: STREAM QUALITY (Dispatcharr automatic choice)
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_quality_title),
-                        description = stringResource(R.string.settings_quality_description)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            QualityPreference.entries.forEach { preference ->
-                                OptionButton(
-                                    label = stringResource(preference.labelRes),
-                                    description = stringResource(preference.descriptionRes),
-                                    selected = preference == currentQuality,
-                                    onClick = { repository.setQualityPreference(preference) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // SECTION 3C: REFERENCE BOUQUET (channel names, numbers, categories, grouped versions)
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_bouquet_title),
-                        description = stringResource(R.string.settings_bouquet_description)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            BouquetPreference.entries.forEach { preference ->
-                                OptionButton(
-                                    label = stringResource(preference.labelRes),
-                                    selected = preference == currentBouquet,
-                                    onClick = { repository.setBouquet(preference) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(currentBouquet.descriptionRes),
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
-                        if (currentBouquet != BouquetPreference.NONE) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            if (unmatchedChannels.isEmpty()) {
-                                Text(
-                                    text = stringResource(R.string.settings_unmatched_all_recognized),
-                                    fontSize = 11.sp,
-                                    color = TextSecondary
-                                )
-                            } else {
-                                ActionButton(
-                                    label = pluralStringResource(
-                                        R.plurals.settings_unmatched_button,
-                                        unmatchedChannels.size,
-                                        unmatchedChannels.size
-                                    ),
-                                    icon = Icons.Filled.Info,
-                                    onClick = { showUnmatched = true }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // SECTION 4: HIDDEN CHANNELS
-                if (hiddenIds.isNotEmpty()) {
-                    item {
-                        SettingsSection(
-                            title = stringResource(R.string.settings_hidden_channels_title),
-                            description = pluralStringResource(
-                                R.plurals.settings_hidden_channels_description,
-                                hiddenIds.size,
-                                hiddenIds.size
-                            )
-                        ) {
-                            ActionButton(
-                                label = stringResource(R.string.settings_unhide_all),
-                                icon = Icons.Filled.Refresh,
-                                onClick = { repository.unhideAllChannels() }
-                            )
-                        }
-                    }
-                }
-
-                // SECTION 5: DISPLAYED CATEGORIES
-                if (categories.isNotEmpty()) {
-                    item {
-                        SettingsSection(
-                            title = stringResource(R.string.settings_categories_title),
-                            description = stringResource(R.string.settings_categories_description)
-                        ) {
-                            // Same category name in several enabled sources: one category, or one per source
-                            if (enabledConfigs.size > 1) {
-                                Text(
-                                    text = stringResource(R.string.settings_category_mode),
-                                    fontSize = 12.sp,
-                                    color = TextSecondary,
-                                    modifier = Modifier.padding(bottom = 6.dp)
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 14.dp)
-                                ) {
-                                    CategoryMode.entries.forEach { mode ->
-                                        OptionButton(
-                                            label = stringResource(mode.labelRes),
-                                            description = stringResource(mode.descriptionRes),
-                                            selected = mode == categoryMode,
-                                            onClick = { repository.setCategoryMode(mode) },
-                                            modifier = Modifier.weight(1f)
+                            SettingsPage.SYSTEM -> {
+                                item {
+                                    UpdateSection(
+                                        installedVersion = installedVersion,
+                                        supported = updatesSupported,
+                                        state = updateState,
+                                        onCheck = onCheckUpdate,
+                                        onInstall = onInstallUpdate
+                                    )
+                                }
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_help_title),
+                                        description = stringResource(R.string.settings_help_description)
+                                    ) {
+                                        ActionButton(
+                                            label = stringResource(R.string.settings_show_guide),
+                                            icon = Icons.Filled.Info,
+                                            onClick = onShowGuide
                                         )
                                     }
                                 }
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                categories.chunked(4).forEach { row ->
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        row.forEach { (group, count) ->
-                                            CategoryToggle(
-                                                label = groupLabel(group),
-                                                channelCount = count,
-                                                visible = group !in hiddenGroups,
-                                                onClick = { repository.setGroupHidden(group, group !in hiddenGroups) },
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                        repeat(4 - row.size) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
-                                    }
-                                }
-                            }
                         }
-                    }
-                }
-
-                // SECTION 6: DISPATCHARR SERVERS
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SectionLabel(text = stringResource(R.string.settings_sources_title), modifier = Modifier.weight(1f))
-                        ActionButton(
-                            label = stringResource(R.string.settings_add_source),
-                            icon = Icons.Filled.Add,
-                            onClick = {
-                                editingConfig = SourceConfig(
-                                    id = UUID.randomUUID().toString(),
-                                    name = "",
-                                    serverUrl = "",
-                                    apiKey = ""
-                                )
-                                isAddingNew = true
-                            },
-                            modifier = Modifier.focusRequester(addSourceFocus)
-                        )
-                    }
-                }
-
-                items(configs, key = { it.id }) { config ->
-                    val isActive = config.isActive
-                    ServerConfigCard(
-                        config = config,
-                        isActive = isActive,
-                        accentColorObj = accentColorObj,
-                        onToggleEnabled = {
-                            repository.setSourceEnabled(config.id, !config.isActive)
-                        },
-                        onEdit = {
-                            editingConfig = config
-                            isAddingNew = false
-                        },
-                        onDelete = {
-                            repository.deleteConfig(config.id)
-                            refocusAfterDelete++
-                        },
-                        onMoveUp = if (config.id != configs.first().id) ({ repository.moveSource(config.id, -1) }) else null,
-                        onMoveDown = if (config.id != configs.last().id) ({ repository.moveSource(config.id, +1) }) else null
-                    )
-                }
-
-                // ANOTHER TV: send / receive the whole configuration on the local network
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_transfer_title),
-                        description = stringResource(R.string.settings_transfer_description)
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            ActionButton(
-                                label = stringResource(R.string.settings_transfer_send),
-                                icon = Icons.Filled.Share,
-                                onClick = { showSendConfig = true }
-                            )
-                            ActionButton(
-                                label = stringResource(R.string.settings_transfer_receive),
-                                icon = Icons.Filled.Add,
-                                onClick = { showReceiveConfig = true }
-                            )
-                        }
-                    }
-                }
-
-                // LAST SECTION: HELP
-                item {
-                    SettingsSection(
-                        title = stringResource(R.string.settings_help_title),
-                        description = stringResource(R.string.settings_help_description)
-                    ) {
-                        ActionButton(
-                            label = stringResource(R.string.settings_show_guide),
-                            icon = Icons.Filled.Info,
-                            onClick = onShowGuide
-                        )
                     }
                 }
             }
@@ -595,6 +578,99 @@ fun SettingsScreen(
                     isAddingNew = false
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun previewDelayLabel(delay: PreviewDelay): String = when (delay) {
+    PreviewDelay.OFF -> stringResource(R.string.preview_delay_off)
+    PreviewDelay.IMMEDIATE -> stringResource(R.string.preview_delay_immediate)
+    else -> stringResource(R.string.preview_delay_seconds, delay.seconds)
+}
+
+/** Options laid out in rows of [columns] equal cells (the content width is that of a section). */
+@Composable
+private fun <T> OptionGrid(
+    items: List<T>,
+    columns: Int,
+    cell: @Composable (item: T, modifier: Modifier) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.chunked(columns).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { item -> cell(item, Modifier.weight(1f)) }
+                repeat(columns - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** Section of the settings menu: icon, name and what it holds; filled when focused, marked when open. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SettingsNavItem(
+    page: SettingsPage,
+    selected: Boolean,
+    badge: Boolean,
+    onFocused: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    LaunchedEffect(isFocused) { if (isFocused) onFocused() }
+    val focusManager = LocalFocusManager.current
+    val shape = RoundedCornerShape(12.dp)
+    val contentColor = if (isFocused) LocalAppColors.current.background else TextPrimary
+    val secondaryColor = if (isFocused) LocalAppColors.current.background.copy(alpha = 0.7f) else TextSecondary
+
+    Surface(
+        // OK enters the section, like →
+        onClick = { focusManager.moveFocus(FocusDirection.Right) },
+        interactionSource = interactionSource,
+        modifier = modifier.fillMaxWidth(),
+        shape = ClickableSurfaceDefaults.shape(shape = shape),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (selected) SurfaceDark else Color.Transparent,
+            focusedContainerColor = TextPrimary
+        )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            Icon(
+                imageVector = page.icon,
+                contentDescription = null,
+                tint = if (selected && !isFocused) AccentCyan else secondaryColor,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(page.labelRes),
+                    fontSize = 14.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = contentColor
+                )
+                Text(
+                    text = stringResource(page.hintRes),
+                    fontSize = 10.sp,
+                    color = secondaryColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (badge) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(AccentCyan)
+                )
+            }
         }
     }
 }
@@ -686,7 +762,7 @@ private fun OptionButton(
                         text = description,
                         fontSize = 10.sp,
                         color = if (isFocused) contentColor.copy(alpha = 0.7f) else TextSecondary,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -855,13 +931,12 @@ private fun ServerConfigCard(
                 shape = RoundedCornerShape(16.dp)
             )
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 20.dp, vertical = 14.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = config.name.ifBlank { stringResource(R.string.settings_unnamed) },
@@ -891,6 +966,7 @@ private fun ServerConfigCard(
                 )
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 onMoveUp?.let {
                     RoundIconButton(icon = Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.settings_move_up), onClick = it)

@@ -9,7 +9,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 ## Features
 
 - **Home**: 8 favorite tiles with the artwork of the current program, categories and channel grid (program, times, progress).
-- **Channel preview** on the home screen: the channel selected for 2 seconds plays without sound in its tile (or in place of the logo in the grid), and keeps playing when opened (setting).
+- **Channel preview** on the home screen: the selected channel plays without sound in its tile (or in place of the logo in the grid) after a chosen delay (immediate to 5 seconds, or off), and keeps playing when opened.
 - Reorderable **favorites** on the grid, hideable **channels** and **categories**; categories can be **renamed** and **moved** (hold OK on a category); sources can be reordered in the settings.
 - **Several sources at once**: the channels of every enabled source are shown together; categories with the same name are merged or kept apart per source (setting).
 - **Reference bouquet** (France: TNT with the 2025 Arcom numbering + Canal+; Belgium, Switzerland and Canada: national channels then the French ones): channels are recognized whatever the provider spelling ("FR | TF1 FHD", "TF1 ᴴᴰ"), get their proper name, usual number and Canal+-style category, and their HD / FHD / 4K versions become one channel whose versions are its streams. Provider categories are cleaned and grouped by meaning ("Sport", "FR | Sports", "France Sport"). **Settings** lists the channels the bouquet does not recognize.
@@ -26,10 +26,15 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - Dispatcharr: server grid, program artwork and categories;
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
-- **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → Help**.
+- **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → System**.
 - **Copy to another TV**: the whole configuration (sources, favorites, categories, settings) is sent over the local network, encrypted with an 8-digit code shown on the sending TV.
 - **Appearance**: 6 backgrounds including a light theme, 6 accent colors, 3 interface densities.
-- **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → Updates** after the system confirmation.
+- **Settings** by section (Sources, Channels, Playback, Appearance, System): a menu on the left, the section on the right.
+
+  ![Settings](docs/screenshots/settings.png)
+
+- **XMLTV guide kept on the device**: shown at startup, then only downloaded again when the server says it changed.
+- **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → System** after the system confirmation.
 - **Credentials encrypted** on the device with a key kept in the Android Keystore.
 
 | Search | Channel number |
@@ -59,9 +64,9 @@ adb connect <tv-ip>:5555
 adb install tele-vX.Y.Z.apk
 ```
 
-On first launch, open **Settings → Channel sources → Add a source**.
+On first launch, open **Settings → Sources → Add a source**.
 
-Later versions install from the app itself (**Settings → Updates**). The first time, Android asks to allow Télé to install apps.
+Later versions install from the app itself (**Settings → System**). The first time, Android asks to allow Télé to install apps.
 
 Each pull request also builds a debug APK, available in the artifacts of its "Build APK" workflow run.
 

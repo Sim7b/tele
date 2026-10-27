@@ -87,7 +87,7 @@
     <!-- Settings, welcome and main screens -->
     <!-- Settings screen -->
     <string name="settings_title">Settings</string>
-    <string name="settings_subtitle">Appearance, sync and channel sources</string>
+    <string name="settings_subtitle">Choose a section on the left, then → to change its settings</string>
     <string name="settings_back">Back</string>
 
     <string name="settings_sync_title">Sync</string>
@@ -350,11 +350,20 @@
 
     <!-- Home channel preview -->
     <string name="settings_preview_title">Channel preview</string>
-    <string name="settings_preview_description">On the home screen, the channel selected for 2 seconds plays without sound. It uses a provider connection (Dispatcharr slot) while it plays.</string>
-    <string name="settings_preview_on">On</string>
-    <string name="settings_preview_on_description">After 2 s, muted</string>
-    <string name="settings_preview_off">Off</string>
-    <string name="settings_preview_off_description">Saves connections</string>
+    <string name="settings_preview_description">On the home screen, the selected channel plays without sound after this delay. It uses a provider connection (Dispatcharr slot) while it plays.</string>
+    <string name="preview_delay_off">Off</string>
+    <string name="preview_delay_immediate">Immediate</string>
+    <string name="preview_delay_seconds">%d s</string>
+    <string name="settings_nav_sources">Sources</string>
+    <string name="settings_nav_sources_hint">Servers, sync, other TV</string>
+    <string name="settings_nav_channels">Channels</string>
+    <string name="settings_nav_channels_hint">Bouquet, categories, hiding</string>
+    <string name="settings_nav_playback">Playback</string>
+    <string name="settings_nav_playback_hint">Stream quality, home preview</string>
+    <string name="settings_nav_appearance">Appearance</string>
+    <string name="settings_nav_appearance_hint">Background, color, density</string>
+    <string name="settings_nav_system">System</string>
+    <string name="settings_nav_system_hint">Updates, help</string>
 
     <!-- Playback options (right arrow in the player) -->
     <string name="options_title">Playback options</string>
