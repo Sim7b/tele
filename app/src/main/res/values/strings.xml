@@ -325,10 +325,28 @@
     <string name="bouquet_music">Music</string>
     <string name="settings_bouquet_title">Reference bouquet</string>
     <string name="settings_bouquet_description">Recognizes the channels (name, number, category) and groups their HD, FHD, 4K… versions into one channel</string>
-    <string name="bouquet_france">France (TNT + Canal+)</string>
-    <string name="bouquet_france_description">Names, numbers and categories of the bouquet</string>
+    <string name="bouquet_france">France</string>
+    <string name="bouquet_france_description">Free-to-air (2025 numbering) and Canal+: names, numbers and categories</string>
     <string name="bouquet_none">None</string>
     <string name="bouquet_none_description">Provider names and categories, cleaned up</string>
+    <string name="bouquet_belgium">Belgium</string>
+    <string name="bouquet_belgium_description">Belgian channels, then the French ones</string>
+    <string name="bouquet_switzerland">Switzerland</string>
+    <string name="bouquet_switzerland_description">Swiss channels, then the French ones</string>
+    <string name="bouquet_canada">Canada</string>
+    <string name="bouquet_canada_description">Québec and Canadian channels, then the French ones</string>
+    <string name="bouquet_category_france">France</string>
+    <string name="bouquet_category_belgium">Belgium</string>
+    <string name="bouquet_category_switzerland">Switzerland</string>
+    <string name="bouquet_category_canada">Canada</string>
+    <plurals name="settings_unmatched_button">
+        <item quantity="one">%d channel not recognized</item>
+        <item quantity="other">%d channels not recognized</item>
+    </plurals>
+    <string name="settings_unmatched_all_recognized">All channels are recognized</string>
+    <string name="unmatched_title">Channels not recognized</string>
+    <string name="unmatched_description">Not in the reference bouquet: they keep the provider name, number and category</string>
+    <string name="unmatched_close">Close</string>
 
     <!-- Home channel preview -->
     <string name="settings_preview_title">Channel preview</string>
@@ -337,4 +355,53 @@
     <string name="settings_preview_on_description">After 2 s, muted</string>
     <string name="settings_preview_off">Off</string>
     <string name="settings_preview_off_description">Saves connections</string>
+
+    <!-- Playback options (right arrow in the player) -->
+    <string name="options_title">Playback options</string>
+    <string name="options_choose_stream">Choose another stream</string>
+    <string name="options_audio">Audio</string>
+    <string name="options_subtitles">Subtitles</string>
+    <string name="options_subtitles_off">Off</string>
+    <string name="options_no_subtitles">No subtitles in this stream</string>
+    <string name="options_picture">Picture format</string>
+    <string name="options_mono">Mono</string>
+    <string name="options_stereo">Stereo</string>
+    <string name="options_channels">%1$d channels</string>
+    <string name="options_track">Track %1$d</string>
+    <string name="picture_fit">Fit</string>
+    <string name="picture_zoom">Fill (crop)</string>
+    <string name="picture_stretch">Stretch</string>
+    <string name="player_options_hint">→: playback options</string>
+
+    <!-- Reordering -->
+    <string name="settings_move_up">Move up</string>
+    <string name="settings_move_down">Move down</string>
+    <string name="card_move_category">Move</string>
+    <string name="home_move_category_hint">← → to move · OK to confirm</string>
+
+    <!-- Configuration transfer between TVs -->
+    <string name="settings_transfer_title">Another TV</string>
+    <string name="settings_transfer_description">Copy this TV\'s configuration (sources, favorites, categories, settings) to another TV on the same network, encrypted with a code</string>
+    <string name="settings_transfer_send">Send to another TV</string>
+    <string name="settings_transfer_receive">Receive from another TV</string>
+    <string name="transfer_send_title">Send the configuration</string>
+    <string name="transfer_send_instructions">On the other TV, open Settings → Another TV → Receive, choose this TV, then type this code:</string>
+    <string name="transfer_waiting">Waiting for the other TV…</string>
+    <string name="transfer_address">Address if it is not found: %1$s</string>
+    <string name="transfer_sent">Configuration sent. You can close this window.</string>
+    <string name="transfer_close">Close</string>
+    <string name="transfer_receive_title">Receive a configuration</string>
+    <string name="transfer_receive_instructions">On the other TV, open Settings → Another TV → Send, then choose it here:</string>
+    <string name="transfer_searching">Looking for TVs on the network…</string>
+    <string name="transfer_manual_address">Type the address</string>
+    <string name="transfer_address_instructions">Address shown on the other TV (for example 192.168.0.10:40000), then OK on the keyboard:</string>
+    <string name="transfer_code_instructions">Code shown on %1$s, then OK on the keyboard:</string>
+    <string name="transfer_importing">Importing the configuration…</string>
+    <plurals name="transfer_imported">
+        <item quantity="one">Configuration imported: %1$d source.</item>
+        <item quantity="other">Configuration imported: %1$d sources.</item>
+    </plurals>
+    <string name="transfer_error_code">Wrong code: check the code shown on the other TV.</string>
+    <string name="transfer_error_unreachable">The other TV cannot be reached. Is its transfer window still open?</string>
+    <string name="transfer_error_invalid">The received configuration cannot be read.</string>
 </resources>

@@ -43,6 +43,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.ui.theme.AccentCyan
 import kotlinx.coroutines.delay
@@ -67,9 +68,13 @@ fun ChannelListPanel(
     playingChannelId: String,
     onSelectChannel: (Channel) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Category order chosen on the home screen
+    categoryOrder: List<String> = emptyList()
 ) {
-    val categories = remember(channels) { listOf(ALL_CHANNELS) + channels.map { it.group }.distinct() }
+    val categories = remember(channels, categoryOrder) {
+        listOf(ALL_CHANNELS) + Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
+    }
     var categoryIndex by remember { mutableIntStateOf(0) }
     val category = categories.getOrElse(categoryIndex) { ALL_CHANNELS }
     val shown = remember(channels, category) {

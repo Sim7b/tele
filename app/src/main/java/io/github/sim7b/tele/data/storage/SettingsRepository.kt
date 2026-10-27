@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.annotation.StringRes
+import androidx.annotation.VisibleForTesting
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
+import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -65,7 +67,7 @@ class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     // Sources, chosen streams and channel cache hold credentials: encrypted with a Keystore key
-    private val secrets = SecretBox.androidKeystore()
+    private val secrets = secretsFactory()
     private val cacheDir: File = context.noBackupFilesDir
     // Single cache file of the versions with one active source, read once to start without a spinner
     private val legacyChannelCache = ChannelCache(File(cacheDir, CHANNEL_CACHE_FILE), secrets)
@@ -88,6 +90,10 @@ class SettingsRepository(context: Context) {
     // Reference bouquet recognizing the channels (names, numbers, categories, grouped versions)
     private val _bouquet = MutableStateFlow(BouquetPreference.FRANCE)
     val bouquet: StateFlow<BouquetPreference> = _bouquet.asStateFlow()
+
+    // Order of the categories chosen by the user (displayed names), the others follow
+    private val _categoryOrder = MutableStateFlow<List<String>>(emptyList())
+    val categoryOrder: StateFlow<List<String>> = _categoryOrder.asStateFlow()
 
     // Same category name in several enabled sources: merged or one per source
     private val _categoryMode = MutableStateFlow(CategoryMode.MERGE)
@@ -124,6 +130,12 @@ class SettingsRepository(context: Context) {
     // Muted preview of the channel focused for 2 s on the home screen
     private val _channelPreview = MutableStateFlow(true)
     val channelPreview: StateFlow<Boolean> = _channelPreview.asStateFlow()
+
+    // Picture format of the player and audio language chosen in the playback options (kept across channels)
+    private val _pictureFormat = MutableStateFlow(PictureFormat.FIT)
+    val pictureFormat: StateFlow<PictureFormat> = _pictureFormat.asStateFlow()
+    private val _audioLanguage = MutableStateFlow<String?>(null)
+    val audioLanguage: StateFlow<String?> = _audioLanguage.asStateFlow()
 
     // Quick start guide already shown (or skipped): it only opens by itself on the first launch
     private val _guideSeen = MutableStateFlow(false)
@@ -176,6 +188,9 @@ class SettingsRepository(context: Context) {
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
         _channelPreview.value = prefs.getBoolean(KEY_CHANNEL_PREVIEW, true)
+        _pictureFormat.value = PictureFormat.entries.firstOrNull { it.name == prefs.getString(KEY_PICTURE_FORMAT, null) }
+            ?: PictureFormat.FIT
+        _audioLanguage.value = prefs.getString(KEY_AUDIO_LANGUAGE, null)
         _categoryNames.value = try {
             prefs.getString(KEY_CATEGORY_NAMES, null)?.let { raw ->
                 val json = JSONObject(raw)
@@ -187,6 +202,15 @@ class SettingsRepository(context: Context) {
         }
         _bouquet.value = BouquetPreference.entries.firstOrNull { it.name == prefs.getString(KEY_BOUQUET, null) }
             ?: BouquetPreference.FRANCE
+        _categoryOrder.value = try {
+            prefs.getString(KEY_CATEGORY_ORDER, null)?.let { raw ->
+                val array = JSONArray(raw)
+                (0 until array.length()).mapNotNull { array.optString(it).takeIf { name -> name.isNotEmpty() } }
+            }.orEmpty()
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read the category order: ${e.javaClass.simpleName}")
+            emptyList()
+        }
         _categoryMode.value = CategoryMode.entries.firstOrNull { it.name == prefs.getString(KEY_CATEGORY_MODE, null) }
             ?: CategoryMode.MERGE
         _qualityPreference.value = prefs.getString(KEY_QUALITY_PREFERENCE, null)
@@ -276,6 +300,16 @@ class SettingsRepository(context: Context) {
     fun setQualityPreference(preference: QualityPreference) {
         prefs.edit().putString(KEY_QUALITY_PREFERENCE, preference.name).apply()
         _qualityPreference.value = preference
+    }
+
+    fun setPictureFormat(format: PictureFormat) {
+        prefs.edit().putString(KEY_PICTURE_FORMAT, format.name).apply()
+        _pictureFormat.value = format
+    }
+
+    fun setAudioLanguage(language: String?) {
+        prefs.edit().putString(KEY_AUDIO_LANGUAGE, language).apply()
+        _audioLanguage.value = language
     }
 
     fun setChannelPreview(enabled: Boolean) {
@@ -442,9 +476,106 @@ class SettingsRepository(context: Context) {
         _bouquet.value = preference
     }
 
+    fun setCategoryOrder(order: List<String>) {
+        prefs.edit().putString(KEY_CATEGORY_ORDER, JSONArray(order).toString()).apply()
+        _categoryOrder.value = order
+    }
+
+    /** Moves source [configId] by [step] places in the list: the order of the sources is the order of their channels. */
+    fun moveSource(configId: String, step: Int) {
+        val list = _configs.value.toMutableList()
+        val from = list.indexOfFirst { it.id == configId }
+        if (from == -1) return
+        val to = (from + step).coerceIn(0, list.lastIndex)
+        if (to == from) return
+        list.add(to, list.removeAt(from))
+        persistConfigs(list)
+    }
+
     fun setCategoryMode(mode: CategoryMode) {
         prefs.edit().putString(KEY_CATEGORY_MODE, mode.name).apply()
         _categoryMode.value = mode
+    }
+
+    /**
+     * Whole configuration, credentials included, to send to another TV (encrypted by the transfer):
+     * sources, favorites, hidden channels and categories, category names and order, chosen streams, settings.
+     */
+    fun exportSettings(): JSONObject = JSONObject().apply {
+        put(EXPORT_VERSION_KEY, EXPORT_VERSION)
+        put("sources", JSONArray().apply { _configs.value.forEach { put(it.toJson()) } })
+        put("favorites", JSONArray(_favoriteIds.value))
+        put("hiddenChannels", JSONArray(_hiddenIds.value.toList()))
+        put("hiddenCategories", JSONArray(_hiddenGroups.value.toList()))
+        put("categoryNames", JSONObject(_categoryNames.value as Map<*, *>))
+        put("categoryOrder", JSONArray(_categoryOrder.value))
+        put("categoryMode", _categoryMode.value.name)
+        put("bouquet", _bouquet.value.name)
+        put("quality", _qualityPreference.value.name)
+        put("preview", _channelPreview.value)
+        put("density", _uiDensity.value.name)
+        put("theme", _themeBackground.value.name)
+        put("accent", _accentColor.value.name)
+        put("pictureFormat", _pictureFormat.value.name)
+        _audioLanguage.value?.let { put("audioLanguage", it) }
+        put("selectedStreams", JSONObject().apply {
+            _selectedStreams.value.forEach { (channelId, stream) ->
+                put(channelId, JSONObject().put("name", stream.name).put("url", stream.url).put("id", stream.id).put("provider", stream.provider))
+            }
+        })
+    }
+
+    /**
+     * Applies a configuration received from another TV: its sources are added (or replace those with the
+     * same id), the other settings replace the local ones. Unknown or invalid values are ignored.
+     */
+    fun importSettings(json: JSONObject) {
+        require(json.optInt(EXPORT_VERSION_KEY) == EXPORT_VERSION) { "Unsupported configuration version" }
+        fun strings(name: String): List<String>? = json.optJSONArray(name)?.let { array ->
+            (0 until array.length()).mapNotNull { array.optString(it).takeIf { value -> value.isNotEmpty() } }
+        }
+        fun <T : Enum<T>> enumValue(values: Array<T>, name: String): T? =
+            json.optStringOrNull(name)?.let { saved -> values.firstOrNull { it.name == saved } }
+
+        json.optJSONArray("sources")?.let { array ->
+            val received = (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(SourceConfig::fromJson) }
+            val merged = _configs.value.filterNot { local -> received.any { it.id == local.id } } + received
+            persistConfigs(merged)
+        }
+        strings("favorites")?.let { persistFavorites(it) }
+        strings("hiddenChannels")?.toSet()?.let {
+            prefs.edit().putStringSet(KEY_HIDDEN, it).apply()
+            _hiddenIds.value = it
+        }
+        strings("hiddenCategories")?.toSet()?.let {
+            prefs.edit().putStringSet(KEY_HIDDEN_GROUPS, it).apply()
+            _hiddenGroups.value = it
+        }
+        json.optJSONObject("categoryNames")?.let { names ->
+            val map = names.keys().asSequence().associateWith { names.optString(it) }.filterValues { it.isNotBlank() }
+            prefs.edit().putString(KEY_CATEGORY_NAMES, JSONObject(map as Map<*, *>).toString()).apply()
+            _categoryNames.value = map
+        }
+        strings("categoryOrder")?.let { setCategoryOrder(it) }
+        enumValue(CategoryMode.entries.toTypedArray(), "categoryMode")?.let { setCategoryMode(it) }
+        enumValue(BouquetPreference.entries.toTypedArray(), "bouquet")?.let { setBouquet(it) }
+        enumValue(QualityPreference.entries.toTypedArray(), "quality")?.let { setQualityPreference(it) }
+        if (json.has("preview")) setChannelPreview(json.optBoolean("preview", true))
+        enumValue(UiDensity.entries.toTypedArray(), "density")?.let { setUiDensity(it) }
+        enumValue(AppThemeBackground.entries.toTypedArray(), "theme")?.let { setThemeBackground(it) }
+        enumValue(AppAccentColor.entries.toTypedArray(), "accent")?.let { setAccentColor(it) }
+        enumValue(PictureFormat.entries.toTypedArray(), "pictureFormat")?.let { setPictureFormat(it) }
+        setAudioLanguage(json.optStringOrNull("audioLanguage"))
+        json.optJSONObject("selectedStreams")?.let { streams ->
+            streams.keys().forEach { channelId ->
+                val stream = streams.optJSONObject(channelId) ?: return@forEach
+                val name = stream.optStringOrNull("name") ?: return@forEach
+                val url = stream.optStringOrNull("url") ?: return@forEach
+                setSelectedStream(channelId, StreamSource(name = name, url = url, id = stream.optStringOrNull("id"), provider = stream.optStringOrNull("provider")))
+            }
+        }
+        // The guide was already seen on the other TV
+        setGuideSeen()
     }
 
     /**
@@ -463,7 +594,13 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
+        /** Encryption of the stored credentials; replaced in the JVM tests, which have no Android Keystore. */
+        @VisibleForTesting
+        internal var secretsFactory: () -> SecretBox = { SecretBox.androidKeystore() }
+
         private const val TAG = "Settings"
+        private const val EXPORT_VERSION_KEY = "teleConfig"
+        private const val EXPORT_VERSION = 1
         private const val PREFS_NAME = "iptv_dispatcharr_prefs"
         private const val KEY_CONFIGS = "dispatcharr_configs_list"
         private const val KEY_UI_DENSITY = "iptv_ui_density"
@@ -478,9 +615,12 @@ class SettingsRepository(context: Context) {
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
         private const val KEY_GUIDE_SEEN = "guide_seen"
         private const val KEY_CHANNEL_PREVIEW = "home_channel_preview"
+        private const val KEY_PICTURE_FORMAT = "picture_format"
+        private const val KEY_AUDIO_LANGUAGE = "audio_language"
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"
         private const val KEY_CATEGORY_NAMES = "category_names"
         private const val KEY_CATEGORY_MODE = "category_mode"
+        private const val KEY_CATEGORY_ORDER = "category_order"
         private const val KEY_BOUQUET = "reference_bouquet"
         private const val CHANNEL_CACHE_FILE = "channel_cache.jsonl"
     }

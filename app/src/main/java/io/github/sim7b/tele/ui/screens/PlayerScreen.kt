@@ -49,9 +49,11 @@ import androidx.tv.material3.Text
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
+import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.playback.StreamInfo
 import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.ChannelListPanel
+import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
 import io.github.sim7b.tele.ui.components.ChannelNumberBadge
 import io.github.sim7b.tele.ui.components.rememberChannelNumberEntry
 import io.github.sim7b.tele.ui.components.LogoPlate
@@ -72,6 +74,8 @@ fun PlayerScreen(
     channel: Channel,
     channels: List<Channel>,
     playerManager: TvPlayerManager,
+    // Category order of the channel panel, as on the home screen
+    categoryOrder: List<String> = emptyList(),
     // Dispatcharr keys of the enabled servers: each one only goes to its own server (origin check)
     streamAuths: List<ApiKeyAuth> = emptyList(),
     userAgent: String? = null,
@@ -84,9 +88,15 @@ fun PlayerScreen(
     onBack: () -> Unit,
     onNextChannel: () -> Unit,
     onPreviousChannel: () -> Unit,
+    // Picture format and audio language of the playback options, kept in the settings
+    pictureFormat: PictureFormat = PictureFormat.FIT,
+    onPictureFormatChange: (PictureFormat) -> Unit = {},
+    onAudioLanguageChange: (String?) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isLoading by playerManager.isLoading.collectAsState()
+    val tracks by playerManager.tracks.collectAsState()
+    var showOptionsPanel by remember { mutableStateOf(false) }
     val errorMessage by playerManager.error.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
     val reconnection by playerManager.reconnection.collectAsState()
@@ -194,6 +204,11 @@ fun PlayerScreen(
         refocusToken++
     }
 
+    BackHandler(enabled = showOptionsPanel) {
+        showOptionsPanel = false
+        refocusToken++
+    }
+
     // Back while typing a number only cancels it
     BackHandler(enabled = numberEntry.isTyping) {
         numberEntry.cancel()
@@ -207,7 +222,7 @@ fun PlayerScreen(
             .focusable()
             .onKeyEvent { keyEvent ->
                 // Panel open: its rows handle navigation (up/down must no longer switch channels)
-                if (showChannelPanel) return@onKeyEvent false
+                if (showChannelPanel || showOptionsPanel) return@onKeyEvent false
                 if (numberEntry.onKey(keyEvent)) return@onKeyEvent true
                 if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
                 val repeatCount = keyEvent.nativeKeyEvent.repeatCount
@@ -230,8 +245,12 @@ fun PlayerScreen(
                         }
                         true
                     }
-                    KeyEvent.KEYCODE_MENU -> {
-                        showStreamPicker = true
+                    // Right arrow (or Menu): playback options, mirroring the channel panel on the left
+                    KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (repeatCount == 0) {
+                            showOverlay = false
+                            showOptionsPanel = true
+                        }
                         true
                     }
                     // Left arrow: channel panel with the guide, over the live stream
@@ -242,7 +261,7 @@ fun PlayerScreen(
                         }
                         true
                     }
-                    KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    KeyEvent.KEYCODE_INFO -> {
                         revealOverlay()
                         true
                     }
@@ -270,6 +289,7 @@ fun PlayerScreen(
                     )
                 }
             },
+            update = { view -> view.resizeMode = pictureFormat.resizeMode },
             onRelease = { view -> view.player = null },
             modifier = Modifier.fillMaxSize()
         )
@@ -347,7 +367,7 @@ fun PlayerScreen(
 
         // Information banner (OSD)
         AnimatedVisibility(
-            visible = showOverlay && !showChannelPanel,
+            visible = showOverlay && !showChannelPanel && !showOptionsPanel,
             enter = fadeIn() + slideInVertically { it / 6 },
             exit = fadeOut() + slideOutVertically { it / 6 },
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -372,6 +392,7 @@ fun PlayerScreen(
         ) {
             ChannelListPanel(
                 channels = channels,
+                categoryOrder = categoryOrder,
                 playingChannelId = channel.id,
                 onSelectChannel = { selected ->
                     showChannelPanel = false
@@ -380,6 +401,33 @@ fun PlayerScreen(
                 },
                 onDismiss = {
                     showChannelPanel = false
+                    refocusToken++
+                }
+            )
+        }
+
+        // Playback options (right arrow): stream, audio, subtitles, picture format
+        AnimatedVisibility(
+            visible = showOptionsPanel,
+            enter = fadeIn() + slideInHorizontally { it / 4 },
+            exit = fadeOut() + slideOutHorizontally { it / 4 },
+            modifier = Modifier.align(Alignment.CenterEnd)
+        ) {
+            PlaybackOptionsPanel(
+                tracks = tracks,
+                pictureFormat = pictureFormat,
+                onChooseStream = {
+                    showOptionsPanel = false
+                    showStreamPicker = true
+                },
+                onSelectAudio = { choice ->
+                    playerManager.selectAudio(choice)
+                    onAudioLanguageChange(choice.language)
+                },
+                onSelectSubtitles = { choice -> playerManager.selectSubtitles(choice) },
+                onSelectPictureFormat = onPictureFormatChange,
+                onDismiss = {
+                    showOptionsPanel = false
                     refocusToken++
                 }
             )
@@ -526,6 +574,11 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                 )
                 Text(
                     text = stringResource(R.string.player_change_stream_hint),
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.35f)
+                )
+                Text(
+                    text = stringResource(R.string.player_options_hint),
                     fontSize = 11.sp,
                     color = Color.White.copy(alpha = 0.35f)
                 )

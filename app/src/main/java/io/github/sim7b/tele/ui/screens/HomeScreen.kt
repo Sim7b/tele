@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.*
+import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
@@ -112,6 +113,9 @@ fun HomeScreen(
     onSelectStream: (Channel, StreamSource?) -> Unit,
     onMoveFavorite: (channelId: String, toIndex: Int) -> Unit,
     onHideCategory: (String) -> Unit,
+    // Category order chosen by the user (displayed names) and its change after a move
+    categoryOrder: List<String> = emptyList(),
+    onReorderCategories: (List<String>) -> Unit = {},
     automaticStreamDescription: (Channel) -> String,
     isCategoryRenamed: (String) -> Boolean = { false },
     onRenameCategory: (category: String, name: String?) -> Unit = { _, _ -> },
@@ -157,8 +161,18 @@ fun HomeScreen(
     }
 
     // Categories
-    val categories = remember(channels) {
-        listOf(ALL_CATEGORIES) + channels.map { it.group }.distinct()
+    val categories = remember(channels, categoryOrder) {
+        listOf(ALL_CATEGORIES) + Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
+    }
+
+    // Category "move" mode (from its long-press menu): the chip follows ← →, OK or Back confirms
+    var movingCategory by remember { mutableStateOf<String?>(null) }
+    val categoryMoveFocus = remember { FocusRequester() }
+    LaunchedEffect(movingCategory, categories) {
+        val moving = movingCategory ?: return@LaunchedEffect
+        val index = categories.indexOf(moving)
+        if (index >= 0) categoriesState.animateScrollToItem((index - 1).coerceAtLeast(0))
+        categoryMoveFocus.requestFocusWithRetry()
     }
 
     // A category that disappeared (hidden channels, server change) must not leave an empty list
@@ -184,8 +198,8 @@ fun HomeScreen(
     val hasContent = channels.isNotEmpty() || favorites.isNotEmpty()
 
     LaunchedEffect(focusRestoreRequest, hasContent) {
-        // While moving, the moved tile keeps the focus
-        if (movingChannelId != null) return@LaunchedEffect
+        // While moving, the moved tile (or category chip) keeps the focus
+        if (movingChannelId != null || movingCategory != null) return@LaunchedEffect
         if (hasContent) {
             restoreFocusRequester.requestFocusWithRetry()
         } else {
@@ -248,6 +262,19 @@ fun HomeScreen(
                 // Search key of the remote (or keyboard): voice search directly
                 if (movingChannelId == null && hasContent && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_SEARCH) {
                     if (event.type == KeyEventType.KeyUp) onOpenSearch(true)
+                    return@onPreviewKeyEvent true
+                }
+                // Category move mode: ← → move the chip, OK or Back confirm
+                movingCategory?.let { moving ->
+                    val code = event.nativeKeyEvent.keyCode
+                    if (event.type == KeyEventType.KeyUp) {
+                        if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_BACK) {
+                            movingCategory = null
+                        }
+                    } else if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        val step = if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else +1
+                        onReorderCategories(Categories.moved(categories.drop(1), moving, step))
+                    }
                     return@onPreviewKeyEvent true
                 }
                 // In move mode, the arrows move the tile instead of moving the focus
@@ -471,6 +498,15 @@ fun HomeScreen(
 
                     // SECTION 2: CATEGORIES
                     item {
+                        if (movingCategory != null) {
+                            Text(
+                                text = stringResource(R.string.home_move_category_hint),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = AccentCyan,
+                                modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+                            )
+                        }
                         LazyRow(
                             state = categoriesState,
                             modifier = Modifier
@@ -485,7 +521,11 @@ fun HomeScreen(
                                     isSelected = category == effectiveCategory,
                                     onClick = { selectedCategory = category },
                                     onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category }),
-                                    modifier = if (category == effectiveCategory) Modifier.focusRequester(categoryFocus) else Modifier
+                                    modifier = when (category) {
+                                        movingCategory -> Modifier.focusRequester(categoryMoveFocus)
+                                        effectiveCategory -> Modifier.focusRequester(categoryFocus)
+                                        else -> Modifier
+                                    }.alpha(if (movingCategory != null && category != movingCategory) 0.45f else 1f)
                                 )
                             }
                         }
@@ -558,6 +598,7 @@ fun HomeScreen(
                 onHide = { onHideCategory(category) },
                 isRenamed = isCategoryRenamed(category),
                 onRename = { name -> onRenameCategory(category, name) },
+                onMove = { movingCategory = category },
                 onDismiss = {
                     categoryMenu = null
                     focusRestoreRequest++

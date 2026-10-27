@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import coil.imageLoader
 import coil.request.ImageRequest
+import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.remote.ProgramPosterRepository
 import io.github.sim7b.tele.data.model.SourceType
@@ -91,11 +92,17 @@ class MainActivity : ComponentActivity() {
 
             // Displayed channels: bouquet names and categories, grouped versions, renamed categories
             val displayedChannels by viewModel.displayChannels.collectAsState()
+            val unmatchedChannels by viewModel.unmatchedChannels.collectAsState()
             val isLoadingChannels by viewModel.isLoading.collectAsState()
             val loadError by viewModel.loadError.collectAsState()
             val streamSlots by viewModel.streamSlots.collectAsState()
             val updateState by updateViewModel.state.collectAsState()
             val channelPreview by configRepository.channelPreview.collectAsState()
+            val pictureFormat by configRepository.pictureFormat.collectAsState()
+            val categoryOrder by configRepository.categoryOrder.collectAsState()
+            // Audio language chosen in the playback options: preferred for every channel
+            val audioLanguage by configRepository.audioLanguage.collectAsState()
+            LaunchedEffect(audioLanguage) { playerManager.setPreferredAudioLanguage(audioLanguage) }
 
             val userName by viewModel.userName.collectAsState()
             val context = LocalContext.current
@@ -204,8 +211,9 @@ class MainActivity : ComponentActivity() {
                 pickFavoriteChannels(unhiddenChannels, visibleChannels, favoriteIds)
             }
             // Categories and channel counts, in channel order (for the settings)
-            val categoryCounts = remember(unhiddenChannels) {
-                unhiddenChannels.groupingBy { it.group }.eachCount().toList()
+            val categoryCounts = remember(unhiddenChannels, categoryOrder) {
+                val counts = unhiddenChannels.groupingBy { it.group }.eachCount()
+                Categories.ordered(counts.keys.toList(), categoryOrder).map { it to counts.getValue(it) }
             }
 
             // Zapping by id (not by object equality, which changes on every EPG update)
@@ -272,6 +280,8 @@ class MainActivity : ComponentActivity() {
                                     onHideCategory = { group ->
                                         configRepository.setGroupHidden(group, true)
                                     },
+                                    categoryOrder = categoryOrder,
+                                    onReorderCategories = { order -> configRepository.setCategoryOrder(order) },
                                     isCategoryRenamed = { category -> viewModel.isCategoryRenamed(category) },
                                     onRenameCategory = { category, name -> viewModel.renameCategory(category, name) },
                                     onOpenSettings = {
@@ -294,6 +304,7 @@ class MainActivity : ComponentActivity() {
                                 repository = configRepository,
                                 onTestConnection = { config -> viewModel.testConnection(config) },
                                 categories = categoryCounts,
+                                unmatchedChannels = unmatchedChannels,
                                 onRefreshPlaylist = { viewModel.refresh() },
                                 onRefreshEpg = { viewModel.refresh() },
                                 onShowGuide = { showGuide = true },
@@ -331,6 +342,7 @@ class MainActivity : ComponentActivity() {
                                 channel = liveChannel,
                                 channels = visibleChannels,
                                 playerManager = playerManager,
+                                categoryOrder = categoryOrder,
                                 streamAuths = streamAuths,
                                 userAgent = channelConfig?.customUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
@@ -342,7 +354,10 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = screen.returnTo
                                 },
                                 onNextChannel = { zap(liveChannel, +1, screen.returnTo) },
-                                onPreviousChannel = { zap(liveChannel, -1, screen.returnTo) }
+                                onPreviousChannel = { zap(liveChannel, -1, screen.returnTo) },
+                                pictureFormat = pictureFormat,
+                                onPictureFormatChange = { configRepository.setPictureFormat(it) },
+                                onAudioLanguageChange = { configRepository.setAudioLanguage(it) }
                             )
                         }
                     }

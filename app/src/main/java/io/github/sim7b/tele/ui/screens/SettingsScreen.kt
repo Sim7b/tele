@@ -57,7 +57,10 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -73,6 +76,7 @@ import io.github.sim7b.tele.data.storage.AppAccentColor
 import io.github.sim7b.tele.data.storage.AppThemeBackground
 import io.github.sim7b.tele.data.storage.SettingsRepository
 import io.github.sim7b.tele.data.storage.UiDensity
+import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
@@ -92,6 +96,7 @@ fun SettingsScreen(
     repository: SettingsRepository,
     onTestConnection: suspend (SourceConfig) -> Result<UiText>,
     categories: List<Pair<String, Int>> = emptyList(),
+    unmatchedChannels: List<String> = emptyList(),
     onRefreshPlaylist: () -> Unit = {},
     onRefreshEpg: () -> Unit = {},
     onShowGuide: () -> Unit = {},
@@ -126,6 +131,10 @@ fun SettingsScreen(
     var editingConfig by remember { mutableStateOf<SourceConfig?>(null) }
     var isAddingNew by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
+    // Configuration transfer with another TV of the local network
+    var showSendConfig by remember { mutableStateOf(false) }
+    var showUnmatched by remember { mutableStateOf(false) }
+    var showReceiveConfig by remember { mutableStateOf(false) }
 
     // The server form is a Dialog: it handles the Back key itself
     BackHandler {
@@ -363,10 +372,35 @@ fun SettingsScreen(
                             BouquetPreference.entries.forEach { preference ->
                                 OptionButton(
                                     label = stringResource(preference.labelRes),
-                                    description = stringResource(preference.descriptionRes),
                                     selected = preference == currentBouquet,
                                     onClick = { repository.setBouquet(preference) },
                                     modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(currentBouquet.descriptionRes),
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        if (currentBouquet != BouquetPreference.NONE) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (unmatchedChannels.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.settings_unmatched_all_recognized),
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            } else {
+                                ActionButton(
+                                    label = pluralStringResource(
+                                        R.plurals.settings_unmatched_button,
+                                        unmatchedChannels.size,
+                                        unmatchedChannels.size
+                                    ),
+                                    icon = Icons.Filled.Info,
+                                    onClick = { showUnmatched = true }
                                 )
                             }
                         }
@@ -492,8 +526,31 @@ fun SettingsScreen(
                         onDelete = {
                             repository.deleteConfig(config.id)
                             refocusAfterDelete++
-                        }
+                        },
+                        onMoveUp = if (config.id != configs.first().id) ({ repository.moveSource(config.id, -1) }) else null,
+                        onMoveDown = if (config.id != configs.last().id) ({ repository.moveSource(config.id, +1) }) else null
                     )
+                }
+
+                // ANOTHER TV: send / receive the whole configuration on the local network
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_transfer_title),
+                        description = stringResource(R.string.settings_transfer_description)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ActionButton(
+                                label = stringResource(R.string.settings_transfer_send),
+                                icon = Icons.Filled.Share,
+                                onClick = { showSendConfig = true }
+                            )
+                            ActionButton(
+                                label = stringResource(R.string.settings_transfer_receive),
+                                icon = Icons.Filled.Add,
+                                onClick = { showReceiveConfig = true }
+                            )
+                        }
+                    }
                 }
 
                 // LAST SECTION: HELP
@@ -510,6 +567,16 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        if (showUnmatched) {
+            UnmatchedChannelsDialog(names = unmatchedChannels, onDismiss = { showUnmatched = false })
+        }
+        if (showSendConfig) {
+            SendConfigDialog(repository = repository, onDismiss = { showSendConfig = false })
+        }
+        if (showReceiveConfig) {
+            ReceiveConfigDialog(repository = repository, onDismiss = { showReceiveConfig = false })
         }
 
         if (editingConfig != null) {
@@ -770,7 +837,10 @@ private fun ServerConfigCard(
     accentColorObj: Color,
     onToggleEnabled: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    // Order of the sources = order of their channels (null: already first / last)
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null
 ) {
     // Non-focusable container: only the action buttons are. A clickable Card containing
     // buttons grabbed the D-pad focus, overflowed the screen once scaled up and hid Edit/Delete.
@@ -821,7 +891,13 @@ private fun ServerConfigCard(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                onMoveUp?.let {
+                    RoundIconButton(icon = Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.settings_move_up), onClick = it)
+                }
+                onMoveDown?.let {
+                    RoundIconButton(icon = Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.settings_move_down), onClick = it)
+                }
                 // Several sources can be enabled at once: their channels are shown together
                 ActionButton(
                     label = stringResource(if (isActive) R.string.settings_deactivate else R.string.settings_activate),

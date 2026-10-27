@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
+import java.text.Collator
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -110,7 +111,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile
     private var groupedChannels: List<Channel> = emptyList()
     private val channelNames = ChannelNames(ChannelNames.homeTokens(Locale.getDefault()))
-    private val franceBouquet by lazy { Bouquet.france(Locale.getDefault()) }
+    // Reference bouquets already built (their names are cached): switching back and forth stays instant
+    private val bouquets = ConcurrentHashMap<BouquetPreference, Bouquet>()
+
+    // Names of the loaded channels that the reference bouquet does not know (empty without bouquet)
+    private val _unmatchedChannels = MutableStateFlow<List<String>>(emptyList())
+    val unmatchedChannels: StateFlow<List<String>> = _unmatchedChannels.asStateFlow()
 
     private class DisplayInput(
         val channels: List<Channel>,
@@ -195,7 +201,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Displayed channels from the loaded ones (off the main thread: tens of thousands of channels). */
     private fun buildDisplay(input: DisplayInput): List<Channel> {
-        val bouquet = if (input.bouquet == BouquetPreference.FRANCE) franceBouquet else null
+        val bouquet = if (input.bouquet == BouquetPreference.NONE) null else bouquets.getOrPut(input.bouquet) {
+            requireNotNull(Bouquet.of(input.bouquet, Locale.getDefault()))
+        }
         val sourceNames = input.configs.associate { it.id to it.name }
         val resources = getApplication<Application>().resources
         val grouped = ChannelGrouping(bouquet, bouquet?.names ?: channelNames).build(
@@ -206,7 +214,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             categoryLabel = { resources.getString(it.labelRes) }
         )
         groupedChannels = grouped
+        _unmatchedChannels.value = bouquet?.let { unmatchedNames(it, input.channels) }.orEmpty()
         return Categories.apply(grouped, input.renames, input.mode, sourceNames)
+    }
+
+    private fun unmatchedNames(bouquet: Bouquet, channels: List<Channel>): List<String> {
+        val collator = Collator.getInstance()
+        return channels.asSequence()
+            .filter { bouquet.match(it.name) == null }
+            .map { bouquet.names.channelDisplay(it.name) }
+            .distinctBy { bouquet.names.channelKey(it) }
+            .sortedWith(collator)
+            .toList()
     }
 
     private fun sourceGroupsOf(category: String): Set<String> = Categories.sourceGroupsOf(

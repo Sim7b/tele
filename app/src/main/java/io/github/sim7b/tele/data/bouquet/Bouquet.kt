@@ -14,7 +14,14 @@ enum class BouquetCategory(@param:StringRes val labelRes: Int, vararg synonyms: 
     SERIES(R.string.bouquet_series, "series", "divertissement", "series et divertissement", "entertainment", "shows"),
     KIDS(R.string.bouquet_kids, "jeunesse", "enfants", "kids", "dessins animes", "animation", "cartoon", "junior"),
     DOCUMENTARY(R.string.bouquet_documentary, "decouverte", "documentaires", "docu", "documentary", "nature", "histoire"),
-    MUSIC(R.string.bouquet_music, "musique", "music", "clip");
+    MUSIC(R.string.bouquet_music, "musique", "music", "clip"),
+
+    // National channels of a bouquet, and the French free-to-air ones seen from another country.
+    // No synonyms: a country name is removed from the category keys of that country (empty key)
+    FRANCE(R.string.bouquet_category_france),
+    BELGIUM(R.string.bouquet_category_belgium),
+    SWITZERLAND(R.string.bouquet_category_switzerland),
+    CANADA(R.string.bouquet_category_canada);
 
     /** Provider category names that mean this one (compared as category keys, see [ChannelNames.categoryKey]). */
     val synonyms: List<String> = synonyms.toList()
@@ -31,7 +38,11 @@ class Bouquet(val channels: List<BouquetChannel>, val names: ChannelNames) {
 
     // Category keys of the synonyms, normalized like the provider categories ("News" and "news" alike)
     private val categoryByKey: Map<String, BouquetCategory> = buildMap {
-        BouquetCategory.entries.forEach { category -> category.synonyms.forEach { putIfAbsent(names.categoryKey(it), category) } }
+        BouquetCategory.entries.forEach { category ->
+            category.synonyms.forEach { synonym ->
+                names.categoryKey(synonym).takeIf { it.isNotEmpty() }?.let { putIfAbsent(it, category) }
+            }
+        }
     }
 
     private val byKey: Map<String, BouquetChannel> = buildMap {
@@ -98,13 +109,40 @@ class Bouquet(val channels: List<BouquetChannel>, val names: ChannelNames) {
             return 1.0 - previous[b.length].toDouble() / maxOf(a.length, b.length)
         }
 
-        fun france(locale: Locale = Locale.FRANCE): Bouquet =
-            Bouquet(FranceBouquet.channels, ChannelNames(ChannelNames.homeTokens(locale) + ChannelNames.homeTokens(Locale.FRANCE)))
+        fun france(locale: Locale = Locale.FRANCE): Bouquet = requireNotNull(of(BouquetPreference.FRANCE, locale))
+
+        /**
+         * Bouquet of [preference], null for none. Country words of the user's [locale] and of the bouquet's
+         * languages are ignored in the names ("BE | La Une", "FR: TF1", "CH - RTS 1").
+         */
+        fun of(preference: BouquetPreference, locale: Locale): Bouquet? {
+            val channels = when (preference) {
+                BouquetPreference.FRANCE -> FranceBouquet.channels
+                BouquetPreference.BELGIUM -> NeighborBouquets.belgium
+                BouquetPreference.SWITZERLAND -> NeighborBouquets.switzerland
+                BouquetPreference.CANADA -> NeighborBouquets.canada
+                BouquetPreference.NONE -> return null
+            }
+            val tokens = (listOf(locale, Locale.FRANCE) + preference.locales).flatMapTo(LinkedHashSet()) { ChannelNames.homeTokens(it) }
+            return Bouquet(channels, ChannelNames(tokens))
+        }
     }
 }
 
 /** Reference bouquet chosen in the settings. */
-enum class BouquetPreference(@param:StringRes val labelRes: Int, @param:StringRes val descriptionRes: Int) {
-    FRANCE(R.string.bouquet_france, R.string.bouquet_france_description),
+enum class BouquetPreference(
+    @param:StringRes val labelRes: Int,
+    @param:StringRes val descriptionRes: Int,
+    /** Languages and country of the bouquet's channels. */
+    val locales: List<Locale> = emptyList()
+) {
+    FRANCE(R.string.bouquet_france, R.string.bouquet_france_description, listOf(Locale.FRANCE)),
+    BELGIUM(R.string.bouquet_belgium, R.string.bouquet_belgium_description, listOf(Locale.forLanguageTag("fr-BE"), Locale.forLanguageTag("nl-BE"))),
+    SWITZERLAND(
+        R.string.bouquet_switzerland,
+        R.string.bouquet_switzerland_description,
+        listOf(Locale.forLanguageTag("fr-CH"), Locale.forLanguageTag("de-CH"), Locale.forLanguageTag("it-CH"))
+    ),
+    CANADA(R.string.bouquet_canada, R.string.bouquet_canada_description, listOf(Locale.CANADA_FRENCH, Locale.CANADA)),
     NONE(R.string.bouquet_none, R.string.bouquet_none_description)
 }
