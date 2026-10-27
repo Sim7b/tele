@@ -360,4 +360,30 @@
     <string name="settings_move_down">Move down</string>
     <string name="card_move_category">Move</string>
     <string name="home_move_category_hint">← → to move · OK to confirm</string>
+
+    <!-- Configuration transfer between TVs -->
+    <string name="settings_transfer_title">Another TV</string>
+    <string name="settings_transfer_description">Copy this TV\'s configuration (sources, favorites, categories, settings) to another TV on the same network, encrypted with a code</string>
+    <string name="settings_transfer_send">Send to another TV</string>
+    <string name="settings_transfer_receive">Receive from another TV</string>
+    <string name="transfer_send_title">Send the configuration</string>
+    <string name="transfer_send_instructions">On the other TV, open Settings → Another TV → Receive, choose this TV, then type this code:</string>
+    <string name="transfer_waiting">Waiting for the other TV…</string>
+    <string name="transfer_address">Address if it is not found: %1$s</string>
+    <string name="transfer_sent">Configuration sent. You can close this window.</string>
+    <string name="transfer_close">Close</string>
+    <string name="transfer_receive_title">Receive a configuration</string>
+    <string name="transfer_receive_instructions">On the other TV, open Settings → Another TV → Send, then choose it here:</string>
+    <string name="transfer_searching">Looking for TVs on the network…</string>
+    <string name="transfer_manual_address">Type the address</string>
+    <string name="transfer_address_instructions">Address shown on the other TV (for example 192.168.0.10:40000), then OK on the keyboard:</string>
+    <string name="transfer_code_instructions">Code shown on %1$s, then OK on the keyboard:</string>
+    <string name="transfer_importing">Importing the configuration…</string>
+    <plurals name="transfer_imported">
+        <item quantity="one">Configuration imported: %1$d source.</item>
+        <item quantity="other">Configuration imported: %1$d sources.</item>
+    </plurals>
+    <string name="transfer_error_code">Wrong code: check the code shown on the other TV.</string>
+    <string name="transfer_error_unreachable">The other TV cannot be reached. Is its transfer window still open?</string>
+    <string name="transfer_error_invalid">The received configuration cannot be read.</string>
 </resources>

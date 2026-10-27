@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -129,6 +130,9 @@ fun SettingsScreen(
     var editingConfig by remember { mutableStateOf<SourceConfig?>(null) }
     var isAddingNew by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
+    // Configuration transfer with another TV of the local network
+    var showSendConfig by remember { mutableStateOf(false) }
+    var showReceiveConfig by remember { mutableStateOf(false) }
 
     // The server form is a Dialog: it handles the Back key itself
     BackHandler {
@@ -501,6 +505,27 @@ fun SettingsScreen(
                     )
                 }
 
+                // ANOTHER TV: send / receive the whole configuration on the local network
+                item {
+                    SettingsSection(
+                        title = stringResource(R.string.settings_transfer_title),
+                        description = stringResource(R.string.settings_transfer_description)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ActionButton(
+                                label = stringResource(R.string.settings_transfer_send),
+                                icon = Icons.Filled.Share,
+                                onClick = { showSendConfig = true }
+                            )
+                            ActionButton(
+                                label = stringResource(R.string.settings_transfer_receive),
+                                icon = Icons.Filled.Add,
+                                onClick = { showReceiveConfig = true }
+                            )
+                        }
+                    }
+                }
+
                 // LAST SECTION: HELP
                 item {
                     SettingsSection(
@@ -515,6 +540,13 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        if (showSendConfig) {
+            SendConfigDialog(repository = repository, onDismiss = { showSendConfig = false })
+        }
+        if (showReceiveConfig) {
+            ReceiveConfigDialog(repository = repository, onDismiss = { showReceiveConfig = false })
         }
 
         if (editingConfig != null) {

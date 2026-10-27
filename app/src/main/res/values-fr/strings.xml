@@ -360,4 +360,31 @@
     <string name="settings_move_down">Descendre</string>
     <string name="card_move_category">Déplacer</string>
     <string name="home_move_category_hint">← → pour déplacer · OK pour valider</string>
+
+    <!-- Configuration transfer between TVs -->
+    <string name="settings_transfer_title">Autre TV</string>
+    <string name="settings_transfer_description">Copier la configuration de cette TV (sources, favoris, catégories, réglages) vers une autre TV du même réseau, chiffrée avec un code</string>
+    <string name="settings_transfer_send">Envoyer vers une autre TV</string>
+    <string name="settings_transfer_receive">Recevoir d\'une autre TV</string>
+    <string name="transfer_send_title">Envoyer la configuration</string>
+    <string name="transfer_send_instructions">Sur l\'autre TV, ouvrez Paramètres → Autre TV → Recevoir, choisissez cette TV, puis saisissez ce code :</string>
+    <string name="transfer_waiting">En attente de l\'autre TV…</string>
+    <string name="transfer_address">Adresse si elle n\'est pas trouvée : %1$s</string>
+    <string name="transfer_sent">Configuration envoyée. Vous pouvez fermer cette fenêtre.</string>
+    <string name="transfer_close">Fermer</string>
+    <string name="transfer_receive_title">Recevoir une configuration</string>
+    <string name="transfer_receive_instructions">Sur l\'autre TV, ouvrez Paramètres → Autre TV → Envoyer, puis choisissez-la ici :</string>
+    <string name="transfer_searching">Recherche des TV sur le réseau…</string>
+    <string name="transfer_manual_address">Saisir l\'adresse</string>
+    <string name="transfer_address_instructions">Adresse affichée sur l\'autre TV (par exemple 192.168.0.10:40000), puis OK sur le clavier :</string>
+    <string name="transfer_code_instructions">Code affiché sur %1$s, puis OK sur le clavier :</string>
+    <string name="transfer_importing">Import de la configuration…</string>
+    <plurals name="transfer_imported">
+        <item quantity="one">Configuration importée : %1$d source.</item>
+        <item quantity="many">Configuration importée : %1$d sources.</item>
+        <item quantity="other">Configuration importée : %1$d sources.</item>
+    </plurals>
+    <string name="transfer_error_code">Code incorrect : vérifiez le code affiché sur l\'autre TV.</string>
+    <string name="transfer_error_unreachable">Impossible de joindre l\'autre TV. Sa fenêtre d\'envoi est-elle toujours ouverte ?</string>
+    <string name="transfer_error_invalid">La configuration reçue est illisible.</string>
 </resources>

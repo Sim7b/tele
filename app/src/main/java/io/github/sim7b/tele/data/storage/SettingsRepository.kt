@@ -498,6 +498,87 @@ class SettingsRepository(context: Context) {
     }
 
     /**
+     * Whole configuration, credentials included, to send to another TV (encrypted by the transfer):
+     * sources, favorites, hidden channels and categories, category names and order, chosen streams, settings.
+     */
+    fun exportSettings(): JSONObject = JSONObject().apply {
+        put(EXPORT_VERSION_KEY, EXPORT_VERSION)
+        put("sources", JSONArray().apply { _configs.value.forEach { put(it.toJson()) } })
+        put("favorites", JSONArray(_favoriteIds.value))
+        put("hiddenChannels", JSONArray(_hiddenIds.value.toList()))
+        put("hiddenCategories", JSONArray(_hiddenGroups.value.toList()))
+        put("categoryNames", JSONObject(_categoryNames.value as Map<*, *>))
+        put("categoryOrder", JSONArray(_categoryOrder.value))
+        put("categoryMode", _categoryMode.value.name)
+        put("bouquet", _bouquet.value.name)
+        put("quality", _qualityPreference.value.name)
+        put("preview", _channelPreview.value)
+        put("density", _uiDensity.value.name)
+        put("theme", _themeBackground.value.name)
+        put("accent", _accentColor.value.name)
+        put("pictureFormat", _pictureFormat.value.name)
+        _audioLanguage.value?.let { put("audioLanguage", it) }
+        put("selectedStreams", JSONObject().apply {
+            _selectedStreams.value.forEach { (channelId, stream) ->
+                put(channelId, JSONObject().put("name", stream.name).put("url", stream.url).put("id", stream.id).put("provider", stream.provider))
+            }
+        })
+    }
+
+    /**
+     * Applies a configuration received from another TV: its sources are added (or replace those with the
+     * same id), the other settings replace the local ones. Unknown or invalid values are ignored.
+     */
+    fun importSettings(json: JSONObject) {
+        require(json.optInt(EXPORT_VERSION_KEY) == EXPORT_VERSION) { "Unsupported configuration version" }
+        fun strings(name: String): List<String>? = json.optJSONArray(name)?.let { array ->
+            (0 until array.length()).mapNotNull { array.optString(it).takeIf { value -> value.isNotEmpty() } }
+        }
+        fun <T : Enum<T>> enumValue(values: Array<T>, name: String): T? =
+            json.optStringOrNull(name)?.let { saved -> values.firstOrNull { it.name == saved } }
+
+        json.optJSONArray("sources")?.let { array ->
+            val received = (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(SourceConfig::fromJson) }
+            val merged = _configs.value.filterNot { local -> received.any { it.id == local.id } } + received
+            persistConfigs(merged)
+        }
+        strings("favorites")?.let { persistFavorites(it) }
+        strings("hiddenChannels")?.toSet()?.let {
+            prefs.edit().putStringSet(KEY_HIDDEN, it).apply()
+            _hiddenIds.value = it
+        }
+        strings("hiddenCategories")?.toSet()?.let {
+            prefs.edit().putStringSet(KEY_HIDDEN_GROUPS, it).apply()
+            _hiddenGroups.value = it
+        }
+        json.optJSONObject("categoryNames")?.let { names ->
+            val map = names.keys().asSequence().associateWith { names.optString(it) }.filterValues { it.isNotBlank() }
+            prefs.edit().putString(KEY_CATEGORY_NAMES, JSONObject(map as Map<*, *>).toString()).apply()
+            _categoryNames.value = map
+        }
+        strings("categoryOrder")?.let { setCategoryOrder(it) }
+        enumValue(CategoryMode.entries.toTypedArray(), "categoryMode")?.let { setCategoryMode(it) }
+        enumValue(BouquetPreference.entries.toTypedArray(), "bouquet")?.let { setBouquet(it) }
+        enumValue(QualityPreference.entries.toTypedArray(), "quality")?.let { setQualityPreference(it) }
+        if (json.has("preview")) setChannelPreview(json.optBoolean("preview", true))
+        enumValue(UiDensity.entries.toTypedArray(), "density")?.let { setUiDensity(it) }
+        enumValue(AppThemeBackground.entries.toTypedArray(), "theme")?.let { setThemeBackground(it) }
+        enumValue(AppAccentColor.entries.toTypedArray(), "accent")?.let { setAccentColor(it) }
+        enumValue(PictureFormat.entries.toTypedArray(), "pictureFormat")?.let { setPictureFormat(it) }
+        setAudioLanguage(json.optStringOrNull("audioLanguage"))
+        json.optJSONObject("selectedStreams")?.let { streams ->
+            streams.keys().forEach { channelId ->
+                val stream = streams.optJSONObject(channelId) ?: return@forEach
+                val name = stream.optStringOrNull("name") ?: return@forEach
+                val url = stream.optStringOrNull("url") ?: return@forEach
+                setSelectedStream(channelId, StreamSource(name = name, url = url, id = stream.optStringOrNull("id"), provider = stream.optStringOrNull("provider")))
+            }
+        }
+        // The guide was already seen on the other TV
+        setGuideSeen()
+    }
+
+    /**
      * Clears what belongs to a deleted source: saved first name and, for Xtream / M3U, the favorites
      * and selected streams of its channels (ids prefixed by the source; Dispatcharr ones are UUIDs).
      */
@@ -518,6 +599,8 @@ class SettingsRepository(context: Context) {
         internal var secretsFactory: () -> SecretBox = { SecretBox.androidKeystore() }
 
         private const val TAG = "Settings"
+        private const val EXPORT_VERSION_KEY = "teleConfig"
+        private const val EXPORT_VERSION = 1
         private const val PREFS_NAME = "iptv_dispatcharr_prefs"
         private const val KEY_CONFIGS = "dispatcharr_configs_list"
         private const val KEY_UI_DENSITY = "iptv_ui_density"
