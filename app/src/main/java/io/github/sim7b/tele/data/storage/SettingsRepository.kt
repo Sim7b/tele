@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.annotation.StringRes
+import androidx.annotation.VisibleForTesting
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
@@ -66,7 +67,7 @@ class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     // Sources, chosen streams and channel cache hold credentials: encrypted with a Keystore key
-    private val secrets = SecretBox.androidKeystore()
+    private val secrets = secretsFactory()
     private val cacheDir: File = context.noBackupFilesDir
     // Single cache file of the versions with one active source, read once to start without a spinner
     private val legacyChannelCache = ChannelCache(File(cacheDir, CHANNEL_CACHE_FILE), secrets)
@@ -483,6 +484,10 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
+        /** Encryption of the stored credentials; replaced in the JVM tests, which have no Android Keystore. */
+        @VisibleForTesting
+        internal var secretsFactory: () -> SecretBox = { SecretBox.androidKeystore() }
+
         private const val TAG = "Settings"
         private const val PREFS_NAME = "iptv_dispatcharr_prefs"
         private const val KEY_CONFIGS = "dispatcharr_configs_list"

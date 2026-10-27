@@ -76,6 +76,11 @@ android {
         compose = true
     }
 
+    // Robolectric tests (app startup) read the merged resources
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -124,4 +129,8 @@ dependencies {
     // Real org.json implementation: the Android stub throws in local unit tests
     testImplementation("org.json:json:20260814")
     testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.1")
+    // Android runtime on the JVM: the ViewModel is built as at app startup
+    testImplementation("org.robolectric:robolectric:4.17")
+    // Main dispatcher of the tests: runs coroutines at once, as Dispatchers.Main.immediate on the device
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
