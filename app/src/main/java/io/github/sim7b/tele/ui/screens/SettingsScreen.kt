@@ -57,6 +57,8 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,6 +75,7 @@ import io.github.sim7b.tele.data.storage.AppAccentColor
 import io.github.sim7b.tele.data.storage.AppThemeBackground
 import io.github.sim7b.tele.data.storage.SettingsRepository
 import io.github.sim7b.tele.data.storage.UiDensity
+import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
@@ -492,7 +495,9 @@ fun SettingsScreen(
                         onDelete = {
                             repository.deleteConfig(config.id)
                             refocusAfterDelete++
-                        }
+                        },
+                        onMoveUp = if (config.id != configs.first().id) ({ repository.moveSource(config.id, -1) }) else null,
+                        onMoveDown = if (config.id != configs.last().id) ({ repository.moveSource(config.id, +1) }) else null
                     )
                 }
 
@@ -770,7 +775,10 @@ private fun ServerConfigCard(
     accentColorObj: Color,
     onToggleEnabled: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    // Order of the sources = order of their channels (null: already first / last)
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null
 ) {
     // Non-focusable container: only the action buttons are. A clickable Card containing
     // buttons grabbed the D-pad focus, overflowed the screen once scaled up and hid Edit/Delete.
@@ -821,7 +829,13 @@ private fun ServerConfigCard(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                onMoveUp?.let {
+                    RoundIconButton(icon = Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.settings_move_up), onClick = it)
+                }
+                onMoveDown?.let {
+                    RoundIconButton(icon = Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.settings_move_down), onClick = it)
+                }
                 // Several sources can be enabled at once: their channels are shown together
                 ActionButton(
                     label = stringResource(if (isActive) R.string.settings_deactivate else R.string.settings_activate),

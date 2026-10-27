@@ -91,6 +91,10 @@ class SettingsRepository(context: Context) {
     private val _bouquet = MutableStateFlow(BouquetPreference.FRANCE)
     val bouquet: StateFlow<BouquetPreference> = _bouquet.asStateFlow()
 
+    // Order of the categories chosen by the user (displayed names), the others follow
+    private val _categoryOrder = MutableStateFlow<List<String>>(emptyList())
+    val categoryOrder: StateFlow<List<String>> = _categoryOrder.asStateFlow()
+
     // Same category name in several enabled sources: merged or one per source
     private val _categoryMode = MutableStateFlow(CategoryMode.MERGE)
     val categoryMode: StateFlow<CategoryMode> = _categoryMode.asStateFlow()
@@ -198,6 +202,15 @@ class SettingsRepository(context: Context) {
         }
         _bouquet.value = BouquetPreference.entries.firstOrNull { it.name == prefs.getString(KEY_BOUQUET, null) }
             ?: BouquetPreference.FRANCE
+        _categoryOrder.value = try {
+            prefs.getString(KEY_CATEGORY_ORDER, null)?.let { raw ->
+                val array = JSONArray(raw)
+                (0 until array.length()).mapNotNull { array.optString(it).takeIf { name -> name.isNotEmpty() } }
+            }.orEmpty()
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read the category order: ${e.javaClass.simpleName}")
+            emptyList()
+        }
         _categoryMode.value = CategoryMode.entries.firstOrNull { it.name == prefs.getString(KEY_CATEGORY_MODE, null) }
             ?: CategoryMode.MERGE
         _qualityPreference.value = prefs.getString(KEY_QUALITY_PREFERENCE, null)
@@ -463,6 +476,22 @@ class SettingsRepository(context: Context) {
         _bouquet.value = preference
     }
 
+    fun setCategoryOrder(order: List<String>) {
+        prefs.edit().putString(KEY_CATEGORY_ORDER, JSONArray(order).toString()).apply()
+        _categoryOrder.value = order
+    }
+
+    /** Moves source [configId] by [step] places in the list: the order of the sources is the order of their channels. */
+    fun moveSource(configId: String, step: Int) {
+        val list = _configs.value.toMutableList()
+        val from = list.indexOfFirst { it.id == configId }
+        if (from == -1) return
+        val to = (from + step).coerceIn(0, list.lastIndex)
+        if (to == from) return
+        list.add(to, list.removeAt(from))
+        persistConfigs(list)
+    }
+
     fun setCategoryMode(mode: CategoryMode) {
         prefs.edit().putString(KEY_CATEGORY_MODE, mode.name).apply()
         _categoryMode.value = mode
@@ -508,6 +537,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"
         private const val KEY_CATEGORY_NAMES = "category_names"
         private const val KEY_CATEGORY_MODE = "category_mode"
+        private const val KEY_CATEGORY_ORDER = "category_order"
         private const val KEY_BOUQUET = "reference_bouquet"
         private const val CHANNEL_CACHE_FILE = "channel_cache.jsonl"
     }

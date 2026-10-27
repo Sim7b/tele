@@ -25,6 +25,25 @@ object Categories {
     fun renamed(group: String, renames: Map<String, String>): String = renames[group] ?: group
 
     /**
+     * [categories] in the order chosen by the user: the ones of [order] first, in that order, then the
+     * others in their own order (new categories land at the end of the ordered ones).
+     */
+    fun ordered(categories: List<String>, order: List<String>): List<String> {
+        if (order.isEmpty()) return categories
+        val rank = order.withIndex().associate { (index, name) -> name to index }
+        return categories.sortedBy { rank[it] ?: Int.MAX_VALUE }
+    }
+
+    /** New order after moving [category] by [step] places among [current] (displayed order). */
+    fun moved(current: List<String>, category: String, step: Int): List<String> {
+        val from = current.indexOf(category)
+        if (from == -1) return current
+        val to = (from + step).coerceIn(0, current.lastIndex)
+        if (to == from) return current
+        return current.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
+    /**
      * [channels] with their displayed category in [Channel.group]; channels whose category does not change
      * are returned as is (no copy).
      */

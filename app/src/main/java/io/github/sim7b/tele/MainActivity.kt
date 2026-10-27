@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import coil.imageLoader
 import coil.request.ImageRequest
+import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.remote.ProgramPosterRepository
 import io.github.sim7b.tele.data.model.SourceType
@@ -97,6 +98,7 @@ class MainActivity : ComponentActivity() {
             val updateState by updateViewModel.state.collectAsState()
             val channelPreview by configRepository.channelPreview.collectAsState()
             val pictureFormat by configRepository.pictureFormat.collectAsState()
+            val categoryOrder by configRepository.categoryOrder.collectAsState()
             // Audio language chosen in the playback options: preferred for every channel
             val audioLanguage by configRepository.audioLanguage.collectAsState()
             LaunchedEffect(audioLanguage) { playerManager.setPreferredAudioLanguage(audioLanguage) }
@@ -208,8 +210,9 @@ class MainActivity : ComponentActivity() {
                 pickFavoriteChannels(unhiddenChannels, visibleChannels, favoriteIds)
             }
             // Categories and channel counts, in channel order (for the settings)
-            val categoryCounts = remember(unhiddenChannels) {
-                unhiddenChannels.groupingBy { it.group }.eachCount().toList()
+            val categoryCounts = remember(unhiddenChannels, categoryOrder) {
+                val counts = unhiddenChannels.groupingBy { it.group }.eachCount()
+                Categories.ordered(counts.keys.toList(), categoryOrder).map { it to counts.getValue(it) }
             }
 
             // Zapping by id (not by object equality, which changes on every EPG update)
@@ -276,6 +279,8 @@ class MainActivity : ComponentActivity() {
                                     onHideCategory = { group ->
                                         configRepository.setGroupHidden(group, true)
                                     },
+                                    categoryOrder = categoryOrder,
+                                    onReorderCategories = { order -> configRepository.setCategoryOrder(order) },
                                     isCategoryRenamed = { category -> viewModel.isCategoryRenamed(category) },
                                     onRenameCategory = { category, name -> viewModel.renameCategory(category, name) },
                                     onOpenSettings = {
@@ -335,6 +340,7 @@ class MainActivity : ComponentActivity() {
                                 channel = liveChannel,
                                 channels = visibleChannels,
                                 playerManager = playerManager,
+                                categoryOrder = categoryOrder,
                                 streamAuths = streamAuths,
                                 userAgent = channelConfig?.customUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },

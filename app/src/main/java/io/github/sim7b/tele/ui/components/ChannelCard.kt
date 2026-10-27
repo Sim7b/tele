@@ -705,7 +705,9 @@ fun CategoryActionDialog(
     onDismiss: () -> Unit,
     isRenamed: Boolean = false,
     // New displayed name (null: back to the name given by the source)
-    onRename: (String?) -> Unit = {}
+    onRename: (String?) -> Unit = {},
+    // Starts the move mode of the category chip (null: not movable)
+    onMove: (() -> Unit)? = null
 ) {
     val firstItemFocus = remember { FocusRequester() }
     val nameFocus = remember { FocusRequester() }
@@ -783,6 +785,16 @@ fun CategoryActionDialog(
                 onClick = { editing = true },
                 modifier = Modifier.focusRequester(firstItemFocus)
             )
+            onMove?.let { move ->
+                MenuRow(
+                    label = stringResource(R.string.card_move_category),
+                    icon = Icons.Filled.Menu,
+                    onClick = {
+                        onDismiss()
+                        move()
+                    }
+                )
+            }
             if (isRenamed) {
                 MenuRow(
                     label = stringResource(R.string.card_reset_category_name),

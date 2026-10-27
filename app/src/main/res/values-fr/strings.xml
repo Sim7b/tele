@@ -354,4 +354,10 @@
     <string name="picture_zoom">Remplir (rogné)</string>
     <string name="picture_stretch">Étiré</string>
     <string name="player_options_hint">→ : options de lecture</string>
+
+    <!-- Reordering -->
+    <string name="settings_move_up">Monter</string>
+    <string name="settings_move_down">Descendre</string>
+    <string name="card_move_category">Déplacer</string>
+    <string name="home_move_category_hint">← → pour déplacer · OK pour valider</string>
 </resources>

@@ -354,4 +354,10 @@
     <string name="picture_zoom">Fill (crop)</string>
     <string name="picture_stretch">Stretch</string>
     <string name="player_options_hint">→: playback options</string>
+
+    <!-- Reordering -->
+    <string name="settings_move_up">Move up</string>
+    <string name="settings_move_down">Move down</string>
+    <string name="card_move_category">Move</string>
+    <string name="home_move_category_hint">← → to move · OK to confirm</string>
 </resources>

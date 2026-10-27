@@ -49,6 +49,16 @@ class CategoriesTest {
     }
 
     @Test
+    fun `orders and moves categories`() {
+        val categories = listOf("TNT", "Sport", "Cinéma", "Info")
+        assertEquals(listOf("Info", "Sport", "TNT", "Cinéma"), Categories.ordered(categories, listOf("Info", "Sport", "Removed")))
+        assertEquals(categories, Categories.ordered(categories, emptyList()))
+        assertEquals(listOf("TNT", "Cinéma", "Sport", "Info"), Categories.moved(categories, "Sport", +1))
+        assertEquals(listOf("Sport", "TNT", "Cinéma", "Info"), Categories.moved(categories, "Sport", -1))
+        assertEquals(categories, Categories.moved(categories, "TNT", -1))
+    }
+
+    @Test
     fun `nothing to do returns the same list`() {
         assertSame(channels, Categories.apply(channels, emptyMap(), CategoryMode.MERGE, sources))
     }

@@ -74,6 +74,8 @@ fun PlayerScreen(
     channel: Channel,
     channels: List<Channel>,
     playerManager: TvPlayerManager,
+    // Category order of the channel panel, as on the home screen
+    categoryOrder: List<String> = emptyList(),
     // Dispatcharr keys of the enabled servers: each one only goes to its own server (origin check)
     streamAuths: List<ApiKeyAuth> = emptyList(),
     userAgent: String? = null,
@@ -390,6 +392,7 @@ fun PlayerScreen(
         ) {
             ChannelListPanel(
                 channels = channels,
+                categoryOrder = categoryOrder,
                 playingChannelId = channel.id,
                 onSelectChannel = { selected ->
                     showChannelPanel = false
