@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.7](https://github.com/Sim7b/tele/compare/v0.3.6...v0.3.7) (2026-10-27)
+
+### Features
+
+* **bouquet:** Belgium, Switzerland and Canada bouquets, list of the unrecognized channels ([e8b9de2](https://github.com/Sim7b/tele/commit/e8b9de2eb8a1835a9cbc042ce47e115780914aa1))
+* **home:** reorder the sources and the categories ([f6819c2](https://github.com/Sim7b/tele/commit/f6819c276a098a49a10f441864ef493e3308212e))
+* **player:** audio track, subtitles and picture format options ([9f9ec96](https://github.com/Sim7b/tele/commit/9f9ec9634e9d013fc461238e872adf69d550e45d))
+* **settings:** copy the configuration to another TV on the local network ([6c7fe87](https://github.com/Sim7b/tele/commit/6c7fe87ddb308f707a214e1d78227d2364398ee5))
+
+### Bug Fixes
+
+* **android:** drop the forced orientation and disable the legacy backup ([b06676d](https://github.com/Sim7b/tele/commit/b06676d380c6accd12f018459c62796fbf68e2cb))
+* **bouquet:** use the 2025 Arcom free-to-air numbering ([c160814](https://github.com/Sim7b/tele/commit/c16081482d7788abe9a45304abbe6bad339a77b2))
+
 ## [0.3.6](https://github.com/Sim7b/tele/compare/v0.3.5...v0.3.6) (2026-10-26)
 
 ### Features
