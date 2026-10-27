@@ -21,6 +21,12 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import mockwebserver3.Dispatcher
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.crypto.KeyGenerator
 
 /**
@@ -77,6 +83,48 @@ class MainViewModelStartupTest {
         assertEquals(emptyList<Throwable>(), uncaught)
         assertEquals(listOf("one", "two"), viewModel.configRepository.enabledConfigs.value.map { it.id })
         assertTrue(viewModel.channels.value.isEmpty())
+    }
+
+    @Test
+    fun `the welcome screen does not wait for the XMLTV guide`() {
+        val guideReleased = CountDownLatch(1)
+        val server = MockWebServer()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.url.encodedPath == "/list.m3u") {
+                    val guide = server.url("/guide.xml")
+                    MockResponse.Builder()
+                        .body("#EXTM3U url-tvg=\"$guide\"\n#EXTINF:-1 tvg-id=\"tf1\" group-title=\"TNT\",TF1\nhttp://127.0.0.1:9/tf1\n")
+                        .build()
+                } else {
+                    // A guide of tens of MB, still downloading
+                    guideReleased.await(30, TimeUnit.SECONDS)
+                    MockResponse.Builder().body("<tv></tv>").build()
+                }
+        }
+        server.start()
+        try {
+            app.getSharedPreferences("iptv_dispatcharr_prefs", Context.MODE_PRIVATE).edit()
+                .putString(
+                    "dispatcharr_configs_list",
+                    """[{"id":"m3u","name":"M3U","serverUrl":"${server.url("/list.m3u")}","type":"M3U","isActive":true}]"""
+                )
+                .commit()
+
+            val viewModel = MainViewModel(app)
+            val deadline = System.currentTimeMillis() + 10_000
+            while (!viewModel.initialSyncDone.value && System.currentTimeMillis() < deadline) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(20)
+            }
+
+            assertTrue(viewModel.initialSyncDone.value)
+            assertEquals(listOf("TF1"), viewModel.channels.value.map { it.name })
+            assertEquals(emptyList<Throwable>(), uncaught)
+        } finally {
+            guideReleased.countDown()
+            server.close()
+        }
     }
 
     @Test

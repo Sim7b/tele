@@ -481,6 +481,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             source.channels = withContext(Dispatchers.Default) { loaded.channels.map { it.copy(sourceId = config.id) } }
             publishAll()
             source.loading = false
+            // Ready for the welcome screen: the XMLTV guide (up to tens of MB) completes the home later
+            source.done = true
             updateLoadingState()
             Log.i(TvPlayerManager.PERF_TAG, "Load: ${loaded.channels.size} channels in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
