@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.*
 import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.HomeLists
 import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
 import androidx.activity.compose.BackHandler
@@ -65,34 +66,14 @@ import java.time.format.DateTimeFormatter
 /** Sentinel of the "all categories" chip; its label comes from the resources. */
 private const val ALL_CATEGORIES = "__all__"
 
-private const val FAVORITE_SLOTS = 8
 private const val FAVORITE_KEY_PREFIX = "fav:"
 private const val LIST_KEY_PREFIX = "list:"
 private const val FAVORITE_COLUMNS = 4
-// Focus time on a card before its muted preview starts
-private const val PREVIEW_DELAY_MS = 2_000L
-
-/**
- * The 8 top tiles: the favorites in the chosen order (even if their category is hidden),
- * filled up with the first visible channels.
- */
-fun pickFavoriteChannels(
-    allChannels: List<Channel>,
-    visibleChannels: List<Channel>,
-    favoriteIds: List<String>
-): List<Channel> {
-    // Only the favorites are indexed: the lists may hold tens of thousands of channels
-    val favoriteSet = favoriteIds.toHashSet()
-    val byId = allChannels.filter { it.id in favoriteSet }.associateBy { it.id }
-    val favorites = favoriteIds.mapNotNull { byId[it] }
-    val filler = visibleChannels.asSequence().filterNot { it.id in favoriteSet }.take(FAVORITE_SLOTS)
-    return (favorites + filler).take(FAVORITE_SLOTS)
-}
 
 /**
  * Home: favorites, categories and channel grid.
  * [channels] only contains the visible channels (hidden channels and categories filtered upstream),
- * [favorites] the 8 top tiles (see [pickFavoriteChannels]).
+ * [favorites] the 8 top tiles (see [HomeLists.pickFavorites]).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -122,8 +103,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenSearch: (voice: Boolean) -> Unit,
     onRefresh: () -> Unit,
-    // Muted preview of the card focused for 2 s: enabled flag, start / stop (null), and its video surface
-    previewEnabled: Boolean = false,
+    // Muted preview of the focused card: focus time before it starts (null: no preview), start / stop (null), video surface
+    previewDelayMs: Long? = null,
     onPreviewChannel: (Channel?) -> Unit = {},
     previewSurface: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
@@ -230,15 +211,15 @@ fun HomeScreen(
     // Card focused right now (key and channel), and the card showing the muted preview
     var focusedCard by remember { mutableStateOf<Pair<String, Channel>?>(null) }
     var previewKey by remember { mutableStateOf<String?>(null) }
-    val previewAllowed = previewEnabled && movingChannelId == null
-    LaunchedEffect(focusedCard?.first, previewAllowed) {
+    val previewAllowed = previewDelayMs != null && movingChannelId == null
+    LaunchedEffect(focusedCard?.first, previewAllowed, previewDelayMs) {
         if (previewKey != null) {
             previewKey = null
             onPreviewChannel(null)
         }
         val (key, channel) = focusedCard ?: return@LaunchedEffect
         if (!previewAllowed) return@LaunchedEffect
-        delay(PREVIEW_DELAY_MS)
+        delay(previewDelayMs ?: return@LaunchedEffect)
         previewKey = key
         onPreviewChannel(channel)
     }
