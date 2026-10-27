@@ -10,14 +10,15 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 
 - **Home**: 8 favorite tiles with the artwork of the current program, categories and channel grid (program, times, progress).
 - **Channel preview** on the home screen: the channel selected for 2 seconds plays without sound in its tile (or in place of the logo in the grid), and keeps playing when opened (setting).
-- Reorderable **favorites** on the grid, hideable **channels** and **categories**; categories can be **renamed** (hold OK on a category).
+- Reorderable **favorites** on the grid, hideable **channels** and **categories**; categories can be **renamed** and **moved** (hold OK on a category); sources can be reordered in the settings.
 - **Several sources at once**: the channels of every enabled source are shown together; categories with the same name are merged or kept apart per source (setting).
-- **Reference bouquet** (France: TNT + Canal+): channels are recognized whatever the provider spelling ("FR | TF1 FHD", "TF1 ᴴᴰ"), get their proper name, usual number and Canal+-style category, and their HD / FHD / 4K versions become one channel whose versions are its streams. Provider categories are cleaned and grouped by meaning ("Sport", "FR | Sports", "France Sport").
+- **Reference bouquet** (France: TNT with the 2025 Arcom numbering + Canal+; Belgium, Switzerland and Canada: national channels then the French ones): channels are recognized whatever the provider spelling ("FR | TF1 FHD", "TF1 ᴴᴰ"), get their proper name, usual number and Canal+-style category, and their HD / FHD / 4K versions become one channel whose versions are its streams. Provider categories are cleaned and grouped by meaning ("Sport", "FR | Sports", "France Sport"). **Settings** lists the channels the bouquet does not recognize.
 - **Search** by channel name, number or current program, typed with the TV keyboard or spoken (microphone button, or the remote's search key).
 - **Player** (Media3 / ExoPlayer, hardware decoding):
   - channel switching with ↑ / ↓ and CH+ / CH−, or by typing the channel number with the remote digits (also from the home screen);
   - info banner: current and next program, resolution, codecs;
   - **channel panel** (← key) with the guide, over the live stream;
+  - **playback options** (→ or Menu key): stream, audio track (preferred language remembered), subtitles, picture format (fit, zoom, stretch);
   - automatic reconnection when a stream drops (also when the network comes back), explicit error messages, OK to retry.
 - **Stream picker** (long press on a channel, or OK during playback): Dispatcharr streams with provider and quality, or TS / HLS variants with Xtream. The choice is saved per channel.
 - **Stream quality** setting (best, Full HD max, HD max or server order): with Dispatcharr, automatic mode plays the preferred quality first (resolution measured by Dispatcharr, else read from the stream name) and moves to the next stream if it fails.
@@ -26,6 +27,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → Help**.
+- **Copy to another TV**: the whole configuration (sources, favorites, categories, settings) is sent over the local network, encrypted with an 8-digit code shown on the sending TV.
 - **Appearance**: 6 backgrounds including a light theme, 6 accent colors, 3 interface densities.
 - **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → Updates** after the system confirmation.
 - **Credentials encrypted** on the device with a key kept in the Android Keystore.
