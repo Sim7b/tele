@@ -25,7 +25,9 @@ android {
     defaultConfig {
         applicationId = "io.github.sim7b.tele"
         minSdk = 26
-        targetSdk = 34
+        // 35, not 36 yet: from 36 predictive back is on by default and the Back key no longer reaches
+        // the app as a key event (side panels, favorite move mode handle it as such)
+        targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersion
 
@@ -84,18 +86,18 @@ android {
 dependencies {
     // Core Android & Lifecycle
     implementation("androidx.core:core-ktx:1.19.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
-    implementation("androidx.activity:activity-compose:1.9.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
 
     // Jetpack Compose for TV (Official modern TV UI)
     implementation("androidx.tv:tv-foundation:1.0.0")
     implementation("androidx.tv:tv-material:1.1.0")
-    implementation("androidx.compose.material3:material3:1.2.1")
+    implementation("androidx.compose.material3:material3:1.4.0")
     implementation("androidx.compose.material:material-icons-core:1.7.8")
 
     // AndroidX Media3 (ExoPlayer - Modern Video Player engine)
-    val media3Version = "1.4.0"
+    val media3Version = "1.11.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
@@ -111,7 +113,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // HTTP Client (OkHttp for resilient IPTV streams)
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
     // TLS 1.3 on Android 9 and older (their system TLS stops at 1.2), see TlsCompat
     implementation("org.conscrypt:conscrypt-android:2.8.0")
 
@@ -121,5 +123,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Real org.json implementation: the Android stub throws in local unit tests
     testImplementation("org.json:json:20260814")
-    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.1")
 }
