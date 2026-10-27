@@ -10,9 +10,9 @@ import io.github.sim7b.tele.data.bouquet.BouquetCategory.SPORT
 import io.github.sim7b.tele.data.bouquet.BouquetCategory.TNT
 
 /**
- * French reference bouquet: the free-to-air channels (TNT) with their usual numbers, and the channels of
- * the Canal+ offer by theme. Numbers are only given where they are well established; channels whose
- * number changed or that stopped in 2025 (C8, NRJ 12, T18, Novo19, Gulli) keep the provider's number.
+ * French reference bouquet: the free-to-air channels (TNT) with the Arcom numbering in force since
+ * June 6, 2025, and the channels of the Canal+ offer by theme. Channels that stopped in 2025 (C8, NRJ 12)
+ * are still recognized but keep the provider's number.
  */
 internal object FranceBouquet {
 
@@ -20,36 +20,39 @@ internal object FranceBouquet {
         BouquetChannel(name, category, number, aliases.toList())
 
     val channels: List<BouquetChannel> = listOf(
-        // Free-to-air (TNT)
+        // Free-to-air (TNT), numbering of the Arcom in force since June 6, 2025
         ch("TF1", TNT, 1),
         ch("France 2", TNT, 2),
         ch("France 3", TNT, 3, "France 3 National"),
-        ch("Canal+", TNT, 4, "Canal Plus", "Canal+ France"),
+        ch("France 4", TNT, 4),
         ch("France 5", TNT, 5),
         ch("M6", TNT, 6, "M 6"),
         ch("Arte", TNT, 7, "Arte France"),
-        ch("C8", TNT, null),
+        ch("LCP", TNT, 8, "LCP Assemblée nationale", "LCP AN", "LCP Public Sénat", "LCP Assemblée nationale Public Sénat", "Public Sénat"),
         ch("W9", TNT, 9),
         ch("TMC", TNT, 10),
         ch("TFX", TNT, 11),
-        ch("NRJ 12", TNT, null, "NRJ12"),
-        ch("LCP", TNT, 13, "LCP Assemblée nationale", "LCP AN", "LCP Public Sénat"),
-        ch("Public Sénat", TNT, null),
-        ch("France 4", TNT, 14),
-        ch("BFMTV", TNT, 15, "BFM TV"),
-        ch("CNews", TNT, 16, "C News"),
+        ch("Gulli", TNT, 12),
+        ch("BFMTV", TNT, 13, "BFM TV"),
+        ch("CNews", TNT, 14, "C News"),
+        ch("LCI", TNT, 15, "LCI La Chaîne Info", "La Chaine Info"),
+        ch("franceinfo", TNT, 16, "France Info", "franceinfo:", "France Info TV"),
         ch("CStar", TNT, 17, "C Star"),
-        ch("Gulli", TNT, null),
-        ch("T18", TNT, null),
-        ch("Novo19", TNT, null, "Novo 19"),
+        ch("T18", TNT, 18, "CMI TV"),
+        ch("Novo19", TNT, 19, "Novo 19"),
         ch("TF1 Séries Films", TNT, 20, "TF1 Series Films", "TF1 SF"),
         ch("L'Équipe", TNT, 21, "L'Equipe", "La Chaîne L'Équipe", "L'Equipe TV", "La chaine L'Equipe"),
         ch("6ter", TNT, 22, "6 ter"),
         ch("RMC Story", TNT, 23),
         ch("RMC Découverte", TNT, 24, "RMC Decouverte"),
-        ch("Chérie 25", TNT, 25, "Cherie 25"),
-        ch("LCI", TNT, 26, "LCI La Chaîne Info", "La Chaine Info"),
-        ch("franceinfo", TNT, 27, "France Info", "franceinfo:", "France Info TV"),
+        ch("RMC Life", TNT, 25, "Chérie 25", "Cherie 25"),
+        ch("Paris Première", TNT, 26, "Paris Premiere"),
+        // Former TNT channels, stopped in 2025: still recognized in provider lists
+        ch("C8", TNT, null),
+        ch("NRJ 12", TNT, null, "NRJ12"),
+
+        // Canal+ (left the TNT in June 2025)
+        ch("Canal+", CINEMA, null, "Canal Plus", "Canal+ France"),
 
         // Cinema
         ch("Canal+ Cinéma(s)", CINEMA, null, "Canal+ Cinéma", "Canal+ Cinema", "Canal+ Cinémas", "Canal+ Cinemas"),
@@ -81,7 +84,6 @@ internal object FranceBouquet {
         ch("AB1", SERIES, null, "AB 1"),
         ch("Polar+", SERIES, null, "Polar Plus"),
         ch("Comédie+", SERIES, null, "Comedie+", "Comédie Plus"),
-        ch("Paris Première", SERIES, null, "Paris Premiere"),
         ch("Téva", SERIES, null, "Teva"),
         ch("Game One", SERIES, null),
         ch("Novelas TV", SERIES, null),
