@@ -38,7 +38,7 @@ class Bouquet(val channels: List<BouquetChannel>, val names: ChannelNames) {
 
     // Category keys of the synonyms, normalized like the provider categories ("News" and "news" alike)
     private val categoryByKey: Map<String, BouquetCategory> = buildMap {
-        BouquetCategory.entries.forEach { category -> 
+        BouquetCategory.entries.forEach { category ->
             category.synonyms.forEach { synonym ->
                 names.categoryKey(synonym).takeIf { it.isNotEmpty() }?.let { putIfAbsent(it, category) }
             }
