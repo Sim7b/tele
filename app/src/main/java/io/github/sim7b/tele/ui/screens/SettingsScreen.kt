@@ -96,6 +96,7 @@ fun SettingsScreen(
     repository: SettingsRepository,
     onTestConnection: suspend (SourceConfig) -> Result<UiText>,
     categories: List<Pair<String, Int>> = emptyList(),
+    unmatchedChannels: List<String> = emptyList(),
     onRefreshPlaylist: () -> Unit = {},
     onRefreshEpg: () -> Unit = {},
     onShowGuide: () -> Unit = {},
@@ -132,6 +133,7 @@ fun SettingsScreen(
     var syncMessage by remember { mutableStateOf<String?>(null) }
     // Configuration transfer with another TV of the local network
     var showSendConfig by remember { mutableStateOf(false) }
+    var showUnmatched by remember { mutableStateOf(false) }
     var showReceiveConfig by remember { mutableStateOf(false) }
 
     // The server form is a Dialog: it handles the Back key itself
@@ -370,10 +372,35 @@ fun SettingsScreen(
                             BouquetPreference.entries.forEach { preference ->
                                 OptionButton(
                                     label = stringResource(preference.labelRes),
-                                    description = stringResource(preference.descriptionRes),
                                     selected = preference == currentBouquet,
                                     onClick = { repository.setBouquet(preference) },
                                     modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(currentBouquet.descriptionRes),
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        if (currentBouquet != BouquetPreference.NONE) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (unmatchedChannels.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.settings_unmatched_all_recognized),
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            } else {
+                                ActionButton(
+                                    label = pluralStringResource(
+                                        R.plurals.settings_unmatched_button,
+                                        unmatchedChannels.size,
+                                        unmatchedChannels.size
+                                    ),
+                                    icon = Icons.Filled.Info,
+                                    onClick = { showUnmatched = true }
                                 )
                             }
                         }
@@ -542,6 +569,9 @@ fun SettingsScreen(
             }
         }
 
+        if (showUnmatched) {
+            UnmatchedChannelsDialog(names = unmatchedChannels, onDismiss = { showUnmatched = false })
+        }
         if (showSendConfig) {
             SendConfigDialog(repository = repository, onDismiss = { showSendConfig = false })
         }

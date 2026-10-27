@@ -325,10 +325,29 @@
     <string name="bouquet_music">Musique</string>
     <string name="settings_bouquet_title">Bouquet de référence</string>
     <string name="settings_bouquet_description">Reconnaît les chaînes (nom, numéro, catégorie) et regroupe leurs versions HD, FHD, 4K… en une seule chaîne</string>
-    <string name="bouquet_france">France (TNT + Canal+)</string>
-    <string name="bouquet_france_description">Noms, numéros et catégories du bouquet</string>
+    <string name="bouquet_france">France</string>
+    <string name="bouquet_france_description">TNT (numérotation 2025) et Canal+ : noms, numéros et catégories</string>
     <string name="bouquet_none">Aucun</string>
     <string name="bouquet_none_description">Noms et catégories des fournisseurs, nettoyés</string>
+    <string name="bouquet_belgium">Belgique</string>
+    <string name="bouquet_belgium_description">Chaînes belges, puis françaises</string>
+    <string name="bouquet_switzerland">Suisse</string>
+    <string name="bouquet_switzerland_description">Chaînes suisses, puis françaises</string>
+    <string name="bouquet_canada">Canada</string>
+    <string name="bouquet_canada_description">Chaînes québécoises et canadiennes, puis françaises</string>
+    <string name="bouquet_category_france">France</string>
+    <string name="bouquet_category_belgium">Belgique</string>
+    <string name="bouquet_category_switzerland">Suisse</string>
+    <string name="bouquet_category_canada">Canada</string>
+    <plurals name="settings_unmatched_button">
+        <item quantity="one">%d chaîne non reconnue</item>
+        <item quantity="many">%d chaînes non reconnues</item>
+        <item quantity="other">%d chaînes non reconnues</item>
+    </plurals>
+    <string name="settings_unmatched_all_recognized">Toutes les chaînes sont reconnues</string>
+    <string name="unmatched_title">Chaînes non reconnues</string>
+    <string name="unmatched_description">Absentes du bouquet de référence : elles gardent le nom, le numéro et la catégorie du fournisseur</string>
+    <string name="unmatched_close">Fermer</string>
 
     <!-- Home channel preview -->
     <string name="settings_preview_title">Aperçu des chaînes</string>

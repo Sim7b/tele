@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
 
             // Displayed channels: bouquet names and categories, grouped versions, renamed categories
             val displayedChannels by viewModel.displayChannels.collectAsState()
+            val unmatchedChannels by viewModel.unmatchedChannels.collectAsState()
             val isLoadingChannels by viewModel.isLoading.collectAsState()
             val loadError by viewModel.loadError.collectAsState()
             val streamSlots by viewModel.streamSlots.collectAsState()
@@ -303,6 +304,7 @@ class MainActivity : ComponentActivity() {
                                 repository = configRepository,
                                 onTestConnection = { config -> viewModel.testConnection(config) },
                                 categories = categoryCounts,
+                                unmatchedChannels = unmatchedChannels,
                                 onRefreshPlaylist = { viewModel.refresh() },
                                 onRefreshEpg = { viewModel.refresh() },
                                 onShowGuide = { showGuide = true },

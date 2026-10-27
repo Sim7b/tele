@@ -325,10 +325,28 @@
     <string name="bouquet_music">Music</string>
     <string name="settings_bouquet_title">Reference bouquet</string>
     <string name="settings_bouquet_description">Recognizes the channels (name, number, category) and groups their HD, FHD, 4K… versions into one channel</string>
-    <string name="bouquet_france">France (TNT + Canal+)</string>
-    <string name="bouquet_france_description">Names, numbers and categories of the bouquet</string>
+    <string name="bouquet_france">France</string>
+    <string name="bouquet_france_description">Free-to-air (2025 numbering) and Canal+: names, numbers and categories</string>
     <string name="bouquet_none">None</string>
     <string name="bouquet_none_description">Provider names and categories, cleaned up</string>
+    <string name="bouquet_belgium">Belgium</string>
+    <string name="bouquet_belgium_description">Belgian channels, then the French ones</string>
+    <string name="bouquet_switzerland">Switzerland</string>
+    <string name="bouquet_switzerland_description">Swiss channels, then the French ones</string>
+    <string name="bouquet_canada">Canada</string>
+    <string name="bouquet_canada_description">Québec and Canadian channels, then the French ones</string>
+    <string name="bouquet_category_france">France</string>
+    <string name="bouquet_category_belgium">Belgium</string>
+    <string name="bouquet_category_switzerland">Switzerland</string>
+    <string name="bouquet_category_canada">Canada</string>
+    <plurals name="settings_unmatched_button">
+        <item quantity="one">%d channel not recognized</item>
+        <item quantity="other">%d channels not recognized</item>
+    </plurals>
+    <string name="settings_unmatched_all_recognized">All channels are recognized</string>
+    <string name="unmatched_title">Channels not recognized</string>
+    <string name="unmatched_description">Not in the reference bouquet: they keep the provider name, number and category</string>
+    <string name="unmatched_close">Close</string>
 
     <!-- Home channel preview -->
     <string name="settings_preview_title">Channel preview</string>
