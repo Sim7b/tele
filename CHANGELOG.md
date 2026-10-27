@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.9](https://github.com/Sim7b/tele/compare/v0.3.8...v0.3.9) (2026-10-27)
+
+### Features
+
+* **settings:** settings by section and a configurable preview delay ([195668d](https://github.com/Sim7b/tele/commit/195668dbe379595f72ae766fc342dd8ec293dc94))
+
+### Performance Improvements
+
+* keep the XMLTV guide on the device and lighten the display updates ([7166d5c](https://github.com/Sim7b/tele/commit/7166d5ccffdd3fc39e0747565c741edb60811b22))
+
 ## [0.3.8](https://github.com/Sim7b/tele/compare/v0.3.7...v0.3.8) (2026-10-27)
 
 ### Bug Fixes
