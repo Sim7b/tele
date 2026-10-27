@@ -1,6 +1,7 @@
 package io.github.sim7b.tele.data.bouquet
 
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.EpgProgram
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -94,5 +95,26 @@ class ChannelGroupingTest {
         val channels = listOf(channel("1", "A", "FR | Cinéma"), channel("2", "B", "Cinema"), channel("3", "C", "FR| CINEMAS"))
         val result = ChannelGrouping(null, names).build(channels, mergeAcrossSources = true, favoriteIds = emptySet(), sourceNames = emptyMap(), categoryLabel = ::label)
         assertEquals(setOf("Cinéma"), result.map { it.group }.toSet())
+    }
+
+    @Test
+    fun `program updates keep the grouping and the unchanged channels`() {
+        val program = { title: String -> EpgProgram(title = title, startTime = "20:00", endTime = "21:00") }
+        val channels = listOf(
+            channel("1", "TF1 HD", "TNT").copy(currentProgram = program("Journal")),
+            channel("2", "TF1 FHD", "TNT"),
+            channel("3", "Arte", "TNT").copy(currentProgram = program("Docu"))
+        )
+        val display = ChannelGrouping(bouquet, bouquet.names).build(channels, true, emptySet(), emptyMap(), ::label)
+
+        // Nothing moved: the same list
+        assertTrue(ChannelGrouping.withPrograms(display, channels) === display)
+
+        // TF1 changes program: only it is a new object
+        val next = channels.map { if (it.id == "1") it.copy(currentProgram = program("Météo")) else it }
+        assertEquals(ChannelGrouping.structureOf(channels), ChannelGrouping.structureOf(next))
+        val updated = ChannelGrouping.withPrograms(display, next)
+        assertEquals("Météo", updated.first { it.name == "TF1" }.currentProgram?.title)
+        assertTrue(updated.first { it.name == "Arte" } === display.first { it.name == "Arte" })
     }
 }

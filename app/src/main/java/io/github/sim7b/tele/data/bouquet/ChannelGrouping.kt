@@ -1,6 +1,7 @@
 package io.github.sim7b.tele.data.bouquet
 
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.EpgProgram
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.remote.StreamNames
 
@@ -123,5 +124,30 @@ class ChannelGrouping(private val bouquet: Bouquet?, private val names: ChannelN
 
     companion object {
         const val MERGED_PREFIX = "merged:"
+
+        /** What the grouping depends on: the channels without their current program. */
+        fun structureOf(channels: List<Channel>): List<Channel> =
+            channels.map { if (it.currentProgram == null) it else it.copy(currentProgram = null) }
+
+        /**
+         * [display] channels built from channels of the same structure, with the current programs of
+         * [channels]: a grouped channel takes the program of its first version that has one. Unchanged
+         * channels stay the same objects, and [display] itself when nothing changed.
+         */
+        fun withPrograms(display: List<Channel>, channels: List<Channel>): List<Channel> {
+            val programs = HashMap<String, EpgProgram>(channels.size * 2)
+            channels.forEach { channel -> channel.currentProgram?.let { programs[channel.id] = it } }
+            var changed = false
+            val updated = display.map { channel ->
+                val program = programs[channel.id] ?: channel.memberIds.firstNotNullOfOrNull { programs[it] }
+                if (program == channel.currentProgram) {
+                    channel
+                } else {
+                    changed = true
+                    channel.copy(currentProgram = program)
+                }
+            }
+            return if (changed) updated else display
+        }
     }
 }

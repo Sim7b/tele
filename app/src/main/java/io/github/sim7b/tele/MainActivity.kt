@@ -40,7 +40,6 @@ import io.github.sim7b.tele.ui.screens.QuickGuide
 import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.screens.SettingsScreen
 import io.github.sim7b.tele.ui.screens.WelcomeScreen
-import io.github.sim7b.tele.ui.screens.pickFavoriteChannels
 import io.github.sim7b.tele.ui.theme.TeleTheme
 import io.github.sim7b.tele.update.UpdateState
 import io.github.sim7b.tele.update.UpdateViewModel
@@ -87,8 +86,6 @@ class MainActivity : ComponentActivity() {
             val themeBackground by configRepository.themeBackground.collectAsState()
             val accentColor by configRepository.accentColor.collectAsState()
             val favoriteIds by configRepository.favoriteIds.collectAsState()
-            val hiddenIds by configRepository.hiddenIds.collectAsState()
-            val hiddenGroups by configRepository.hiddenGroups.collectAsState()
 
             // Displayed channels: bouquet names and categories, grouped versions, renamed categories
             val displayedChannels by viewModel.displayChannels.collectAsState()
@@ -97,7 +94,7 @@ class MainActivity : ComponentActivity() {
             val loadError by viewModel.loadError.collectAsState()
             val streamSlots by viewModel.streamSlots.collectAsState()
             val updateState by updateViewModel.state.collectAsState()
-            val channelPreview by configRepository.channelPreview.collectAsState()
+            val previewDelay by configRepository.previewDelay.collectAsState()
             val pictureFormat by configRepository.pictureFormat.collectAsState()
             val categoryOrder by configRepository.categoryOrder.collectAsState()
             // Audio language chosen in the playback options: preferred for every channel
@@ -127,15 +124,7 @@ class MainActivity : ComponentActivity() {
                 val startedAt = SystemClock.elapsedRealtime()
                 withTimeoutOrNull(WELCOME_MAX_MS) {
                     viewModel.initialSyncDone.first { it }
-                    val hidden = configRepository.hiddenIds.value
-                    val hiddenCategories = configRepository.hiddenGroups.value
-                    val pool = viewModel.displayChannels.value.filterNot { channel -> channel.allIds.all { it in hidden } }
-                    val favorites = pickFavoriteChannels(
-                        pool,
-                        pool.filterNot { hiddenCategories.contains(it.group) },
-                        configRepository.favoriteIds.value
-                    )
-                    preloadPosters(context, favorites)
+                    preloadPosters(context, viewModel.homeLists.value.favorites)
                 }
                 val remaining = WELCOME_MIN_MS - (SystemClock.elapsedRealtime() - startedAt)
                 if (remaining > 0) delay(remaining)
@@ -199,22 +188,12 @@ class MainActivity : ComponentActivity() {
             val saveableStateHolder = rememberSaveableStateHolder()
 
             // Channels not individually hidden: favorites are taken from them, even if their category is hidden
-            val unhiddenChannels = remember(displayedChannels, hiddenIds) {
-                // A grouped channel is hidden once all its versions are
-                displayedChannels.filterNot { channel -> channel.allIds.all { it in hiddenIds } }
-            }
-            // Channels of the grid, the panel and zapping: without the hidden categories
-            val visibleChannels = remember(unhiddenChannels, hiddenGroups) {
-                unhiddenChannels.filterNot { hiddenGroups.contains(it.group) }
-            }
-            val favoriteChannels = remember(unhiddenChannels, visibleChannels, favoriteIds) {
-                pickFavoriteChannels(unhiddenChannels, visibleChannels, favoriteIds)
-            }
-            // Categories and channel counts, in channel order (for the settings)
-            val categoryCounts = remember(unhiddenChannels, categoryOrder) {
-                val counts = unhiddenChannels.groupingBy { it.group }.eachCount()
-                Categories.ordered(counts.keys.toList(), categoryOrder).map { it to counts.getValue(it) }
-            }
+            // Built off the main thread by the ViewModel (see HomeLists)
+            val homeLists by viewModel.homeLists.collectAsState()
+            val unhiddenChannels = homeLists.unhidden
+            val visibleChannels = homeLists.visible
+            val favoriteChannels = homeLists.favorites
+            val categoryCounts = homeLists.categoryCounts
 
             // Zapping by id (not by object equality, which changes on every EPG update)
             fun zap(from: Channel, step: Int, returnTo: CurrentScreen) {
@@ -293,7 +272,7 @@ class MainActivity : ComponentActivity() {
                                     onRefresh = {
                                         viewModel.refresh()
                                     },
-                                    previewEnabled = channelPreview && !showWelcome && !showGuide,
+                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
                                     previewSurface = { PreviewVideo(playerManager) }
                                 )

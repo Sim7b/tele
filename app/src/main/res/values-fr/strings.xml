@@ -86,7 +86,7 @@
     <!-- Settings, welcome and main screens -->
     <!-- Settings screen -->
     <string name="settings_title">Paramètres</string>
-    <string name="settings_subtitle">Apparence, synchronisation et sources de chaînes</string>
+    <string name="settings_subtitle">Choisissez une rubrique à gauche, puis → pour la régler</string>
     <string name="settings_back">Retour</string>
 
     <string name="settings_sync_title">Synchronisation</string>
@@ -351,11 +351,20 @@
 
     <!-- Home channel preview -->
     <string name="settings_preview_title">Aperçu des chaînes</string>
-    <string name="settings_preview_description">À l\'accueil, la chaîne sélectionnée depuis 2 secondes se lance sans le son. Elle utilise une connexion du fournisseur (slot Dispatcharr) pendant l\'aperçu.</string>
-    <string name="settings_preview_on">Activé</string>
-    <string name="settings_preview_on_description">Au bout de 2 s, sans le son</string>
-    <string name="settings_preview_off">Désactivé</string>
-    <string name="settings_preview_off_description">Économise les connexions</string>
+    <string name="settings_preview_description">À l\'accueil, la chaîne sélectionnée se lance sans le son après ce délai. Pendant l\'aperçu, elle utilise une connexion du fournisseur (slot Dispatcharr).</string>
+    <string name="preview_delay_off">Désactivé</string>
+    <string name="preview_delay_immediate">Immédiat</string>
+    <string name="preview_delay_seconds">%d s</string>
+    <string name="settings_nav_sources">Sources</string>
+    <string name="settings_nav_sources_hint">Serveurs, synchro, autre TV</string>
+    <string name="settings_nav_channels">Chaînes</string>
+    <string name="settings_nav_channels_hint">Bouquet, catégories, masquage</string>
+    <string name="settings_nav_playback">Lecture</string>
+    <string name="settings_nav_playback_hint">Qualité des flux, aperçu à l\'accueil</string>
+    <string name="settings_nav_appearance">Apparence</string>
+    <string name="settings_nav_appearance_hint">Fond, couleur, densité</string>
+    <string name="settings_nav_system">Système</string>
+    <string name="settings_nav_system_hint">Mises à jour, aide</string>
 
     <!-- Playback options (right arrow in the player) -->
     <string name="options_title">Options de lecture</string>

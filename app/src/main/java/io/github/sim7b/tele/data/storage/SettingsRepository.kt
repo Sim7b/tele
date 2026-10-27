@@ -6,10 +6,12 @@ import android.util.Log
 import androidx.annotation.StringRes
 import androidx.annotation.VisibleForTesting
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.remote.CachedGuide
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.PreviewDelay
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.StreamSource
@@ -76,6 +78,9 @@ class SettingsRepository(context: Context) {
     private fun channelCache(configId: String) =
         ChannelCache(File(cacheDir, "channel_cache_${configId.filter { it.isLetterOrDigit() || it == '-' }}.jsonl"), secrets)
 
+    private fun guideCache(configId: String) =
+        GuideCache(File(cacheDir, "guide_cache_${configId.filter { it.isLetterOrDigit() || it == '-' }}.jsonl"))
+
     private val _configs = MutableStateFlow<List<SourceConfig>>(emptyList())
     val configs: StateFlow<List<SourceConfig>> = _configs.asStateFlow()
 
@@ -127,9 +132,9 @@ class SettingsRepository(context: Context) {
     private val _qualityPreference = MutableStateFlow(QualityPreference.SERVER_ORDER)
     val qualityPreference: StateFlow<QualityPreference> = _qualityPreference.asStateFlow()
 
-    // Muted preview of the channel focused for 2 s on the home screen
-    private val _channelPreview = MutableStateFlow(true)
-    val channelPreview: StateFlow<Boolean> = _channelPreview.asStateFlow()
+    // Muted preview of the channel focused on the home screen, after this delay
+    private val _previewDelay = MutableStateFlow(PreviewDelay.DEFAULT)
+    val previewDelay: StateFlow<PreviewDelay> = _previewDelay.asStateFlow()
 
     // Picture format of the player and audio language chosen in the playback options (kept across channels)
     private val _pictureFormat = MutableStateFlow(PictureFormat.FIT)
@@ -187,7 +192,9 @@ class SettingsRepository(context: Context) {
 
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
-        _channelPreview.value = prefs.getBoolean(KEY_CHANNEL_PREVIEW, true)
+        // Previous versions: preview on (after 2 s) or off
+        _previewDelay.value = PreviewDelay.fromName(prefs.getString(KEY_PREVIEW_DELAY, null))
+            ?: if (prefs.getBoolean(KEY_CHANNEL_PREVIEW, true)) PreviewDelay.DEFAULT else PreviewDelay.OFF
         _pictureFormat.value = PictureFormat.entries.firstOrNull { it.name == prefs.getString(KEY_PICTURE_FORMAT, null) }
             ?: PictureFormat.FIT
         _audioLanguage.value = prefs.getString(KEY_AUDIO_LANGUAGE, null)
@@ -312,9 +319,9 @@ class SettingsRepository(context: Context) {
         _audioLanguage.value = language
     }
 
-    fun setChannelPreview(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_CHANNEL_PREVIEW, enabled).apply()
-        _channelPreview.value = enabled
+    fun setPreviewDelay(delay: PreviewDelay) {
+        prefs.edit().putString(KEY_PREVIEW_DELAY, delay.name).remove(KEY_CHANNEL_PREVIEW).apply()
+        _previewDelay.value = delay
     }
 
     fun setGuideSeen() {
@@ -422,6 +429,24 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    /** Saves the XMLTV guide of source [configId] as matched to its channels (to call off the main thread). */
+    fun saveCachedGuide(configId: String, guide: CachedGuide) {
+        try {
+            guideCache(configId).save(guide)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to save the guide cache: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Cached XMLTV guide of source [configId], without the programs ended before [keepFrom] (off the main thread). */
+    fun getCachedGuide(configId: String, keepFrom: Long): CachedGuide? =
+        try {
+            guideCache(configId).load(keepFrom)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read the guide cache: ${e.javaClass.simpleName}")
+            null
+        }
+
     private fun persistConfigs(list: List<SourceConfig>) {
         val array = JSONArray()
         list.forEach { array.put(it.toJson()) }
@@ -452,6 +477,7 @@ class SettingsRepository(context: Context) {
         persistConfigs(_configs.value.filterNot { it.id == configId })
         forgetSourceData(configId)
         channelCache(configId).clear()
+        guideCache(configId).clear()
     }
 
     /** Displayed name of the source groups [groups] ([name] blank: back to the source name). */
@@ -512,7 +538,9 @@ class SettingsRepository(context: Context) {
         put("categoryMode", _categoryMode.value.name)
         put("bouquet", _bouquet.value.name)
         put("quality", _qualityPreference.value.name)
-        put("preview", _channelPreview.value)
+        put("previewDelay", _previewDelay.value.name)
+        // Read by the previous versions
+        put("preview", _previewDelay.value != PreviewDelay.OFF)
         put("density", _uiDensity.value.name)
         put("theme", _themeBackground.value.name)
         put("accent", _accentColor.value.name)
@@ -560,7 +588,9 @@ class SettingsRepository(context: Context) {
         enumValue(CategoryMode.entries.toTypedArray(), "categoryMode")?.let { setCategoryMode(it) }
         enumValue(BouquetPreference.entries.toTypedArray(), "bouquet")?.let { setBouquet(it) }
         enumValue(QualityPreference.entries.toTypedArray(), "quality")?.let { setQualityPreference(it) }
-        if (json.has("preview")) setChannelPreview(json.optBoolean("preview", true))
+        val previewDelay = PreviewDelay.fromName(json.optString("previewDelay", ""))
+            ?: if (json.has("preview")) (if (json.optBoolean("preview", true)) PreviewDelay.DEFAULT else PreviewDelay.OFF) else null
+        previewDelay?.let { setPreviewDelay(it) }
         enumValue(UiDensity.entries.toTypedArray(), "density")?.let { setUiDensity(it) }
         enumValue(AppThemeBackground.entries.toTypedArray(), "theme")?.let { setThemeBackground(it) }
         enumValue(AppAccentColor.entries.toTypedArray(), "accent")?.let { setAccentColor(it) }
@@ -615,6 +645,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
         private const val KEY_GUIDE_SEEN = "guide_seen"
         private const val KEY_CHANNEL_PREVIEW = "home_channel_preview"
+        private const val KEY_PREVIEW_DELAY = "home_preview_delay"
         private const val KEY_PICTURE_FORMAT = "picture_format"
         private const val KEY_AUDIO_LANGUAGE = "audio_language"
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"

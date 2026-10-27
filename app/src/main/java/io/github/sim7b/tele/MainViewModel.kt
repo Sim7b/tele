@@ -17,12 +17,15 @@ import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.DispatcharrEpgChannel
 import io.github.sim7b.tele.data.model.GuideProgram
+import io.github.sim7b.tele.data.model.HomeLists
 import io.github.sim7b.tele.data.model.ProgramArtwork
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.SourceType
 import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.remote.DispatcharrClient
+import io.github.sim7b.tele.data.remote.CachedGuide
+import io.github.sim7b.tele.data.remote.ChannelGuide
 import io.github.sim7b.tele.data.remote.GuideLoader
 import io.github.sim7b.tele.data.remote.HttpClients
 import io.github.sim7b.tele.data.remote.M3uClient
@@ -37,10 +40,12 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
@@ -94,6 +99,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         var programs: Map<String, List<GuideProgram>> = emptyMap()
         // XMLTV guides of an Xtream / M3U source, kept for the periodic guide reload
         var guideUrls: List<String> = emptyList()
+        // Their guide as last downloaded: shown at startup, then only downloaded again when it changed
+        var guideCache: CachedGuide? = null
         var error: UiText? = null
         var job: Job? = null
         // Channels not received yet (spinner); done = first load over, guide included, even when it failed
@@ -107,6 +114,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // grouped, categories cleaned, renamed and merged / separated (see ChannelGrouping and Categories)
     private val _displayChannels = MutableStateFlow<List<Channel>>(emptyList())
     val displayChannels: StateFlow<List<Channel>> = _displayChannels.asStateFlow()
+
+    /** Lists of the screens (visible channels, favorites, category counts), built off the main thread. */
+    val homeLists: StateFlow<HomeLists> = combine(
+        _displayChannels,
+        configRepository.hiddenIds,
+        configRepository.hiddenGroups,
+        configRepository.favoriteIds,
+        configRepository.categoryOrder
+    ) { display, hiddenIds, hiddenGroups, favoriteIds, categoryOrder ->
+        withContext(Dispatchers.Default) { HomeLists.build(display, hiddenIds, hiddenGroups, favoriteIds, categoryOrder) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeLists.EMPTY)
     // Same channels before the renames: the categories a rename applies to
     @Volatile
     private var groupedChannels: List<Channel> = emptyList()
@@ -125,7 +143,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val bouquet: BouquetPreference,
         val configs: List<SourceConfig>,
         val favoriteIds: List<String>
-    )
+    ) {
+        fun sameSettings(other: DisplayInput) = renames == other.renames && mode == other.mode &&
+            bouquet == other.bouquet && configs == other.configs && favoriteIds == other.favoriteIds
+    }
+
+    // Last displayed channels with what they were built from (only used by the display pipeline, in sequence)
+    private class DisplayMemo(val structure: List<Channel>, val input: DisplayInput, val display: List<Channel>)
+    @Volatile
+    private var displayMemo: DisplayMemo? = null
 
     // EPG programs of every source by channel id (ids are unique across sources), to move the current program
     @Volatile
@@ -201,6 +227,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Displayed channels from the loaded ones (off the main thread: tens of thousands of channels). */
     private fun buildDisplay(input: DisplayInput): List<Channel> {
+        // Every 30 s only the current programs change: the grouping is kept, the programs updated
+        val structure = ChannelGrouping.structureOf(input.channels)
+        val memo = displayMemo
+        if (memo != null && memo.structure == structure && memo.input.sameSettings(input)) {
+            return ChannelGrouping.withPrograms(memo.display, input.channels).also { displayMemo = DisplayMemo(structure, input, it) }
+        }
         val bouquet = if (input.bouquet == BouquetPreference.NONE) null else bouquets.getOrPut(input.bouquet) {
             requireNotNull(Bouquet.of(input.bouquet, Locale.getDefault()))
         }
@@ -215,7 +247,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         groupedChannels = grouped
         _unmatchedChannels.value = bouquet?.let { unmatchedNames(it, input.channels) }.orEmpty()
-        return Categories.apply(grouped, input.renames, input.mode, sourceNames)
+        return Categories.apply(grouped, input.renames, input.mode, sourceNames).also { displayMemo = DisplayMemo(structure, input, it) }
     }
 
     private fun unmatchedNames(bouquet: Bouquet, channels: List<Channel>): List<String> {
@@ -414,17 +446,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (current.all { it.done }) _initialSyncDone.value = true
     }
 
-    /** Shows the cached channels of [source] while it loads, unless the load has already published its own. */
+    /** Shows the cached channels and guide of [source] while it loads, unless the load has already published its own. */
     private fun showCachedChannels(source: LoadedSource) {
         viewModelScope.launch {
             val id = source.config.id
-            val cached = withContext(Dispatchers.IO) {
-                configRepository.getCachedChannels(id).map { it.copy(sourceId = id) }
+            val (cached, guide) = withContext(Dispatchers.IO) {
+                val channels = configRepository.getCachedChannels(id).map { it.copy(sourceId = id) }
+                val guide = if (source.dispatcharr == null) cachedGuide(id) else null
+                channels to guide
             }
             if (cached.isEmpty() || source.channels.isNotEmpty() || sources.none { it === source }) return@launch
             source.channels = cached
+            if (guide != null && source.programs.isEmpty()) {
+                source.guideCache = guide
+                source.programs = guide.programs
+            }
             publishAll()
         }
+    }
+
+    private fun cachedGuide(configId: String): CachedGuide? =
+        configRepository.getCachedGuide(configId, System.currentTimeMillis() - GuideLoader.PAST_WINDOW_MS)
+
+    /**
+     * XMLTV guide of an Xtream / M3U [source], downloaded again only when it changed since the cached one.
+     * A guide that failed to download does not erase the previous one.
+     */
+    private suspend fun loadGuide(source: LoadedSource): ChannelGuide {
+        val id = source.config.id
+        val previous = source.guideCache ?: withContext(Dispatchers.IO) { cachedGuide(id) }
+        val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent(source.config), previous)
+        if (guide.programs.isNotEmpty() || guide.error == null) source.programs = guide.programs
+        guide.cache?.let { cache ->
+            source.guideCache = cache
+            if (!guide.unchanged) withContext(Dispatchers.IO) { configRepository.saveCachedGuide(id, cache) }
+        }
+        return guide
     }
 
     private suspend fun loadDispatcharr(source: LoadedSource, startedAt: Long) = coroutineScope {
@@ -486,14 +543,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             updateLoadingState()
             Log.i(TvPlayerManager.PERF_TAG, "Load: ${loaded.channels.size} channels in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
-            val guide = GuideLoader.load(loaded.guideUrls, source.channels, userAgent(config))
-            // A guide that failed to download does not erase the previous one
-            if (guide.programs.isNotEmpty() || guide.error == null) source.programs = guide.programs
+            val guide = loadGuide(source)
             source.error = guide.error
             publishAll()
             Log.i(
                 TvPlayerManager.PERF_TAG,
-                "Load: guide of ${guide.programs.size} channels in ${SystemClock.elapsedRealtime() - startedAt} ms"
+                "Load: guide of ${guide.programs.size} channels (${if (guide.unchanged) "unchanged" else "downloaded"}) " +
+                    "in ${SystemClock.elapsedRealtime() - startedAt} ms"
             )
             saveCache(source)
         }.onFailure { error ->
@@ -519,8 +575,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 applyArtwork(source, artworkDeferred.await())
             } else {
-                val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent(source.config))
-                if (guide.programs.isNotEmpty()) source.programs = guide.programs
+                loadGuide(source)
             }
             publishAll()
             saveCache(source)
@@ -662,15 +717,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.Default) {
             val now = System.currentTimeMillis()
             _channels.update { channels ->
-                channels.map { channel ->
+                var changed = false
+                val updated = channels.map { channel ->
                     val programs = programsMap[channel.id]
                     val program = if (programs != null) {
                         EpgResolver.currentProgram(programs, now)
                     } else {
                         channel.currentProgram?.let { EpgResolver.refreshCached(it, now) }
                     }
-                    if (program == channel.currentProgram) channel else channel.copy(currentProgram = program)
+                    if (program == channel.currentProgram) {
+                        channel
+                    } else {
+                        changed = true
+                        channel.copy(currentProgram = program)
+                    }
                 }
+                // Same list when nothing moved: the display is not rebuilt
+                if (changed) updated else channels
             }
         }
     }

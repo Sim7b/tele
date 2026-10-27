@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
+import io.github.sim7b.tele.data.model.PreviewDelay
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.SourceType
 import io.github.sim7b.tele.data.transfer.TransferCrypto
@@ -55,6 +56,7 @@ class SettingsTransferTest {
         sender.setCategoryOrder(listOf("Sport", "TNT"))
         sender.setCategoryMode(CategoryMode.SEPARATE)
         sender.setBouquet(BouquetPreference.NONE)
+        sender.setPreviewDelay(PreviewDelay.FIVE_SECONDS)
         val sealed = TransferCrypto.seal(sender.exportSettings().toString(), "12345678")
 
         clearPreferences()
@@ -70,6 +72,7 @@ class SettingsTransferTest {
         assertEquals(listOf("Sport", "TNT"), receiver.categoryOrder.value)
         assertEquals(CategoryMode.SEPARATE, receiver.categoryMode.value)
         assertEquals(BouquetPreference.NONE, receiver.bouquet.value)
+        assertEquals(PreviewDelay.FIVE_SECONDS, receiver.previewDelay.value)
         assertTrue(receiver.guideSeen.value)
     }
 }
