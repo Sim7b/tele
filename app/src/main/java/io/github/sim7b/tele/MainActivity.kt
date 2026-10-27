@@ -96,6 +96,10 @@ class MainActivity : ComponentActivity() {
             val streamSlots by viewModel.streamSlots.collectAsState()
             val updateState by updateViewModel.state.collectAsState()
             val channelPreview by configRepository.channelPreview.collectAsState()
+            val pictureFormat by configRepository.pictureFormat.collectAsState()
+            // Audio language chosen in the playback options: preferred for every channel
+            val audioLanguage by configRepository.audioLanguage.collectAsState()
+            LaunchedEffect(audioLanguage) { playerManager.setPreferredAudioLanguage(audioLanguage) }
 
             val userName by viewModel.userName.collectAsState()
             val context = LocalContext.current
@@ -342,7 +346,10 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = screen.returnTo
                                 },
                                 onNextChannel = { zap(liveChannel, +1, screen.returnTo) },
-                                onPreviousChannel = { zap(liveChannel, -1, screen.returnTo) }
+                                onPreviousChannel = { zap(liveChannel, -1, screen.returnTo) },
+                                pictureFormat = pictureFormat,
+                                onPictureFormatChange = { configRepository.setPictureFormat(it) },
+                                onAudioLanguageChange = { configRepository.setAudioLanguage(it) }
                             )
                         }
                     }

@@ -337,4 +337,21 @@
     <string name="settings_preview_on_description">Au bout de 2 s, sans le son</string>
     <string name="settings_preview_off">Désactivé</string>
     <string name="settings_preview_off_description">Économise les connexions</string>
+
+    <!-- Playback options (right arrow in the player) -->
+    <string name="options_title">Options de lecture</string>
+    <string name="options_choose_stream">Choisir un autre flux</string>
+    <string name="options_audio">Audio</string>
+    <string name="options_subtitles">Sous-titres</string>
+    <string name="options_subtitles_off">Désactivés</string>
+    <string name="options_no_subtitles">Pas de sous-titres dans ce flux</string>
+    <string name="options_picture">Format d\'image</string>
+    <string name="options_mono">Mono</string>
+    <string name="options_stereo">Stéréo</string>
+    <string name="options_channels">%1$d canaux</string>
+    <string name="options_track">Piste %1$d</string>
+    <string name="picture_fit">Ajusté</string>
+    <string name="picture_zoom">Remplir (rogné)</string>
+    <string name="picture_stretch">Étiré</string>
+    <string name="player_options_hint">→ : options de lecture</string>
 </resources>

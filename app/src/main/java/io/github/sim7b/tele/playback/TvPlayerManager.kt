@@ -15,6 +15,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
@@ -50,6 +51,23 @@ data class StreamInfo(
 
 /** Automatic reconnection in progress after the stream dropped: retry [attempt] of [maxAttempts]. */
 data class Reconnection(val attempt: Int, val maxAttempts: Int)
+
+/** An audio or subtitle track of the stream: [groupIndex] / [trackIndex] in the player tracks. */
+data class TrackChoice(
+    val groupIndex: Int,
+    val trackIndex: Int,
+    val language: String?,
+    val label: String?,
+    val channelCount: Int?,
+    val selected: Boolean
+)
+
+/** Audio and subtitle tracks of the current stream; [subtitlesOn] false when no subtitle is shown. */
+data class PlaybackTracks(
+    val audio: List<TrackChoice> = emptyList(),
+    val subtitles: List<TrackChoice> = emptyList(),
+    val subtitlesOn: Boolean = false
+)
 
 @OptIn(UnstableApi::class)
 class TvPlayerManager(private val context: Context) {
@@ -103,6 +121,9 @@ class TvPlayerManager(private val context: Context) {
 
     private val _reconnection = MutableStateFlow<Reconnection?>(null)
     val reconnection: StateFlow<Reconnection?> = _reconnection.asStateFlow()
+
+    private val _tracks = MutableStateFlow(PlaybackTracks())
+    val tracks: StateFlow<PlaybackTracks> = _tracks.asStateFlow()
 
     // Network back after a failure (Wi-Fi or router restart): the stream is retried right away
     private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
@@ -177,6 +198,7 @@ class TvPlayerManager(private val context: Context) {
 
                     override fun onTracksChanged(tracks: Tracks) {
                         updateStreamInfo()
+                        _tracks.value = readTracks(tracks)
                     }
 
                     override fun onPlayerError(playbackError: PlaybackException) {
@@ -301,7 +323,15 @@ class TvPlayerManager(private val context: Context) {
             currentAuths = auths
             return
         }
-        player?.let { endPreviewMode(it) }
+        player?.let {
+            endPreviewMode(it)
+            // Tracks chosen on the previous stream do not apply to the new one (the language preference stays)
+            it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .build()
+        }
+        _tracks.value = PlaybackTracks()
         fallbackUrls.clear()
         fallbackUrls.addAll(fallbacks)
         zapStartedAt = SystemClock.elapsedRealtime()
@@ -398,6 +428,58 @@ class TvPlayerManager(private val context: Context) {
     }
 
     private fun isHlsUrl(url: String) = url.contains(".m3u8", ignoreCase = true)
+
+    private fun readTracks(tracks: Tracks): PlaybackTracks {
+        fun choices(type: Int) = tracks.groups.withIndex()
+            .filter { (_, group) -> group.type == type }
+            .flatMap { (groupIndex, group) ->
+                (0 until group.length).filter { group.isTrackSupported(it) }.map { trackIndex ->
+                    val format = group.getTrackFormat(trackIndex)
+                    TrackChoice(
+                        groupIndex = groupIndex,
+                        trackIndex = trackIndex,
+                        language = format.language?.takeIf { it.isNotBlank() && it != C.LANGUAGE_UNDETERMINED },
+                        label = format.label?.takeIf { it.isNotBlank() },
+                        channelCount = format.channelCount.takeIf { it != Format.NO_VALUE && it > 0 },
+                        selected = group.isTrackSelected(trackIndex)
+                    )
+                }
+            }
+        val subtitles = choices(C.TRACK_TYPE_TEXT)
+        return PlaybackTracks(audio = choices(C.TRACK_TYPE_AUDIO), subtitles = subtitles, subtitlesOn = subtitles.any { it.selected })
+    }
+
+    /** Plays audio track [choice]; its language becomes the preferred one for the next channels. */
+    fun selectAudio(choice: TrackChoice) {
+        val player = exoPlayer ?: return
+        val group = player.currentTracks.groups.getOrNull(choice.groupIndex) ?: return
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, choice.trackIndex))
+            .setPreferredAudioLanguage(choice.language)
+            .build()
+    }
+
+    /** Shows subtitle track [choice], or hides the subtitles when null. */
+    fun selectSubtitles(choice: TrackChoice?) {
+        val player = exoPlayer ?: return
+        val builder = player.trackSelectionParameters.buildUpon()
+        if (choice == null) {
+            builder.clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        } else {
+            val group = player.currentTracks.groups.getOrNull(choice.groupIndex) ?: return
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, choice.trackIndex))
+        }
+        player.trackSelectionParameters = builder.build()
+    }
+
+    /** Audio language chosen in a previous session (null: the stream's default track). */
+    fun setPreferredAudioLanguage(language: String?) {
+        val player = getPlayer()
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setPreferredAudioLanguage(language)
+            .build()
+    }
 
     fun togglePlayPause() {
         val player = exoPlayer ?: return

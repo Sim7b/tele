@@ -337,4 +337,21 @@
     <string name="settings_preview_on_description">After 2 s, muted</string>
     <string name="settings_preview_off">Off</string>
     <string name="settings_preview_off_description">Saves connections</string>
+
+    <!-- Playback options (right arrow in the player) -->
+    <string name="options_title">Playback options</string>
+    <string name="options_choose_stream">Choose another stream</string>
+    <string name="options_audio">Audio</string>
+    <string name="options_subtitles">Subtitles</string>
+    <string name="options_subtitles_off">Off</string>
+    <string name="options_no_subtitles">No subtitles in this stream</string>
+    <string name="options_picture">Picture format</string>
+    <string name="options_mono">Mono</string>
+    <string name="options_stereo">Stereo</string>
+    <string name="options_channels">%1$d channels</string>
+    <string name="options_track">Track %1$d</string>
+    <string name="picture_fit">Fit</string>
+    <string name="picture_zoom">Fill (crop)</string>
+    <string name="picture_stretch">Stretch</string>
+    <string name="player_options_hint">→: playback options</string>
 </resources>

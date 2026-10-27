@@ -7,6 +7,7 @@ import androidx.annotation.StringRes
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
+import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -125,6 +126,12 @@ class SettingsRepository(context: Context) {
     private val _channelPreview = MutableStateFlow(true)
     val channelPreview: StateFlow<Boolean> = _channelPreview.asStateFlow()
 
+    // Picture format of the player and audio language chosen in the playback options (kept across channels)
+    private val _pictureFormat = MutableStateFlow(PictureFormat.FIT)
+    val pictureFormat: StateFlow<PictureFormat> = _pictureFormat.asStateFlow()
+    private val _audioLanguage = MutableStateFlow<String?>(null)
+    val audioLanguage: StateFlow<String?> = _audioLanguage.asStateFlow()
+
     // Quick start guide already shown (or skipped): it only opens by itself on the first launch
     private val _guideSeen = MutableStateFlow(false)
     val guideSeen: StateFlow<Boolean> = _guideSeen.asStateFlow()
@@ -176,6 +183,9 @@ class SettingsRepository(context: Context) {
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
         _channelPreview.value = prefs.getBoolean(KEY_CHANNEL_PREVIEW, true)
+        _pictureFormat.value = PictureFormat.entries.firstOrNull { it.name == prefs.getString(KEY_PICTURE_FORMAT, null) }
+            ?: PictureFormat.FIT
+        _audioLanguage.value = prefs.getString(KEY_AUDIO_LANGUAGE, null)
         _categoryNames.value = try {
             prefs.getString(KEY_CATEGORY_NAMES, null)?.let { raw ->
                 val json = JSONObject(raw)
@@ -276,6 +286,16 @@ class SettingsRepository(context: Context) {
     fun setQualityPreference(preference: QualityPreference) {
         prefs.edit().putString(KEY_QUALITY_PREFERENCE, preference.name).apply()
         _qualityPreference.value = preference
+    }
+
+    fun setPictureFormat(format: PictureFormat) {
+        prefs.edit().putString(KEY_PICTURE_FORMAT, format.name).apply()
+        _pictureFormat.value = format
+    }
+
+    fun setAudioLanguage(language: String?) {
+        prefs.edit().putString(KEY_AUDIO_LANGUAGE, language).apply()
+        _audioLanguage.value = language
     }
 
     fun setChannelPreview(enabled: Boolean) {
@@ -478,6 +498,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_USER_NAME_PREFIX = "iptv_user_name_"
         private const val KEY_GUIDE_SEEN = "guide_seen"
         private const val KEY_CHANNEL_PREVIEW = "home_channel_preview"
+        private const val KEY_PICTURE_FORMAT = "picture_format"
+        private const val KEY_AUDIO_LANGUAGE = "audio_language"
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"
         private const val KEY_CATEGORY_NAMES = "category_names"
         private const val KEY_CATEGORY_MODE = "category_mode"
