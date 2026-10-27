@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.8](https://github.com/Sim7b/tele/compare/v0.3.7...v0.3.8) (2026-10-27)
+
+### Bug Fixes
+
+* **startup:** leave the welcome screen without waiting for the XMLTV guide ([c7f1208](https://github.com/Sim7b/tele/commit/c7f120892e3024ee6c429c50a6de81394dc5a9c5))
+
 ## [0.3.7](https://github.com/Sim7b/tele/compare/v0.3.6...v0.3.7) (2026-10-27)
 
 ### Features
