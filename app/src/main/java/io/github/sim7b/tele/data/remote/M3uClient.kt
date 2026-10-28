@@ -80,7 +80,7 @@ object M3uClient {
         }
     }
 
-    private suspend fun download(config: SourceConfig): M3uPlaylist {
+    internal suspend fun download(config: SourceConfig, vod: Boolean = false): M3uPlaylist {
         val request = Request.Builder()
             .url(config.normalizedUrl)
             .header("User-Agent", config.customUserAgent?.takeIf { it.isNotBlank() } ?: HttpClients.DEFAULT_USER_AGENT)
@@ -96,7 +96,7 @@ object M3uClient {
                     }
                 )
             }
-            M3uParser.parse(response.body.byteStream())
+            M3uParser.parse(response.body.byteStream(), vod = vod)
         }
     }
 }

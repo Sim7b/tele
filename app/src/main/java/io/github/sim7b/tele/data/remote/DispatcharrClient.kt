@@ -111,7 +111,11 @@ class DispatcharrClient(
         val request = Request.Builder().url(url).get().build()
         return try {
             client.newCall(request).executeCancellable { response ->
-                if (!response.isSuccessful) return@executeCancellable false
+                if (!response.isSuccessful) {
+                    // Path only: the query may hold search parameters, never logged
+                    Log.w(TAG, "HTTP ${response.code}: ${request.url.encodedPath}")
+                    return@executeCancellable false
+                }
                 JsonStreams.forEachObject(response.body.byteStream(), action = action)
                 true
             }
@@ -444,6 +448,75 @@ class DispatcharrClient(
         }
     }
 
+    /**
+     * Streams the items of a paginated VOD list ("movies", "series") to [action] (called by one page at
+     * a time). The server serves at most 100 items a page: libraries of 50,000 titles take 500 pages,
+     * fetched [VOD_PARALLEL_PAGES] at a time. Fails when the first page is not available (no VOD module).
+     */
+    suspend fun forEachVodItem(list: String, maxItems: Int, action: (JSONObject) -> Unit) = withContext(Dispatchers.IO) {
+        val lock = Any()
+        var total = 0
+        val lastPage = maxItems / VOD_PAGE_SIZE + 1
+        var first = 1
+        while (first <= lastPage) {
+            val pages = (first..minOf(first + VOD_PARALLEL_PAGES - 1, lastPage)).toList()
+            // Each page collected apart, then handed over whole: [action] never runs concurrently
+            val results = coroutineScope {
+                pages.map { page ->
+                    async {
+                        val items = ArrayList<JSONObject>(VOD_PAGE_SIZE)
+                        val fetched = fetchObjects("$baseUrl/api/vod/$list/?page_size=$VOD_PAGE_SIZE&page=$page") { items.add(it) }
+                        if (fetched) items else null
+                    }
+                }.map { it.await() }
+            }
+            // Past the last page the server answers 404
+            if (results.first() == null && first == 1) throw UserFacingException(UiText.Res(R.string.error_vod_unavailable))
+            var complete = true
+            for (items in results) {
+                if (items == null) {
+                    complete = false
+                    break
+                }
+                synchronized(lock) {
+                    items.forEach { if (total++ < maxItems) action(it) }
+                }
+                if (items.size < VOD_PAGE_SIZE) {
+                    complete = false
+                    break
+                }
+            }
+            if (!complete || total >= maxItems) break
+            first += VOD_PARALLEL_PAGES
+        }
+        Log.i(TAG, "VOD $list: $total items")
+    }
+
+    /** Objects of a VOD list endpoint (the episodes of a series); false when the request failed. */
+    suspend fun forEachVodObject(path: String, action: (JSONObject) -> Unit): Boolean =
+        withContext(Dispatchers.IO) { fetchObjects("$baseUrl/api/vod/$path", action) }
+
+    /** A VOD object (provider information of a movie or a series), null when unavailable. */
+    suspend fun getVodObject(path: String): JSONObject? = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("$baseUrl/api/vod/$path").get().build()
+        try {
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) return@executeCancellable null
+                JSONObject(HttpClients.jsonString(response.body))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            null
+        }
+    }
+
+    /** Artwork of a VOD object ("movies/12/image/"), served without authentication. */
+    fun vodImageUrl(path: String): String = "$baseUrl/api/vod/$path"
+
+    /** Proxy URL of a movie or an episode ("movie" / "episode"), played with the API key like the live streams. */
+    fun vodStreamUrl(type: String, uuid: String): String = "$baseUrl/proxy/vod/$type/$uuid"
+
     /** Proxy URL of a single Dispatcharr stream. */
     fun proxyStreamUrl(streamHash: String): String = "$baseUrl/proxy/ts/stream/$streamHash?skip_redirect=true"
 
@@ -484,5 +557,7 @@ class DispatcharrClient(
         const val DEFAULT_USER_AGENT = HttpClients.DEFAULT_USER_AGENT
         private const val ARTWORK_PAGE_SIZE = 500
         private const val MAX_ARTWORK_PAGES = 6
+        private const val VOD_PAGE_SIZE = 100
+        private const val VOD_PARALLEL_PAGES = 8
     }
 }

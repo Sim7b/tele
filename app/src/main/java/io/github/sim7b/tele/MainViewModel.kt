@@ -31,6 +31,7 @@ import io.github.sim7b.tele.data.remote.HttpClients
 import io.github.sim7b.tele.data.remote.M3uClient
 import io.github.sim7b.tele.data.remote.XtreamClient
 import io.github.sim7b.tele.data.storage.SettingsRepository
+import io.github.sim7b.tele.data.vod.VodRepository
 import io.github.sim7b.tele.data.toUiText
 import io.github.sim7b.tele.playback.TvPlayerManager
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +67,8 @@ import java.util.Locale
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val configRepository = SettingsRepository(application)
+    // Movies and series module: loaded when its screen opens (off by default)
+    val vod = VodRepository(configRepository, viewModelScope)
     // Connection test from a source form (each loaded Dispatcharr source has its own client)
     private val testClient = DispatcharrClient()
 
@@ -164,6 +167,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val streamsCache = ConcurrentHashMap<String, Pair<Long, List<StreamSource>>>()
 
     init {
+        viewModelScope.launch(Dispatchers.IO) { configRepository.vodStore.load() }
         viewModelScope.launch {
             configRepository.enabledConfigs.collect { configs -> syncSources(configs) }
         }

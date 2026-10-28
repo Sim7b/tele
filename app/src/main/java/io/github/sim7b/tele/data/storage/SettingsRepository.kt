@@ -12,6 +12,9 @@ import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.PreviewDelay
+import io.github.sim7b.tele.data.vod.VodDisplay
+import io.github.sim7b.tele.data.vod.VodEntry
+import io.github.sim7b.tele.data.vod.VodIndex
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.StreamSource
@@ -81,6 +84,15 @@ class SettingsRepository(context: Context) {
     private fun guideCache(configId: String) =
         GuideCache(File(cacheDir, "guide_cache_${configId.filter { it.isLetterOrDigit() || it == '-' }}.jsonl"))
 
+    private fun vodCatalogCache(configId: String) =
+        VodCatalogCache(File(cacheDir, "vod_catalog_${configId.filter { it.isLetterOrDigit() || it == '-' }}.jsonl"), secrets)
+
+    /** Playback positions and "my list" of the movies and series module (load it off the main thread). */
+    val vodStore = VodStore(File(cacheDir, VOD_STATE_FILE))
+
+    /** TMDB facts of the movies and series (countries, studios), indexed in the background. */
+    val vodIndex = VodIndex(File(cacheDir, VOD_INDEX_FILE))
+
     private val _configs = MutableStateFlow<List<SourceConfig>>(emptyList())
     val configs: StateFlow<List<SourceConfig>> = _configs.asStateFlow()
 
@@ -142,6 +154,14 @@ class SettingsRepository(context: Context) {
     private val _audioLanguage = MutableStateFlow<String?>(null)
     val audioLanguage: StateFlow<String?> = _audioLanguage.asStateFlow()
 
+    // Movies and series module (off by default) and the optional TMDB API key that completes its sheets
+    private val _vodEnabled = MutableStateFlow(false)
+    val vodEnabled: StateFlow<Boolean> = _vodEnabled.asStateFlow()
+    private val _tmdbKey = MutableStateFlow("")
+    val tmdbKey: StateFlow<String> = _tmdbKey.asStateFlow()
+    private val _vodDisplay = MutableStateFlow(VodDisplay())
+    val vodDisplay: StateFlow<VodDisplay> = _vodDisplay.asStateFlow()
+
     // Quick start guide already shown (or skipped): it only opens by itself on the first launch
     private val _guideSeen = MutableStateFlow(false)
     val guideSeen: StateFlow<Boolean> = _guideSeen.asStateFlow()
@@ -192,6 +212,22 @@ class SettingsRepository(context: Context) {
 
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
+        _vodEnabled.value = prefs.getBoolean(KEY_VOD_ENABLED, false)
+        _vodDisplay.value = prefs.getString(KEY_VOD_DISPLAY, null)?.let { saved ->
+            try {
+                VodDisplay.fromJson(JSONObject(saved))
+            } catch (e: Exception) {
+                null
+            }
+        } ?: VodDisplay()
+        _tmdbKey.value = prefs.getString(KEY_TMDB_KEY, null)?.let { stored ->
+            try {
+                secrets.decrypt(stored)
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to read the TMDB key: ${e.javaClass.simpleName}")
+                null
+            }
+        }.orEmpty()
         // Previous versions: preview on (after 2 s) or off
         _previewDelay.value = PreviewDelay.fromName(prefs.getString(KEY_PREVIEW_DELAY, null))
             ?: if (prefs.getBoolean(KEY_CHANNEL_PREVIEW, true)) PreviewDelay.DEFAULT else PreviewDelay.OFF
@@ -324,6 +360,25 @@ class SettingsRepository(context: Context) {
         _previewDelay.value = delay
     }
 
+    fun setVodDisplay(display: VodDisplay) {
+        prefs.edit().putString(KEY_VOD_DISPLAY, display.toJson().toString()).apply()
+        _vodDisplay.value = display
+    }
+
+    fun setVodEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VOD_ENABLED, enabled).apply()
+        _vodEnabled.value = enabled
+    }
+
+    /** TMDB API key, encrypted like the source credentials (blank: removed). */
+    fun setTmdbKey(key: String) {
+        val trimmed = key.trim()
+        prefs.edit().apply {
+            if (trimmed.isEmpty()) remove(KEY_TMDB_KEY) else putString(KEY_TMDB_KEY, secrets.encrypt(trimmed))
+        }.apply()
+        _tmdbKey.value = trimmed
+    }
+
     fun setGuideSeen() {
         prefs.edit().putBoolean(KEY_GUIDE_SEEN, true).apply()
         _guideSeen.value = true
@@ -447,6 +502,24 @@ class SettingsRepository(context: Context) {
             null
         }
 
+    /** Saves the movies and series of source [configId] (to call off the main thread). */
+    fun saveVodCatalog(configId: String, savedAt: Long, entries: List<VodEntry>) {
+        try {
+            vodCatalogCache(configId).save(configId, savedAt, entries)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to save the movies and series catalog: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Movies and series of source [configId] as last loaded (to call off the main thread). */
+    fun getVodCatalog(configId: String): CachedVodCatalog? =
+        try {
+            vodCatalogCache(configId).load(configId)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read the movies and series catalog: ${e.javaClass.simpleName}")
+            null
+        }
+
     private fun persistConfigs(list: List<SourceConfig>) {
         val array = JSONArray()
         list.forEach { array.put(it.toJson()) }
@@ -478,6 +551,7 @@ class SettingsRepository(context: Context) {
         forgetSourceData(configId)
         channelCache(configId).clear()
         guideCache(configId).clear()
+        vodCatalogCache(configId).clear()
     }
 
     /** Displayed name of the source groups [groups] ([name] blank: back to the source name). */
@@ -546,6 +620,9 @@ class SettingsRepository(context: Context) {
         put("accent", _accentColor.value.name)
         put("pictureFormat", _pictureFormat.value.name)
         _audioLanguage.value?.let { put("audioLanguage", it) }
+        put("vodEnabled", _vodEnabled.value)
+        put("vodDisplay", _vodDisplay.value.toJson())
+        _tmdbKey.value.takeIf { it.isNotEmpty() }?.let { put("tmdbKey", it) }
         put("selectedStreams", JSONObject().apply {
             _selectedStreams.value.forEach { (channelId, stream) ->
                 put(channelId, JSONObject().put("name", stream.name).put("url", stream.url).put("id", stream.id).put("provider", stream.provider))
@@ -596,6 +673,9 @@ class SettingsRepository(context: Context) {
         enumValue(AppAccentColor.entries.toTypedArray(), "accent")?.let { setAccentColor(it) }
         enumValue(PictureFormat.entries.toTypedArray(), "pictureFormat")?.let { setPictureFormat(it) }
         setAudioLanguage(json.optStringOrNull("audioLanguage"))
+        if (json.has("vodEnabled")) setVodEnabled(json.optBoolean("vodEnabled", false))
+        json.optJSONObject("vodDisplay")?.let { setVodDisplay(VodDisplay.fromJson(it)) }
+        json.optStringOrNull("tmdbKey")?.let { setTmdbKey(it) }
         json.optJSONObject("selectedStreams")?.let { streams ->
             streams.keys().forEach { channelId ->
                 val stream = streams.optJSONObject(channelId) ?: return@forEach
@@ -646,6 +726,11 @@ class SettingsRepository(context: Context) {
         private const val KEY_GUIDE_SEEN = "guide_seen"
         private const val KEY_CHANNEL_PREVIEW = "home_channel_preview"
         private const val KEY_PREVIEW_DELAY = "home_preview_delay"
+        private const val KEY_VOD_ENABLED = "vod_enabled"
+        private const val KEY_VOD_DISPLAY = "vod_display"
+        private const val VOD_STATE_FILE = "vod_state.json"
+        private const val VOD_INDEX_FILE = "vod_tmdb_index.jsonl"
+        private const val KEY_TMDB_KEY = "vod_tmdb_key"
         private const val KEY_PICTURE_FORMAT = "picture_format"
         private const val KEY_AUDIO_LANGUAGE = "audio_language"
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"

@@ -133,10 +133,10 @@ object XtreamClient {
         }
     }
 
-    private fun base(config: SourceConfig): HttpUrl =
+    internal fun base(config: SourceConfig): HttpUrl =
         config.normalizedUrl.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid server address")
 
-    private fun apiUrl(config: SourceConfig, action: String?): HttpUrl =
+    internal fun apiUrl(config: SourceConfig, action: String?): HttpUrl =
         base(config).newBuilder()
             .addPathSegment("player_api.php")
             .addQueryParameter("username", config.username)
@@ -161,7 +161,7 @@ object XtreamClient {
             .toString()
 
     /** Streams the objects of a list action to [action] (see [JsonStreams]). */
-    private suspend fun forEachObject(url: HttpUrl, config: SourceConfig, action: (JSONObject) -> Unit) {
+    internal suspend fun forEachObject(url: HttpUrl, config: SourceConfig, action: (JSONObject) -> Unit) {
         request(url, config).executeCancellable { response ->
             checkResponse(response)
             JsonStreams.forEachObject(response.body.byteStream(), action = action)
@@ -189,7 +189,7 @@ object XtreamClient {
         }
     }
 
-    private suspend fun get(url: HttpUrl, config: SourceConfig): String {
+    internal suspend fun get(url: HttpUrl, config: SourceConfig): String {
         return request(url, config).executeCancellable { response ->
             checkResponse(response)
             val body = HttpClients.jsonString(response.body)
