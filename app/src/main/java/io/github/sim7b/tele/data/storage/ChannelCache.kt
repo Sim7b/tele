@@ -63,16 +63,16 @@ class ChannelCache(private val file: File, private val secrets: SecretBox? = nul
     /** Reader of the cache, decrypted when it starts with the encrypted stream marker. */
     private fun openReader(): BufferedReader {
         val input = BufferedInputStream(file.inputStream())
-        val magic = SecretBox.STREAM_MAGIC
-        input.mark(magic.size)
-        val head = ByteArray(magic.size)
+        val size = SecretBox.STREAM_MAGIC.size
+        input.mark(size)
+        val head = ByteArray(size)
         val read = input.read(head)
-        if (read == magic.size && head.contentEquals(magic)) {
+        if (read == size && SecretBox.isStreamMagic(head)) {
             val box = secrets ?: run {
                 input.close()
                 throw IOException("Encrypted channel cache without a key")
             }
-            return box.decryptingStream(input).bufferedReader()
+            return box.decryptingStream(input, head).bufferedReader()
         }
         input.reset()
         return input.bufferedReader()
