@@ -42,6 +42,7 @@ import androidx.tv.material3.*
 import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.HomeLists
+import io.github.sim7b.tele.ui.vod.VodChip
 import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.StreamSource
 import androidx.activity.compose.BackHandler
@@ -103,6 +104,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenSearch: (voice: Boolean) -> Unit,
     onRefresh: () -> Unit,
+    // Movies and series module, when enabled in the settings
+    onOpenVod: (() -> Unit)? = null,
     // Muted preview of the focused card: focus time before it starts (null: no preview), start / stop (null), video surface
     previewDelayMs: Long? = null,
     onPreviewChannel: (Channel?) -> Unit = {},
@@ -308,7 +311,10 @@ fun HomeScreen(
                         color = LiveRed.copy(alpha = 0.85f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 420.dp)
+                        // Shrinks with the room left: the buttons on the right always stay on screen
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .widthIn(max = 420.dp)
                     )
                     Spacer(modifier = Modifier.width(18.dp))
                 }
@@ -316,6 +322,11 @@ fun HomeScreen(
                 streamSlots?.let { slots ->
                     StreamSlotsBadge(slots)
                     Spacer(modifier = Modifier.width(14.dp))
+                }
+
+                onOpenVod?.let { openVod ->
+                    VodChip(label = stringResource(R.string.home_open_vod), selected = false, onClick = openVod)
+                    Spacer(modifier = Modifier.width(10.dp))
                 }
 
                 if (hasContent) {

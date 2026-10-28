@@ -10,6 +10,13 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import io.github.sim7b.tele.data.model.PreviewDelay
+import io.github.sim7b.tele.data.vod.PosterSize
+import io.github.sim7b.tele.data.vod.VodFilter
+import io.github.sim7b.tele.data.vod.VodKind
+import io.github.sim7b.tele.data.vod.VodRow
+import io.github.sim7b.tele.data.vod.VodSort
+import io.github.sim7b.tele.ui.vod.countryName
+import io.github.sim7b.tele.ui.vod.sortLabel
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import io.github.sim7b.tele.R
@@ -58,6 +65,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -101,6 +109,7 @@ private enum class SettingsPage(@param:StringRes val labelRes: Int, @param:Strin
     CHANNELS(R.string.settings_nav_channels, R.string.settings_nav_channels_hint, Icons.Filled.Star),
     PLAYBACK(R.string.settings_nav_playback, R.string.settings_nav_playback_hint, Icons.Filled.PlayArrow),
     APPEARANCE(R.string.settings_nav_appearance, R.string.settings_nav_appearance_hint, Icons.Filled.Create),
+    VOD(R.string.settings_nav_vod, R.string.settings_nav_vod_hint, Icons.Filled.AccountBox),
     SYSTEM(R.string.settings_nav_system, R.string.settings_nav_system_hint, Icons.Filled.Info)
 }
 
@@ -134,6 +143,10 @@ fun SettingsScreen(
     val currentAccent by repository.accentColor.collectAsState()
     val currentQuality by repository.qualityPreference.collectAsState()
     val previewDelay by repository.previewDelay.collectAsState()
+    val vodEnabled by repository.vodEnabled.collectAsState()
+    val tmdbKey by repository.tmdbKey.collectAsState()
+    val vodDisplay by repository.vodDisplay.collectAsState()
+    var editingTmdbKey by remember { mutableStateOf(false) }
     val currentBouquet by repository.bouquet.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
@@ -523,6 +536,152 @@ fun SettingsScreen(
                                 }
                             }
 
+                            SettingsPage.VOD -> {
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_vod_title),
+                                        description = stringResource(R.string.settings_vod_description)
+                                    ) {
+                                        OptionGrid(listOf(true, false), columns = 2) { enabled, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(if (enabled) R.string.settings_vod_on else R.string.settings_vod_off),
+                                                description = stringResource(if (enabled) R.string.settings_vod_on_description else R.string.settings_vod_off_description),
+                                                selected = vodEnabled == enabled,
+                                                onClick = { repository.setVodEnabled(enabled) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_tmdb_title),
+                                        description = stringResource(R.string.settings_tmdb_description)
+                                    ) {
+                                        Text(
+                                            text = stringResource(if (tmdbKey.isBlank()) R.string.settings_tmdb_none else R.string.settings_tmdb_saved),
+                                            fontSize = 12.sp,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(bottom = 10.dp)
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            ActionButton(
+                                                label = stringResource(R.string.settings_tmdb_enter),
+                                                icon = Icons.Filled.Edit,
+                                                onClick = { editingTmdbKey = true }
+                                            )
+                                            if (tmdbKey.isNotBlank()) {
+                                                ActionButton(
+                                                    label = stringResource(R.string.settings_tmdb_remove),
+                                                    icon = Icons.Filled.Delete,
+                                                    destructive = true,
+                                                    onClick = { repository.setTmdbKey("") }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                // Rows of the movies and series home, each shown or hidden
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_vod_rows_title),
+                                        description = stringResource(R.string.settings_vod_rows_description)
+                                    ) {
+                                        OptionGrid(VodRow.Kind.entries, columns = 3) { kind, cellModifier ->
+                                            OptionButton(
+                                                label = vodRowLabel(kind),
+                                                selected = kind !in vodDisplay.hiddenRows,
+                                                onClick = {
+                                                    val hidden = vodDisplay.hiddenRows
+                                                    repository.setVodDisplay(vodDisplay.copy(hiddenRows = if (kind in hidden) hidden - kind else hidden + kind))
+                                                },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_vod_poster_title),
+                                        description = stringResource(R.string.settings_vod_poster_description)
+                                    ) {
+                                        OptionGrid(PosterSize.entries, columns = 3) { size, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(
+                                                    when (size) {
+                                                        PosterSize.SMALL -> R.string.settings_vod_poster_small
+                                                        PosterSize.NORMAL -> R.string.settings_vod_poster_normal
+                                                        PosterSize.LARGE -> R.string.settings_vod_poster_large
+                                                    }
+                                                ),
+                                                selected = size == vodDisplay.posterSize,
+                                                onClick = { repository.setVodDisplay(vodDisplay.copy(posterSize = size)) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_vod_theater_title),
+                                        description = stringResource(R.string.settings_vod_theater_description)
+                                    ) {
+                                        OptionGrid(listOf(false, true), columns = 2) { hide, cellModifier ->
+                                            OptionButton(
+                                                label = stringResource(if (hide) R.string.settings_vod_theater_hide else R.string.settings_vod_theater_show),
+                                                selected = vodDisplay.hideTheater == hide,
+                                                onClick = { repository.setVodDisplay(vodDisplay.copy(hideTheater = hide)) },
+                                                modifier = cellModifier
+                                            )
+                                        }
+                                    }
+                                }
+                                // Filters the Movies and Series tabs open with
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_vod_defaults_title),
+                                        description = stringResource(R.string.settings_vod_defaults_description)
+                                    ) {
+                                        val countries = remember {
+                                            listOf<String?>(null) + (listOf(java.util.Locale.getDefault().country) + DEFAULT_COUNTRIES).filter { it.length == 2 }.distinct()
+                                        }
+                                        listOf(VodKind.MOVIE to R.string.vod_tab_movies, VodKind.SERIES to R.string.vod_tab_series).forEach { (kind, labelRes) ->
+                                            val current = vodDisplay.defaults[kind] ?: VodFilter()
+                                            fun update(filter: VodFilter) = repository.setVodDisplay(vodDisplay.copy(defaults = vodDisplay.defaults + (kind to filter)))
+                                            Text(
+                                                text = stringResource(labelRes) + " · " + stringResource(R.string.settings_vod_default_country),
+                                                fontSize = 12.sp,
+                                                color = TextSecondary,
+                                                modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
+                                            )
+                                            OptionGrid(countries, columns = 5) { country, cellModifier ->
+                                                OptionButton(
+                                                    label = country?.let { countryName(it) } ?: stringResource(R.string.vod_filter_any),
+                                                    selected = current.country == country,
+                                                    onClick = { update(current.copy(country = country)) },
+                                                    modifier = cellModifier
+                                                )
+                                            }
+                                            Text(
+                                                text = stringResource(labelRes) + " · " + stringResource(R.string.settings_vod_default_sort),
+                                                fontSize = 12.sp,
+                                                color = TextSecondary,
+                                                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+                                            )
+                                            OptionGrid(VodSort.entries, columns = 5) { sort, cellModifier ->
+                                                OptionButton(
+                                                    label = sortLabel(sort),
+                                                    selected = current.sort == sort,
+                                                    onClick = { update(current.copy(sort = sort)) },
+                                                    modifier = cellModifier
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                        }
+                                    }
+                                }
+                            }
+
                             SettingsPage.SYSTEM -> {
                                 item {
                                     UpdateSection(
@@ -552,6 +711,16 @@ fun SettingsScreen(
             }
         }
 
+        if (editingTmdbKey) {
+            TmdbKeyDialog(
+                accentColorObj = accentColorObj,
+                onDismiss = { editingTmdbKey = false },
+                onSave = { key ->
+                    repository.setTmdbKey(key)
+                    editingTmdbKey = false
+                }
+            )
+        }
         if (showUnmatched) {
             UnmatchedChannelsDialog(names = unmatchedChannels, onDismiss = { showUnmatched = false })
         }
@@ -581,6 +750,64 @@ fun SettingsScreen(
         }
     }
 }
+
+/** Entry of the TMDB API key: hidden as it is typed, never shown back. */
+@Composable
+private fun TmdbKeyDialog(accentColorObj: Color, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var key by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            modifier = Modifier
+                .width(560.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(SurfaceDark)
+                .padding(horizontal = 26.dp, vertical = 22.dp)
+        ) {
+            Text(text = stringResource(R.string.settings_tmdb_dialog_title), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(modifier = Modifier.height(14.dp))
+            TvInputField(
+                label = stringResource(R.string.settings_tmdb_dialog_hint),
+                value = key,
+                onValueChange = { key = it },
+                placeholder = stringResource(R.string.settings_tmdb_dialog_hint),
+                accentColorObj = accentColorObj,
+                secret = true
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ActionButton(
+                    label = stringResource(R.string.settings_tmdb_save),
+                    icon = Icons.Filled.Check,
+                    primary = true,
+                    onClick = { if (key.isNotBlank()) onSave(key) }
+                )
+                ActionButton(label = stringResource(R.string.settings_tmdb_cancel), icon = Icons.Filled.Close, onClick = onDismiss)
+            }
+        }
+    }
+}
+
+/** Countries offered as default filter, after the TV's own. */
+private val DEFAULT_COUNTRIES = listOf("FR", "US", "GB", "BE", "CH", "CA", "KR", "JP", "ES", "IT", "DE", "IN")
+
+@Composable
+private fun vodRowLabel(kind: VodRow.Kind): String = stringResource(
+    when (kind) {
+        VodRow.Kind.CONTINUE -> R.string.vod_row_continue
+        VodRow.Kind.TRENDING -> R.string.vod_row_trending
+        VodRow.Kind.MY_LIST -> R.string.vod_row_my_list
+        VodRow.Kind.COLLECTION -> R.string.settings_vod_collections_row
+        VodRow.Kind.RECENT_MOVIES -> R.string.vod_row_recent_movies
+        VodRow.Kind.RECENT_SERIES -> R.string.vod_row_recent_series
+        VodRow.Kind.POPULAR_MOVIES -> R.string.vod_row_popular_movies
+        VodRow.Kind.POPULAR_SERIES -> R.string.vod_row_popular_series
+        VodRow.Kind.NOW_PLAYING -> R.string.vod_row_now_playing
+        VodRow.Kind.UPCOMING -> R.string.vod_row_upcoming
+        VodRow.Kind.TOP_MOVIES -> R.string.vod_row_top_movies
+        VodRow.Kind.TOP_SERIES -> R.string.vod_row_top_series
+        VodRow.Kind.GENRE -> R.string.settings_vod_genres_row
+    }
+)
 
 @Composable
 private fun previewDelayLabel(delay: PreviewDelay): String = when (delay) {

@@ -58,7 +58,7 @@ private const val SEARCH_COLUMNS = 4
 private const val SEARCH_DEBOUNCE_MS = 150L
 
 // Material "Mic" icon (material-icons-core does not include it, the extended set is very large)
-private val MicIcon: ImageVector by lazy {
+internal val MicIcon: ImageVector by lazy {
     ImageVector.Builder(name = "Mic", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         .addPath(
             pathData = addPathNodes(
@@ -71,7 +71,7 @@ private val MicIcon: ImageVector by lazy {
 }
 
 /** Intent of the system speech recognition (Google on Android TV). */
-private fun speechIntent(prompt: String): Intent =
+internal fun speechIntent(prompt: String): Intent =
     Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
@@ -231,11 +231,12 @@ fun SearchScreen(
 
 /** Text field of the search: the TV keyboard's "Search" key (or Down) moves to the results. */
 @Composable
-private fun SearchField(
+internal fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     onSubmit: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    placeholder: String = stringResource(R.string.search_placeholder)
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(50)
@@ -276,7 +277,7 @@ private fun SearchField(
                 Box(modifier = Modifier.weight(1f)) {
                     if (query.isEmpty()) {
                         Text(
-                            text = stringResource(R.string.search_placeholder),
+                            text = placeholder,
                             fontSize = 18.sp,
                             color = TextSecondary.copy(alpha = 0.6f)
                         )
@@ -289,7 +290,7 @@ private fun SearchField(
 }
 
 @Composable
-private fun SearchHint(text: String) {
+internal fun SearchHint(text: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()

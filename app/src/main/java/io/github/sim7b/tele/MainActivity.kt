@@ -41,6 +41,21 @@ import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.screens.SettingsScreen
 import io.github.sim7b.tele.ui.screens.WelcomeScreen
 import io.github.sim7b.tele.ui.theme.TeleTheme
+import io.github.sim7b.tele.ui.vod.VodDetailScreen
+import io.github.sim7b.tele.ui.vod.VodHomeScreen
+import io.github.sim7b.tele.ui.vod.VodPlayRequest
+import io.github.sim7b.tele.ui.vod.VodPlayerScreen
+import io.github.sim7b.tele.ui.vod.VodSearchScreen
+import io.github.sim7b.tele.ui.vod.VodTitleActions
+import io.github.sim7b.tele.ui.vod.LocalPosterWidth
+import androidx.compose.ui.unit.dp
+import io.github.sim7b.tele.data.storage.VodStore
+import io.github.sim7b.tele.data.vod.VodFilter
+import io.github.sim7b.tele.data.vod.VodKind
+import io.github.sim7b.tele.data.vod.VodRows
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import io.github.sim7b.tele.update.UpdateState
 import io.github.sim7b.tele.update.UpdateViewModel
 import kotlinx.coroutines.Job
@@ -60,10 +75,18 @@ sealed class CurrentScreen {
 
     /** Playback; Back returns to [returnTo] (the home screen, or the search the channel was opened from). */
     data class Player(val channel: Channel, val returnTo: CurrentScreen = Home) : CurrentScreen()
+
+    /** Movies and series: library, sheet of a title, playback of a movie or an episode. */
+    object Vod : CurrentScreen()
+    object VodSearch : CurrentScreen()
+    /** Sheet of a title; Back returns to [returnTo] (the library, or the search it was opened from). */
+    data class VodDetail(val titleKey: String, val returnTo: CurrentScreen = Vod) : CurrentScreen()
+    data class VodPlayer(val request: VodPlayRequest, val returnTo: CurrentScreen) : CurrentScreen()
 }
 
 private const val WELCOME_MIN_MS = 1_800L
 private const val WELCOME_MAX_MS = 15_000L
+private const val VOD_RELEASE_DELAY_MS = 5 * 60 * 1000L
 
 /**
  * The app's single activity: hosts the Compose UI (home, player, settings),
@@ -95,6 +118,9 @@ class MainActivity : ComponentActivity() {
             val streamSlots by viewModel.streamSlots.collectAsState()
             val updateState by updateViewModel.state.collectAsState()
             val previewDelay by configRepository.previewDelay.collectAsState()
+            // Movies and series module (its library and positions are read in its own screens only:
+            // their updates must not recompose the live TV ones)
+            val vodEnabled by configRepository.vodEnabled.collectAsState()
             val pictureFormat by configRepository.pictureFormat.collectAsState()
             val categoryOrder by configRepository.categoryOrder.collectAsState()
             // Audio language chosen in the playback options: preferred for every channel
@@ -105,6 +131,38 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
 
             var currentScreen by remember { mutableStateOf<CurrentScreen>(CurrentScreen.Home) }
+            // Filters of the Movies and Series tabs, kept while browsing sheets; the defaults of the settings first
+            val vodDisplay by configRepository.vodDisplay.collectAsState()
+            var vodFilters by remember(vodDisplay.defaults) { mutableStateOf(vodDisplay.defaults) }
+            LaunchedEffect(vodDisplay.hideTheater) { viewModel.vod.reapply() }
+            // Collections are saved off the main thread
+            fun vodStore(change: VodStore.() -> Unit) {
+                lifecycleScope.launch(Dispatchers.IO) { configRepository.vodStore.change() }
+            }
+            val vodActions = remember {
+                VodTitleActions(
+                    toggleMyList = { key -> vodStore { toggleMyList(key) } },
+                    toggleInCollection = { id, key -> vodStore { toggleInCollection(id, key) } },
+                    createCollectionWith = { name, key ->
+                        vodStore {
+                            val id = createCollection(name)
+                            toggleInCollection(id, key)
+                        }
+                    },
+                    removeFromContinue = { key -> vodStore { clearTitleProgress(key) } },
+                    setWatched = { title, watched -> vodStore { if (watched) markWatched(title.key, title.key) else clearProgress(title.key) } }
+                )
+            }
+            // The movies and series library is freed after a while on the live TV screens
+            val inVod = currentScreen.let {
+                it is CurrentScreen.Vod || it is CurrentScreen.VodSearch || it is CurrentScreen.VodDetail || it is CurrentScreen.VodPlayer
+            }
+            LaunchedEffect(inVod) {
+                if (!inVod) {
+                    delay(VOD_RELEASE_DELAY_MS)
+                    viewModel.vod.release()
+                }
+            }
             // Back on the home screen: refresh the slots right away (leaving the player frees one)
             LaunchedEffect(currentScreen is CurrentScreen.Home) {
                 if (currentScreen is CurrentScreen.Home) viewModel.refreshStreamSlots()
@@ -272,6 +330,7 @@ class MainActivity : ComponentActivity() {
                                     onRefresh = {
                                         viewModel.refresh()
                                     },
+                                    onOpenVod = if (vodEnabled) ({ currentScreen = CurrentScreen.Vod }) else null,
                                     previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
                                     previewSurface = { PreviewVideo(playerManager) }
@@ -312,6 +371,129 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             }
+                        }
+                        is CurrentScreen.Vod -> {
+                            LaunchedEffect(Unit) { viewModel.vod.open() }
+                            val vodLibrary by viewModel.vod.library.collectAsState()
+                            val vodProgress by configRepository.vodStore.progress.collectAsState()
+                            val vodMyList by configRepository.vodStore.myList.collectAsState()
+                            val vodCollections by configRepository.vodStore.collections.collectAsState()
+                            val vodRankings by viewModel.vod.rankings.collectAsState()
+                            val indexVersion by viewModel.vod.index.version.collectAsState()
+                            val indexProgress by viewModel.vod.index.progress.collectAsState()
+                            val tmdbKey by configRepository.tmdbKey.collectAsState()
+                            saveableStateHolder.SaveableStateProvider("vod") {
+                                CompositionLocalProvider(LocalPosterWidth provides vodDisplay.posterSize.widthDp.dp) {
+                                VodHomeScreen(
+                                    library = vodLibrary,
+                                    progress = vodProgress,
+                                    myList = vodMyList,
+                                    collections = vodCollections,
+                                    rankings = vodRankings,
+                                    indexVersion = indexVersion,
+                                    indexProgress = indexProgress,
+                                    facts = { viewModel.vod.index.all() },
+                                    hasTmdbKey = tmdbKey.isNotBlank(),
+                                    filters = vodFilters,
+                                    onFiltersChange = { kind, filter -> vodFilters = vodFilters + (kind to filter) },
+                                    onOpenTitle = { title -> currentScreen = CurrentScreen.VodDetail(title.key) },
+                                    onOpenSearch = { currentScreen = CurrentScreen.VodSearch },
+                                    onCreateCollection = { name -> vodStore { createCollection(name) } },
+                                    onRenameCollection = { id, name -> vodStore { renameCollection(id, name) } },
+                                    onDeleteCollection = { id -> vodStore { deleteCollection(id) } },
+                                    onRefresh = { viewModel.vod.refresh() },
+                                    onBack = { currentScreen = CurrentScreen.Home },
+                                    findPoster = { title -> viewModel.vod.posterFor(title) },
+                                    hiddenRows = vodDisplay.hiddenRows,
+                                    actions = vodActions
+                                )
+                                }
+                            }
+                        }
+                        is CurrentScreen.VodSearch -> {
+                            val vodLibrary by viewModel.vod.library.collectAsState()
+                            val tmdbKey by configRepository.tmdbKey.collectAsState()
+                            saveableStateHolder.SaveableStateProvider("vod-search") {
+                                CompositionLocalProvider(LocalPosterWidth provides vodDisplay.posterSize.widthDp.dp) {
+                                VodSearchScreen(
+                                    titles = vodLibrary.titles,
+                                    facts = { viewModel.vod.index.all() },
+                                    tmdbKey = tmdbKey.takeIf { it.isNotBlank() },
+                                    onOpenTitle = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.VodSearch) },
+                                    onBack = {
+                                        saveableStateHolder.removeState("vod-search")
+                                        currentScreen = CurrentScreen.Vod
+                                    },
+                                    findPoster = { title -> viewModel.vod.posterFor(title) }
+                                )
+                                }
+                            }
+                        }
+                        is CurrentScreen.VodDetail -> {
+                            val vodLibrary by viewModel.vod.library.collectAsState()
+                            val vodProgress by configRepository.vodStore.progress.collectAsState()
+                            val vodMyList by configRepository.vodStore.myList.collectAsState()
+                            val vodCollections by configRepository.vodStore.collections.collectAsState()
+                            val title = vodLibrary.byKey[screen.titleKey]
+                            if (title == null) {
+                                LaunchedEffect(Unit) { currentScreen = CurrentScreen.Vod }
+                            } else {
+                                var details by remember(screen.titleKey) { mutableStateOf(viewModel.vod.cachedDetails(screen.titleKey)) }
+                                var failed by remember(screen.titleKey) { mutableStateOf(false) }
+                                var attempt by remember(screen.titleKey) { mutableIntStateOf(0) }
+                                LaunchedEffect(screen.titleKey, attempt) {
+                                    if (details != null) return@LaunchedEffect
+                                    failed = false
+                                    try {
+                                        details = viewModel.vod.details(title)
+                                    } catch (e: Exception) {
+                                        if (e is CancellationException) throw e
+                                        failed = true
+                                    }
+                                }
+                                VodDetailScreen(
+                                    title = title,
+                                    details = details,
+                                    loadFailed = failed,
+                                    progress = vodProgress,
+                                    inMyList = title.key in vodMyList,
+                                    collections = vodCollections,
+                                    onPlay = { request -> currentScreen = CurrentScreen.VodPlayer(request, returnTo = screen) },
+                                    onToggleMyList = { vodStore { toggleMyList(title.key) } },
+                                    onToggleCollection = { id -> vodStore { toggleInCollection(id, title.key) } },
+                                    onCreateCollection = { name ->
+                                        vodStore {
+                                            val id = createCollection(name)
+                                            toggleInCollection(id, title.key)
+                                        }
+                                    },
+                                    onRetry = { attempt++ },
+                                    onBack = { currentScreen = screen.returnTo },
+                                    onSetEpisodeWatched = { key, watched ->
+                                        vodStore { if (watched) markWatched(key, title.key) else clearProgress(key) }
+                                    }
+                                )
+                            }
+                        }
+                        is CurrentScreen.VodPlayer -> {
+                            val request = screen.request
+                            VodPlayerScreen(
+                                request = request,
+                                playerManager = playerManager,
+                                streamAuths = streamAuths,
+                                userAgent = configsById[request.sourceId]?.customUserAgent,
+                                onProgress = { position, duration ->
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        configRepository.vodStore.saveProgress(
+                                            key = VodRows.progressKey(request.titleKey, request.episodeKey),
+                                            titleKey = request.titleKey,
+                                            positionMs = position,
+                                            durationMs = duration
+                                        )
+                                    }
+                                },
+                                onBack = { currentScreen = screen.returnTo }
+                            )
                         }
                         is CurrentScreen.Player -> {
                             // Up-to-date version of the channel (current EPG program, chosen stream)

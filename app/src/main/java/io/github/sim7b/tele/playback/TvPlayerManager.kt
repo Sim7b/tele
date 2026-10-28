@@ -105,6 +105,8 @@ class TvPlayerManager(private val context: Context) {
     private var forceHls = false
     // Start of the current channel switch (measures the time to the first frame)
     private var zapStartedAt = 0L
+    // Movie or episode (not a live stream): played from this position, and resumed where it stopped on a retry
+    private var vodStartMs: Long? = null
     private val retryRunnable = Runnable { prepareCurrent() }
 
     private val _isPlaying = MutableStateFlow(false)
@@ -312,6 +314,15 @@ class TvPlayerManager(private val context: Context) {
      * before the error is shown.
      */
     fun playStream(url: String, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
+        start(url, customUserAgent, auths, fallbacks, vodStart = null)
+    }
+
+    /** Plays a movie or an episode from [startPositionMs]; [fallbacks] are its other files. */
+    fun playVod(url: String, startPositionMs: Long, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
+        start(url, customUserAgent, auths, fallbacks, vodStart = startPositionMs.coerceAtLeast(0))
+    }
+
+    private fun start(url: String, customUserAgent: String?, auths: List<ApiKeyAuth>, fallbacks: List<String>, vodStart: Long?) {
         // The home preview of this very channel keeps playing: the sound comes back without a new start
         val player = exoPlayer
         if (previewing && url == currentUrl && player != null && _error.value == null &&
@@ -332,6 +343,7 @@ class TvPlayerManager(private val context: Context) {
                 .build()
         }
         _tracks.value = PlaybackTracks()
+        vodStartMs = vodStart
         fallbackUrls.clear()
         fallbackUrls.addAll(fallbacks)
         zapStartedAt = SystemClock.elapsedRealtime()
@@ -422,7 +434,14 @@ class TvPlayerManager(private val context: Context) {
                 .createMediaSource(mediaItem)
         }
 
-        player.setMediaSource(mediaSource)
+        // A movie restarts where it stopped (a live stream always at its live edge)
+        val start = vodStartMs
+        if (start != null) {
+            if (hasPlayed) vodStartMs = player.currentPosition.coerceAtLeast(start)
+            player.setMediaSource(mediaSource, vodStartMs ?: start)
+        } else {
+            player.setMediaSource(mediaSource)
+        }
         player.prepare()
         player.play()
     }

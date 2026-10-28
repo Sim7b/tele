@@ -39,9 +39,10 @@ object M3uParser {
 
     /**
      * Reads the playlist line by line (provider playlists often exceed 50,000 entries).
-     * Lines are cut to [MAX_LINE_LENGTH] characters and the reading stops at [maxEntries] live channels.
+     * Lines are cut to [MAX_LINE_LENGTH] characters and the reading stops at [maxEntries] live channels,
+     * or movies and episodes with [vod].
      */
-    fun parse(input: InputStream, maxBytes: Long = MAX_BYTES, maxEntries: Int = MAX_ENTRIES): M3uPlaylist {
+    fun parse(input: InputStream, maxBytes: Long = MAX_BYTES, maxEntries: Int = MAX_ENTRIES, vod: Boolean = false): M3uPlaylist {
         val reader = BoundedLineReader(InputStreamReader(CappedInputStream(input, maxBytes), Charsets.UTF_8), MAX_LINE_LENGTH)
         val entries = ArrayList<M3uEntry>()
         val epgUrls = mutableListOf<String>()
@@ -71,7 +72,7 @@ object M3uParser {
                 line.startsWith("#") -> Unit
                 else -> {
                     // URL line: ends the current entry
-                    if (!isVod(line)) {
+                    if (isVod(line) == vod) {
                         val name = title?.takeIf { it.isNotEmpty() }
                             ?: attributes["tvg-name"]?.takeIf { it.isNotBlank() }
                             // Language-neutral fallback: the data layer has no access to the string resources
@@ -112,6 +113,16 @@ object M3uParser {
         }
         return -1
     }
+
+    /** True for a series episode (Xtream /series/ path, or "S01E02" in the name), else a movie. */
+    fun isSeriesEpisode(url: String, name: String): Boolean {
+        val path = url.substringBefore('?').lowercase()
+        if ("/series/" in path) return true
+        if ("/movie/" in path) return false
+        return EPISODE_REGEX.containsMatchIn(name)
+    }
+
+    private val EPISODE_REGEX = """(?i)\bS\d{1,2}\s*[ ._-]?\s*E\d{1,3}\b""".toRegex()
 
     private fun isVod(url: String): Boolean {
         val path = url.substringBefore('?')

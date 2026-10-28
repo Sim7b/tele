@@ -51,10 +51,24 @@ class SecretBoxTest {
         box.encryptingStream(output).bufferedWriter().use { it.write(text) }
         val bytes = output.toByteArray()
 
-        assertTrue(bytes.copyOfRange(0, SecretBox.STREAM_MAGIC.size).contentEquals(SecretBox.STREAM_MAGIC))
+        val head = bytes.copyOfRange(0, SecretBox.STREAM_MAGIC.size)
+        assertTrue(head.contentEquals(SecretBox.STREAM_MAGIC_V2))
         assertFalse(String(bytes, Charsets.ISO_8859_1).contains("user/pass"))
         val input = ByteArrayInputStream(bytes).apply { skip(SecretBox.STREAM_MAGIC.size.toLong()) }
-        assertEquals(text, box.decryptingStream(input).bufferedReader().readText())
+        assertEquals(text, box.decryptingStream(input, head).bufferedReader().readText())
+    }
+
+    @Test
+    fun `streams of the previous versions, encrypted with the Keystore key itself, still read`() {
+        val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding").apply { init(javax.crypto.Cipher.ENCRYPT_MODE, key) }
+        val legacy = ByteArrayOutputStream().apply {
+            write(SecretBox.STREAM_MAGIC)
+            write(cipher.iv.size)
+            write(cipher.iv)
+            write(cipher.doFinal("legacy cache".toByteArray()))
+        }.toByteArray()
+        val input = ByteArrayInputStream(legacy).apply { skip(SecretBox.STREAM_MAGIC.size.toLong()) }
+        assertEquals("legacy cache", box.decryptingStream(input, SecretBox.STREAM_MAGIC).bufferedReader().readText())
     }
 
     @Test
