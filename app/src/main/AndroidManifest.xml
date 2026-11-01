@@ -40,9 +40,10 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.Tele">
 
+        <!-- Exported on purpose: the TV launcher (another app) starts it. Not exported, the app cannot be opened -->
         <activity
             android:name=".MainActivity"
-            android:exported="false"
+            android:exported="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
