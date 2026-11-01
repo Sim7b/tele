@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.10](https://github.com/Sim7b/tele/compare/v0.3.9...v0.3.10) (2026-10-28)
+
+### Features
+
+* **vod:** movies and series library ([2e7a51d](https://github.com/Sim7b/tele/commit/2e7a51dd314209d9d21f5ea008c77fc8ace88e67))
+
+### Performance Improvements
+
+* **storage:** envelope encryption for the encrypted caches ([1028bb2](https://github.com/Sim7b/tele/commit/1028bb264b578a74cf5b9a943cc714dc541479f5))
+
 ## [0.3.9](https://github.com/Sim7b/tele/compare/v0.3.8...v0.3.9) (2026-10-27)
 
 ### Features
