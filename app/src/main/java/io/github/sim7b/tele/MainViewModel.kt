@@ -31,6 +31,8 @@ import io.github.sim7b.tele.data.remote.HttpClients
 import io.github.sim7b.tele.data.remote.M3uClient
 import io.github.sim7b.tele.data.remote.XtreamClient
 import io.github.sim7b.tele.data.storage.SettingsRepository
+import io.github.sim7b.tele.data.subtitles.SubtitleCache
+import io.github.sim7b.tele.data.subtitles.SubtitleRepository
 import io.github.sim7b.tele.data.vod.VodRepository
 import io.github.sim7b.tele.data.toUiText
 import io.github.sim7b.tele.playback.TvPlayerManager
@@ -69,6 +71,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val configRepository = SettingsRepository(application)
     // Movies and series module: loaded when its screen opens (off by default)
     val vod = VodRepository(configRepository, viewModelScope)
+    // Subtitles from OpenSubtitles, on request, kept on the device by movie or episode
+    val subtitles = SubtitleRepository(configRepository, SubtitleCache(java.io.File(application.filesDir, "subtitles")))
     // Connection test from a source form (each loaded Dispatcharr source has its own client)
     private val testClient = DispatcharrClient()
 

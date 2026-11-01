@@ -29,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -82,6 +84,7 @@ import io.github.sim7b.tele.ui.theme.SurfaceDark
 import io.github.sim7b.tele.ui.theme.TextPrimary
 import io.github.sim7b.tele.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.text.Collator
 import java.util.Locale
@@ -94,7 +97,9 @@ private enum class VodTab(val labelRes: Int) {
 }
 
 /** Filter whose values a dialog shows. */
-private enum class FilterField { COUNTRY, STUDIO, GENRE, DECADE, SORT }
+private const val FOCUS_RECOVERY_DELAY_MS = 150L
+
+private enum class FilterField { COUNTRY, STUDIO, GENRE, DECADE, AUDIO, SUBTITLES, SORT }
 
 /**
  * Movies and series home, like Plex: the focused title at the top (wide image, year, genres, summary),
@@ -138,6 +143,7 @@ fun VodHomeScreen(
     var naming by remember { mutableStateOf<VodCollection?>(null) }
     var creating by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
+    val tabFocus = remember { FocusRequester() }
     val kind = when (tab) {
         VodTab.MOVIES -> VodKind.MOVIE
         VodTab.SERIES -> VodKind.SERIES
@@ -163,17 +169,36 @@ fun VodHomeScreen(
         progress.values.filter { !it.finished }.groupBy { it.titleKey }.mapValues { (_, list) -> list.maxBy { it.updatedAt }.fraction }
     }
 
+    // The current tab right away: the button that opened this screen is gone with its focus, and a large
+    // library takes a while to load
+    LaunchedEffect(Unit) {
+        if (rows.isEmpty() && listed.isEmpty()) tabFocus.requestFocusWithRetry()
+    }
     // First card once the content is there
     LaunchedEffect(rows.isNotEmpty(), listed.isNotEmpty(), tab) {
         if ((tab == VodTab.HOME && rows.isNotEmpty()) || (kind != null && listed.isNotEmpty()) || tab == VodTab.COLLECTIONS) {
-            firstFocus.requestFocusWithRetry()
+            firstFocus.requestFocusWithRetry(attempts = 40)
         }
+    }
+    // Content replaced under the focused card (library loaded, rows rebuilt): the focus comes back to
+    // the first card, else the remote would act on nothing
+    val dialogOpen = menuFor != null || pickerFor != null || openFilter != null || naming != null || creating
+    var hadFocus by remember { mutableStateOf(false) }
+    var focusLost by remember { mutableIntStateOf(0) }
+    LaunchedEffect(focusLost) {
+        if (focusLost == 0) return@LaunchedEffect
+        delay(FOCUS_RECOVERY_DELAY_MS)
+        if (!hadFocus && !dialogOpen) firstFocus.requestFocusWithRetry()
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(LocalAppColors.current.background)
+            .onFocusChanged { state ->
+                if (hadFocus && !state.hasFocus && !dialogOpen) focusLost++
+                hadFocus = state.hasFocus
+            }
     ) {
         // Wide image of the focused title, fading into the background
         if (tab == VodTab.HOME) {
@@ -210,7 +235,12 @@ fun VodHomeScreen(
                 )
                 Spacer(modifier = Modifier.width(20.dp))
                 VodTab.entries.forEach { entry ->
-                    VodChip(label = stringResource(entry.labelRes), selected = entry == tab, onClick = { tab = entry })
+                    VodChip(
+                        label = stringResource(entry.labelRes),
+                        selected = entry == tab,
+                        onClick = { tab = entry },
+                        modifier = if (entry == tab) Modifier.focusRequester(tabFocus) else Modifier
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Spacer(modifier = Modifier.weight(1f))
@@ -382,13 +412,35 @@ fun VodHomeScreen(
             else -> null
         }
         when (field) {
-            FilterField.COUNTRY -> FilterDialog(
+            // Several countries: the dialog stays open while they are toggled
+            FilterField.COUNTRY -> MultiFilterDialog(
                 title = stringResource(R.string.vod_filter_country),
                 subtitle = tmdbNote,
                 options = options.countries,
-                selected = filter.country,
+                selected = filter.countries,
                 label = { countryName(it) },
-                onSelect = { onFiltersChange(kind, filter.copy(country = it)); close() },
+                onToggle = { code ->
+                    onFiltersChange(kind, filter.copy(countries = if (code in filter.countries) filter.countries - code else filter.countries + code))
+                },
+                onClear = { onFiltersChange(kind, filter.copy(countries = emptySet())); close() },
+                onDismiss = close
+            )
+            FilterField.AUDIO -> FilterDialog(
+                title = stringResource(R.string.vod_filter_audio),
+                subtitle = stringResource(R.string.vod_filter_languages_note),
+                options = options.audio,
+                selected = filter.audio,
+                label = { languageName(it) ?: it },
+                onSelect = { onFiltersChange(kind, filter.copy(audio = it)); close() },
+                onDismiss = close
+            )
+            FilterField.SUBTITLES -> FilterDialog(
+                title = stringResource(R.string.vod_filter_subtitles),
+                subtitle = stringResource(R.string.vod_filter_languages_note),
+                options = options.subtitles,
+                selected = filter.subtitles,
+                label = { languageName(it) ?: it },
+                onSelect = { onFiltersChange(kind, filter.copy(subtitles = it)); close() },
                 onDismiss = close
             )
             FilterField.STUDIO -> FilterDialog(
@@ -538,9 +590,24 @@ private fun FilterBar(filter: VodFilter, count: Int, onOpen: (FilterField) -> Un
     ) {
         item {
             VodChip(
-                label = stringResource(R.string.vod_filter_country) + (filter.country?.let { " : " + countryName(it) } ?: " ▾"),
-                selected = filter.country != null,
+                label = stringResource(R.string.vod_filter_country) +
+                    (filter.countries.takeIf { it.isNotEmpty() }?.let { " : " + countriesLabel(it) } ?: " ▾"),
+                selected = filter.countries.isNotEmpty(),
                 onClick = { onOpen(FilterField.COUNTRY) }
+            )
+        }
+        item {
+            VodChip(
+                label = stringResource(R.string.vod_filter_audio) + (filter.audio?.let { " : " + (languageName(it) ?: it) } ?: " ▾"),
+                selected = filter.audio != null,
+                onClick = { onOpen(FilterField.AUDIO) }
+            )
+        }
+        item {
+            VodChip(
+                label = stringResource(R.string.vod_filter_subtitles) + (filter.subtitles?.let { " : " + (languageName(it) ?: it) } ?: " ▾"),
+                selected = filter.subtitles != null,
+                onClick = { onOpen(FilterField.SUBTITLES) }
             )
         }
         item {

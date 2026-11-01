@@ -3,13 +3,20 @@ package io.github.sim7b.tele.data.vod
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.optStringOrNull
 import io.github.sim7b.tele.data.remote.DispatcharrClient
+import android.os.SystemClock
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
+import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.time.OffsetDateTime
 
 /**
@@ -46,6 +53,82 @@ object DispatcharrVod {
             progress.cancel()
         }
         snapshot()
+    }
+
+    /**
+     * [entries] with their playlist group, which the lists do not give: looked up for the groups telling
+     * a language (a second pass over the server, run after the catalog is shown). Null when unavailable.
+     */
+    suspend fun withGroups(client: DispatcharrClient, entries: List<VodEntry>): List<VodEntry>? {
+        val groups = try {
+            groups(client)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Categories unavailable: ${e.javaClass.simpleName}")
+            return null
+        }
+        return entries.map { entry -> entry.withGroup(groups[groupKey(entry)]) }
+    }
+
+    /** Groups found by a previous [withGroups], kept on [entries] until the next one ends. */
+    fun keepGroups(entries: List<VodEntry>, previous: List<VodEntry>?): List<VodEntry> {
+        if (previous.isNullOrEmpty()) return entries
+        val groups = previous.mapNotNull { entry -> entry.category?.let { groupKey(entry) to it } }.toMap()
+        if (groups.isEmpty()) return entries
+        return entries.map { entry -> entry.withGroup(groups[groupKey(entry)]) }
+    }
+
+    private fun groupKey(entry: VodEntry) = (if (entry.kind == VodKind.MOVIE) "movie:" else "series:") + entry.providerId
+
+    private fun VodEntry.withGroup(group: String?) = if (group == null || group == category) this else copy(category = group)
+
+    /**
+     * Group of the movies and series whose group tells a language ("FR | VOSTFR", "ENGLISH MOVIES"):
+     * the categories are listed, then the titles of each of those, by "type:id".
+     */
+    private suspend fun groups(client: DispatcharrClient): Map<String, String> = coroutineScope {
+        val startedAt = SystemClock.elapsedRealtime()
+        val categories = LinkedHashSet<Pair<String, String>>()
+        var page = 1
+        while (page <= MAX_CATEGORY_PAGES) {
+            var count = 0
+            var added = 0
+            val fetched = client.forEachVodObject("categories/?page_size=$CATEGORY_PAGE_SIZE&page=$page") { item ->
+                count++
+                val name = item.optStringOrNull("name") ?: return@forEachVodObject
+                val type = item.optStringOrNull("category_type") ?: return@forEachVodObject
+                if (categories.add(type to name)) added++
+            }
+            // A list served whole comes back the same on the next page: nothing new, done
+            if (!fetched || added == 0 || count < CATEGORY_PAGE_SIZE) break
+            page++
+        }
+        val telling = categories.filter { (type, name) ->
+            (type == "movie" || type == "series") && !VodLanguageGuess.estimate("", emptyList(), name).isEmpty
+        }
+        val groups = ConcurrentHashMap<String, String>()
+        val gate = Semaphore(CATEGORY_PARALLEL)
+        telling.map { (type, name) ->
+            async {
+                gate.withPermit {
+                    // One page at a time: most categories hold a few pages
+                    val list = if (type == "movie") "movies" else "series"
+                    val category = URLEncoder.encode("$name|$type", "UTF-8")
+                    var page = 1
+                    while (page <= MAX_ITEMS / GROUP_PAGE_SIZE) {
+                        var count = 0
+                        val fetched = client.forEachVodObject("$list/?category=$category&page_size=$GROUP_PAGE_SIZE&page=$page") { item ->
+                            count++
+                            item.optStringOrNull("id")?.let { groups.putIfAbsent("$type:$it", name) }
+                        }
+                        if (!fetched || count < GROUP_PAGE_SIZE) break
+                        page++
+                    }
+                }
+            }
+        }.awaitAll()
+        Log.i(TAG, "Groups of ${groups.size} titles from ${telling.size} of ${categories.size} categories in ${SystemClock.elapsedRealtime() - startedAt} ms")
+        groups
     }
 
     private fun entry(config: SourceConfig, client: DispatcharrClient, kind: VodKind, item: JSONObject): VodEntry? {
@@ -168,6 +251,11 @@ object DispatcharrVod {
         durationSecs = duration
     )
 
+    private const val TAG = "DispatcharrVod"
     private const val MAX_ITEMS = 100_000
+    private const val CATEGORY_PAGE_SIZE = 500
+    private const val MAX_CATEGORY_PAGES = 20
+    private const val CATEGORY_PARALLEL = 4
+    private const val GROUP_PAGE_SIZE = 100
     private const val PROGRESS_INTERVAL_MS = 4_000L
 }

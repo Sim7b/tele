@@ -30,6 +30,12 @@ data class VodProgress(
     }
 }
 
+/**
+ * Audio and subtitle languages chosen while watching a title, applied to its next episodes:
+ * [audio] null keeps the stream's default track, [subtitlesOn] false hides the subtitles.
+ */
+data class VodTrackPrefs(val audio: String? = null, val subtitles: String? = null, val subtitlesOn: Boolean = false)
+
 /** A collection made by the user ("Family night"), shown as a row of the home: titles in the order added. */
 data class VodCollection(val id: String, val name: String, val titleKeys: List<String>)
 
@@ -47,6 +53,10 @@ class VodStore(private val file: File) {
 
     private val _collections = MutableStateFlow<List<VodCollection>>(emptyList())
     val collections: StateFlow<List<VodCollection>> = _collections.asStateFlow()
+
+    // Kept in the order of use: the oldest are dropped past MAX_TRACK_PREFS
+    private val _trackPrefs = MutableStateFlow<Map<String, VodTrackPrefs>>(emptyMap())
+    val trackPrefs: StateFlow<Map<String, VodTrackPrefs>> = _trackPrefs.asStateFlow()
 
     private val lock = Any()
 
@@ -78,10 +88,19 @@ class VodStore(private val file: File) {
                     VodCollection(id, obj.optString("name"), keys)
                 }
             }.orEmpty()
+            val trackPrefs = LinkedHashMap<String, VodTrackPrefs>()
+            root.optJSONArray("tracks")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val key = obj.optStringOrNull("title") ?: continue
+                    trackPrefs[key] = VodTrackPrefs(obj.optStringOrNull("audio"), obj.optStringOrNull("subtitles"), obj.optBoolean("subtitlesOn"))
+                }
+            }
             synchronized(lock) {
                 _progress.value = progress
                 _myList.value = myList
                 _collections.value = collections
+                _trackPrefs.value = trackPrefs
             }
         } catch (e: Exception) {
             Log.w(TAG, "Unable to read the movies and series state: ${e.javaClass.simpleName}")
@@ -118,6 +137,19 @@ class VodStore(private val file: File) {
             val kept = _progress.value.filterValues { it.titleKey != titleKey || it.finished }
             if (kept.size == _progress.value.size) return
             _progress.value = kept
+            write()
+        }
+    }
+
+    /** Languages chosen while watching [titleKey] (a movie, or every episode of a series). */
+    fun saveTrackPrefs(titleKey: String, prefs: VodTrackPrefs) {
+        synchronized(lock) {
+            if (_trackPrefs.value[titleKey] == prefs) return
+            val updated = LinkedHashMap(_trackPrefs.value)
+            updated.remove(titleKey)
+            updated[titleKey] = prefs
+            while (updated.size > MAX_TRACK_PREFS) updated.remove(updated.keys.first())
+            _trackPrefs.value = updated
             write()
         }
     }
@@ -182,6 +214,17 @@ class VodStore(private val file: File) {
                     put(JSONObject().put("id", collection.id).put("name", collection.name).put("titles", JSONArray(collection.titleKeys)))
                 }
             })
+            .put("tracks", JSONArray().apply {
+                _trackPrefs.value.forEach { (key, prefs) ->
+                    put(
+                        JSONObject()
+                            .put("title", key)
+                            .putOpt("audio", prefs.audio)
+                            .putOpt("subtitles", prefs.subtitles)
+                            .put("subtitlesOn", prefs.subtitlesOn)
+                    )
+                }
+            })
         val temp = File(file.parentFile, file.name + ".tmp")
         try {
             temp.writeText(root.toString())
@@ -200,6 +243,7 @@ class VodStore(private val file: File) {
         const val MAX_PROGRESS = 500
         const val MAX_NAME = 60
         const val MAX_COLLECTION_SIZE = 2_000
+        const val MAX_TRACK_PREFS = 300
         // Position and duration of a title marked watched by hand
         const val WATCHED_MS = 1L
     }

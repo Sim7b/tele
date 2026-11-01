@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 
 /** Interface density: factor applied to every dimension (dp/sp). */
 enum class UiDensity(@param:StringRes val labelRes: Int, val scaleFactor: Float, @param:StringRes val descriptionRes: Int) {
@@ -161,6 +162,11 @@ class SettingsRepository(context: Context) {
     val tmdbKey: StateFlow<String> = _tmdbKey.asStateFlow()
     private val _vodDisplay = MutableStateFlow(VodDisplay())
     val vodDisplay: StateFlow<VodDisplay> = _vodDisplay.asStateFlow()
+    // OpenSubtitles API key (subtitles searched on request) and the languages searched, in order
+    private val _openSubtitlesKey = MutableStateFlow("")
+    val openSubtitlesKey: StateFlow<String> = _openSubtitlesKey.asStateFlow()
+    private val _subtitleLanguages = MutableStateFlow(defaultSubtitleLanguages())
+    val subtitleLanguages: StateFlow<List<String>> = _subtitleLanguages.asStateFlow()
 
     // Quick start guide already shown (or skipped): it only opens by itself on the first launch
     private val _guideSeen = MutableStateFlow(false)
@@ -228,6 +234,17 @@ class SettingsRepository(context: Context) {
                 null
             }
         }.orEmpty()
+        _openSubtitlesKey.value = prefs.getString(KEY_OPENSUBTITLES_KEY, null)?.let { stored ->
+            try {
+                secrets.decrypt(stored)
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to read the OpenSubtitles key: ${e.javaClass.simpleName}")
+                null
+            }
+        }.orEmpty()
+        prefs.getString(KEY_SUBTITLE_LANGUAGES, null)?.let { saved ->
+            _subtitleLanguages.value = languageList(saved).ifEmpty { defaultSubtitleLanguages() }
+        }
         // Previous versions: preview on (after 2 s) or off
         _previewDelay.value = PreviewDelay.fromName(prefs.getString(KEY_PREVIEW_DELAY, null))
             ?: if (prefs.getBoolean(KEY_CHANNEL_PREVIEW, true)) PreviewDelay.DEFAULT else PreviewDelay.OFF
@@ -378,6 +395,29 @@ class SettingsRepository(context: Context) {
         }.apply()
         _tmdbKey.value = trimmed
     }
+
+    /** OpenSubtitles API key, encrypted like the TMDB key (blank: removed). */
+    fun setOpenSubtitlesKey(key: String) {
+        val trimmed = key.trim()
+        prefs.edit().apply {
+            if (trimmed.isEmpty()) remove(KEY_OPENSUBTITLES_KEY) else putString(KEY_OPENSUBTITLES_KEY, secrets.encrypt(trimmed))
+        }.apply()
+        _openSubtitlesKey.value = trimmed
+    }
+
+    /** Languages searched on OpenSubtitles, in order of preference (ISO 639-1 codes; empty: the defaults). */
+    fun setSubtitleLanguages(languages: List<String>) {
+        val kept = languageList(languages.joinToString(",")).ifEmpty { defaultSubtitleLanguages() }
+        prefs.edit().putString(KEY_SUBTITLE_LANGUAGES, kept.joinToString(",")).apply()
+        _subtitleLanguages.value = kept
+    }
+
+    private fun languageList(saved: String): List<String> =
+        saved.split(',').map { it.trim().lowercase(Locale.ROOT) }.filter { it.length in 2..3 && it.all { c -> c in 'a'..'z' } }.distinct()
+
+    /** The language of the TV, then English. */
+    private fun defaultSubtitleLanguages(): List<String> =
+        listOf(Locale.getDefault().language.lowercase(Locale.ROOT), "en").filter { it.length in 2..3 }.distinct()
 
     fun setGuideSeen() {
         prefs.edit().putBoolean(KEY_GUIDE_SEEN, true).apply()
@@ -623,6 +663,8 @@ class SettingsRepository(context: Context) {
         put("vodEnabled", _vodEnabled.value)
         put("vodDisplay", _vodDisplay.value.toJson())
         _tmdbKey.value.takeIf { it.isNotEmpty() }?.let { put("tmdbKey", it) }
+        _openSubtitlesKey.value.takeIf { it.isNotEmpty() }?.let { put("openSubtitlesKey", it) }
+        put("subtitleLanguages", _subtitleLanguages.value.joinToString(","))
         put("selectedStreams", JSONObject().apply {
             _selectedStreams.value.forEach { (channelId, stream) ->
                 put(channelId, JSONObject().put("name", stream.name).put("url", stream.url).put("id", stream.id).put("provider", stream.provider))
@@ -676,6 +718,8 @@ class SettingsRepository(context: Context) {
         if (json.has("vodEnabled")) setVodEnabled(json.optBoolean("vodEnabled", false))
         json.optJSONObject("vodDisplay")?.let { setVodDisplay(VodDisplay.fromJson(it)) }
         json.optStringOrNull("tmdbKey")?.let { setTmdbKey(it) }
+        json.optStringOrNull("openSubtitlesKey")?.let { setOpenSubtitlesKey(it) }
+        json.optStringOrNull("subtitleLanguages")?.let { setSubtitleLanguages(it.split(',')) }
         json.optJSONObject("selectedStreams")?.let { streams ->
             streams.keys().forEach { channelId ->
                 val stream = streams.optJSONObject(channelId) ?: return@forEach
@@ -731,6 +775,8 @@ class SettingsRepository(context: Context) {
         private const val VOD_STATE_FILE = "vod_state.json"
         private const val VOD_INDEX_FILE = "vod_tmdb_index.jsonl"
         private const val KEY_TMDB_KEY = "vod_tmdb_key"
+        private const val KEY_OPENSUBTITLES_KEY = "opensubtitles_key"
+        private const val KEY_SUBTITLE_LANGUAGES = "subtitle_languages"
         private const val KEY_PICTURE_FORMAT = "picture_format"
         private const val KEY_AUDIO_LANGUAGE = "audio_language"
         private const val KEY_QUALITY_PREFERENCE = "stream_quality_preference"

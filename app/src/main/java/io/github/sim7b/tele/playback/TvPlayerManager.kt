@@ -3,6 +3,7 @@ package io.github.sim7b.tele.playback
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -13,11 +14,13 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -28,6 +31,7 @@ import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.data.remote.ApiKeyInterceptor
 import io.github.sim7b.tele.data.remote.HttpClients
+import io.github.sim7b.tele.data.subtitles.ExternalSubtitle
 import java.util.concurrent.TimeUnit
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -99,6 +103,8 @@ class TvPlayerManager(private val context: Context) {
     private var retryCount = 0
     // Muted home preview in progress (see preview)
     private var previewing = false
+    // The current stream got "no free connection" (HTTP 503) once already: the next one goes to the next stream
+    private var noFreeConnectionRetried = false
     // The current stream has played at least once: a drop gets more (and visible) reconnection attempts
     private var hasPlayed = false
     // HLS playlist served without the .m3u8 extension: detected when the progressive extractors reject it
@@ -107,6 +113,9 @@ class TvPlayerManager(private val context: Context) {
     private var zapStartedAt = 0L
     // Movie or episode (not a live stream): played from this position, and resumed where it stopped on a retry
     private var vodStartMs: Long? = null
+    // Subtitle files added to the movie or episode (OpenSubtitles), and the one to show once loaded
+    private var externalSubtitles: List<ExternalSubtitle> = emptyList()
+    private var pendingSubtitleId: String? = null
     private val retryRunnable = Runnable { prepareCurrent() }
 
     private val _isPlaying = MutableStateFlow(false)
@@ -200,6 +209,7 @@ class TvPlayerManager(private val context: Context) {
 
                     override fun onTracksChanged(tracks: Tracks) {
                         updateStreamInfo()
+                        pendingSubtitleId?.let { id -> if (selectSubtitleById(tracks, id)) pendingSubtitleId = null }
                         _tracks.value = readTracks(tracks)
                     }
 
@@ -236,8 +246,10 @@ class TvPlayerManager(private val context: Context) {
             return
         }
 
+        // A stream unreadable as a file may be an HLS playlist without its extension; never a Dispatcharr channel,
+        // always MPEG-TS: an empty answer there (no working provider stream) is a failed attempt like the others
         if (playbackError.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED && !forceHls &&
-            currentUrl?.let { isHlsUrl(it) } == false
+            currentUrl?.let { isHlsUrl(it) || isDispatcharrTs(it) } == false
         ) {
             forceHls = true
             prepareCurrent()
@@ -247,9 +259,22 @@ class TvPlayerManager(private val context: Context) {
         val httpCode = (playbackError.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
         // Definitive refusals from the provider: no point retrying
         val isDefinitive = httpCode in DEFINITIVE_HTTP_ERRORS
+        // No free connection at the start (Dispatcharr answers 503 when every provider connection is in use):
+        // a single attempt after a pause, the time for a connection that just ended (the home preview, the
+        // previous channel) to be closed on the server, then the next stream, else the limit message. Retrying
+        // every stream several times only kept the server busy for minutes.
+        val noFreeConnection = httpCode == HTTP_NO_FREE_CONNECTION && !hasPlayed
+        if (noFreeConnection && !noFreeConnectionRetried && currentUrl != null) {
+            noFreeConnectionRetried = true
+            _isLoading.value = true
+            _error.value = null
+            mainHandler.removeCallbacks(retryRunnable)
+            mainHandler.postDelayed(retryRunnable, ReconnectPolicy.NO_FREE_CONNECTION_DELAY_MS)
+            return
+        }
 
         val maxAttempts = ReconnectPolicy.maxAttempts(hasPlayed)
-        if (!isDefinitive && retryCount < maxAttempts && currentUrl != null) {
+        if (!isDefinitive && !noFreeConnection && retryCount < maxAttempts && currentUrl != null) {
             val delayMs = ReconnectPolicy.delayMs(retryCount)
             retryCount++
             _isLoading.value = true
@@ -261,6 +286,7 @@ class TvPlayerManager(private val context: Context) {
             // Next stream of the channel, with a fresh attempt budget
             currentUrl = fallbackUrls.removeFirst()
             retryCount = 0
+            noFreeConnectionRetried = false
             hasPlayed = false
             forceHls = false
             _reconnection.value = null
@@ -275,7 +301,7 @@ class TvPlayerManager(private val context: Context) {
     private fun describeError(playbackError: PlaybackException, httpCode: Int?): UiText = when {
         httpCode == 401 || httpCode == 403 -> UiText.Res(R.string.player_error_access_denied, httpCode)
         httpCode == 404 || httpCode == 410 -> UiText.Res(R.string.player_error_stream_not_found, httpCode)
-        httpCode == 429 || httpCode == 458 || httpCode == 509 ->
+        httpCode == 429 || httpCode == 458 || httpCode == 509 || httpCode == HTTP_NO_FREE_CONNECTION ->
             UiText.Res(R.string.player_error_connection_limit, httpCode)
         httpCode != null -> UiText.Res(R.string.player_error_http, httpCode)
         playbackError.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
@@ -314,15 +340,71 @@ class TvPlayerManager(private val context: Context) {
      * before the error is shown.
      */
     fun playStream(url: String, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
-        start(url, customUserAgent, auths, fallbacks, vodStart = null)
+        start(url, customUserAgent, auths, fallbacks, vodStart = null, subtitles = emptyList())
     }
 
-    /** Plays a movie or an episode from [startPositionMs]; [fallbacks] are its other files. */
-    fun playVod(url: String, startPositionMs: Long, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
-        start(url, customUserAgent, auths, fallbacks, vodStart = startPositionMs.coerceAtLeast(0))
+    /**
+     * Plays a movie or an episode from [startPositionMs]; [fallbacks] are its other files, [subtitles] the
+     * subtitle files downloaded for it.
+     */
+    fun playVod(
+        url: String,
+        startPositionMs: Long,
+        customUserAgent: String? = null,
+        auths: List<ApiKeyAuth> = emptyList(),
+        fallbacks: List<String> = emptyList(),
+        subtitles: List<ExternalSubtitle> = emptyList()
+    ) {
+        start(url, customUserAgent, auths, fallbacks, vodStart = startPositionMs.coerceAtLeast(0), subtitles = subtitles)
     }
 
-    private fun start(url: String, customUserAgent: String?, auths: List<ApiKeyAuth>, fallbacks: List<String>, vodStart: Long?) {
+    /**
+     * Adds [subtitle] to the movie or episode being played and shows it: the stream is prepared again
+     * at the current position, with the subtitle file beside it.
+     */
+    fun addSubtitle(subtitle: ExternalSubtitle) {
+        val player = exoPlayer ?: return
+        if (currentUrl == null || vodStartMs == null) return
+        if (externalSubtitles.none { it.uri == subtitle.uri }) externalSubtitles = externalSubtitles + subtitle
+        pendingSubtitleId = subtitleId(subtitle)
+        vodStartMs = player.currentPosition.coerceAtLeast(0)
+        hasPlayed = false
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .setPreferredTextLanguage(subtitle.language)
+            .build()
+        prepareCurrent()
+    }
+
+    private fun subtitleId(subtitle: ExternalSubtitle) = "external:" + subtitle.uri.hashCode().toUInt().toString(16)
+
+    /** Shows the text track loaded from the subtitle file [id]; false while it is not there yet. */
+    private fun selectSubtitleById(tracks: Tracks, id: String): Boolean {
+        val player = exoPlayer ?: return false
+        tracks.groups.forEach { group ->
+            if (group.type != C.TRACK_TYPE_TEXT) return@forEach
+            for (index in 0 until group.length) {
+                if (group.getTrackFormat(index).id?.contains(id) == true) {
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+                        .build()
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun start(
+        url: String,
+        customUserAgent: String?,
+        auths: List<ApiKeyAuth>,
+        fallbacks: List<String>,
+        vodStart: Long?,
+        subtitles: List<ExternalSubtitle>
+    ) {
         // The home preview of this very channel keeps playing: the sound comes back without a new start
         val player = exoPlayer
         if (previewing && url == currentUrl && player != null && _error.value == null &&
@@ -344,6 +426,8 @@ class TvPlayerManager(private val context: Context) {
         }
         _tracks.value = PlaybackTracks()
         vodStartMs = vodStart
+        externalSubtitles = subtitles
+        pendingSubtitleId = null
         fallbackUrls.clear()
         fallbackUrls.addAll(fallbacks)
         zapStartedAt = SystemClock.elapsedRealtime()
@@ -351,6 +435,7 @@ class TvPlayerManager(private val context: Context) {
         currentUserAgent = customUserAgent
         currentAuths = auths
         retryCount = 0
+        noFreeConnectionRetried = false
         hasPlayed = false
         forceHls = false
         mainHandler.removeCallbacks(retryRunnable)
@@ -373,6 +458,9 @@ class TvPlayerManager(private val context: Context) {
             .setMaxVideoSize(PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT)
             .build()
     }
+
+    /** True while the muted home preview plays (it holds a provider connection). */
+    val isPreviewing: Boolean get() = previewing
 
     /** Stops the home preview (focus moved, home screen left); a channel played in full is not affected. */
     fun stopPreview() {
@@ -398,6 +486,7 @@ class TvPlayerManager(private val context: Context) {
     fun retry() {
         if (currentUrl == null) return
         retryCount = 0
+        noFreeConnectionRetried = false
         mainHandler.removeCallbacks(retryRunnable)
         _reconnection.value = null
         _isLoading.value = true
@@ -415,6 +504,8 @@ class TvPlayerManager(private val context: Context) {
         val httpDataSourceFactory = OkHttpDataSource.Factory(streamHttpClient)
             .setUserAgent(userAgent)
 
+        val hls = forceHls || isHlsUrl(url)
+        val subtitles = externalSubtitles
         val mediaItem = MediaItem.Builder()
             .setUri(url)
             .setLiveConfiguration(
@@ -423,9 +514,27 @@ class TvPlayerManager(private val context: Context) {
                     .setMinPlaybackSpeed(0.98f)
                     .build()
             )
+            .apply {
+                if (subtitles.isNotEmpty()) {
+                    setSubtitleConfigurations(subtitles.map { subtitle ->
+                        MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.uri))
+                            .setId(subtitleId(subtitle))
+                            .setMimeType(subtitle.mimeType)
+                            .setLanguage(subtitle.language)
+                            .setLabel(subtitle.label)
+                            .build()
+                    })
+                    if (hls) setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+            }
             .build()
 
-        val mediaSource: MediaSource = if (forceHls || isHlsUrl(url)) {
+        val mediaSource: MediaSource = if (subtitles.isNotEmpty()) {
+            // Subtitle files on the device beside the stream: the default factory merges them, and reads
+            // both the network (OkHttp, with the API key interceptor) and the local files
+            DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory), extractorsFactory)
+                .createMediaSource(mediaItem)
+        } else if (hls) {
             HlsMediaSource.Factory(httpDataSourceFactory)
                 .setAllowChunklessPreparation(true)
                 .createMediaSource(mediaItem)
@@ -447,6 +556,8 @@ class TvPlayerManager(private val context: Context) {
     }
 
     private fun isHlsUrl(url: String) = url.contains(".m3u8", ignoreCase = true)
+
+    private fun isDispatcharrTs(url: String) = url.contains("/proxy/ts/")
 
     private fun readTracks(tracks: Tracks): PlaybackTracks {
         fun choices(type: Int) = tracks.groups.withIndex()
@@ -500,6 +611,19 @@ class TvPlayerManager(private val context: Context) {
             .build()
     }
 
+    /**
+     * Languages kept for a movie or a series: [audioLanguage] null keeps the stream's default track;
+     * subtitles in [subtitleLanguage] when [subtitlesOn]. Set after [playVod].
+     */
+    fun applyTrackPreferences(audioLanguage: String?, subtitlesOn: Boolean, subtitleLanguage: String?) {
+        val player = getPlayer()
+        val builder = player.trackSelectionParameters.buildUpon()
+        audioLanguage?.let { builder.setPreferredAudioLanguage(it) }
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesOn)
+        if (subtitlesOn) builder.setPreferredTextLanguage(subtitleLanguage)
+        player.trackSelectionParameters = builder.build()
+    }
+
     fun togglePlayPause() {
         val player = exoPlayer ?: return
         if (player.isPlaying) player.pause() else player.play()
@@ -541,5 +665,7 @@ class TvPlayerManager(private val context: Context) {
         private const val PREVIEW_MAX_WIDTH = 1280
         private const val PREVIEW_MAX_HEIGHT = 720
         private val DEFINITIVE_HTTP_ERRORS = setOf(401, 403, 404, 410)
+        // Dispatcharr: every connection of the provider accounts is in use
+        private const val HTTP_NO_FREE_CONNECTION = 503
     }
 }

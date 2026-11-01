@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -39,17 +40,22 @@ private const val OPTIONS_AUTO_HIDE_MS = 20_000L
 /**
  * Playback options shown over the live stream (right arrow in the player), mirroring the channel panel:
  * other stream, audio track, subtitles and picture format. Back or inactivity closes it.
+ * Movies and series have no stream choice ([onChooseStream] null) but a playback [speed].
  */
 @Composable
 fun PlaybackOptionsPanel(
     tracks: PlaybackTracks,
     pictureFormat: PictureFormat,
-    onChooseStream: () -> Unit,
+    onChooseStream: (() -> Unit)?,
     onSelectAudio: (TrackChoice) -> Unit,
     onSelectSubtitles: (TrackChoice?) -> Unit,
     onSelectPictureFormat: (PictureFormat) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    speed: Float? = null,
+    onSelectSpeed: (Float) -> Unit = {},
+    // Movies and series with an OpenSubtitles key: subtitles searched online
+    onSearchSubtitles: (() -> Unit)? = null
 ) {
     val firstRow = remember { FocusRequester() }
     var interactions by remember { mutableIntStateOf(0) }
@@ -100,29 +106,46 @@ fun PlaybackOptionsPanel(
                     color = TextPrimary,
                     modifier = Modifier.padding(start = 14.dp, bottom = 10.dp)
                 )
-                MenuRow(
-                    label = stringResource(R.string.options_choose_stream),
-                    icon = Icons.Filled.List,
-                    onClick = onChooseStream,
-                    modifier = Modifier.focusRequester(firstRow)
-                )
+                if (onChooseStream != null) {
+                    MenuRow(
+                        label = stringResource(R.string.options_choose_stream),
+                        icon = Icons.Filled.List,
+                        onClick = onChooseStream,
+                        modifier = Modifier.focusRequester(firstRow)
+                    )
+                }
             }
 
+            // Without a stream choice, the first choice of the panel takes the focus
+            val audioFirst = onChooseStream == null && tracks.audio.isNotEmpty()
             if (tracks.audio.isNotEmpty()) {
                 item { OptionsHeader(R.string.options_audio) }
                 items(tracks.audio, key = { "a${it.groupIndex}/${it.trackIndex}" }) { choice ->
-                    ChoiceRow(label = trackLabel(choice, locale, isAudio = true), selected = choice.selected) { onSelectAudio(choice) }
+                    ChoiceRow(
+                        label = trackLabel(choice, locale, isAudio = true),
+                        selected = choice.selected,
+                        modifier = if (audioFirst && choice == tracks.audio.first()) Modifier.focusRequester(firstRow) else Modifier
+                    ) { onSelectAudio(choice) }
                 }
             }
 
             item {
                 OptionsHeader(R.string.options_subtitles)
-                ChoiceRow(label = stringResource(R.string.options_subtitles_off), selected = !tracks.subtitlesOn) { onSelectSubtitles(null) }
+                ChoiceRow(
+                    label = stringResource(R.string.options_subtitles_off),
+                    selected = !tracks.subtitlesOn,
+                    modifier = if (onChooseStream == null && !audioFirst) Modifier.focusRequester(firstRow) else Modifier
+                ) { onSelectSubtitles(null) }
             }
             items(tracks.subtitles, key = { "s${it.groupIndex}/${it.trackIndex}" }) { choice ->
                 ChoiceRow(label = trackLabel(choice, locale, isAudio = false), selected = choice.selected) { onSelectSubtitles(choice) }
             }
-            if (tracks.subtitles.isEmpty()) {
+            if (onSearchSubtitles != null) {
+                item {
+                    MenuRow(label = stringResource(R.string.subtitles_search), icon = Icons.Filled.Search, onClick = onSearchSubtitles)
+                }
+            }
+            if (tracks.subtitles.isEmpty() && onSearchSubtitles == null) {
                 item {
                     Text(
                         text = stringResource(R.string.options_no_subtitles),
@@ -130,6 +153,16 @@ fun PlaybackOptionsPanel(
                         color = TextSecondary,
                         modifier = Modifier.padding(start = 14.dp, top = 2.dp)
                     )
+                }
+            }
+
+            if (speed != null) {
+                item { OptionsHeader(R.string.options_speed) }
+                items(PLAYBACK_SPEEDS) { value ->
+                    ChoiceRow(
+                        label = if (value == 1f) stringResource(R.string.options_speed_normal) else speedLabel(value),
+                        selected = value == speed
+                    ) { onSelectSpeed(value) }
                 }
             }
 
@@ -147,13 +180,21 @@ private fun OptionsHeader(@StringRes title: Int) {
 }
 
 @Composable
-private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    MenuRow(label = label, onClick = onClick, leading = { focused -> SelectionDot(selected = selected, focused = focused) })
+private fun ChoiceRow(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    MenuRow(label = label, onClick = onClick, modifier = modifier, leading = { focused -> SelectionDot(selected = selected, focused = focused) })
 }
+
+/** Speeds offered for movies and series. */
+private val PLAYBACK_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+
+/** "×1.25", with the decimal separator of the TV's language. */
+@Composable
+private fun speedLabel(value: Float): String =
+    "×" + java.text.NumberFormat.getInstance(LocalConfiguration.current.locales[0]).format(value)
 
 /** "Français · Stéréo", "English · 5.1", the track label, or "Track 2". */
 @Composable
-private fun trackLabel(choice: TrackChoice, locale: Locale, isAudio: Boolean): String {
+internal fun trackLabel(choice: TrackChoice, locale: Locale, isAudio: Boolean): String {
     val language = choice.language?.let { tag ->
         Locale.forLanguageTag(tag).getDisplayLanguage(locale).takeIf { it.isNotBlank() && it != tag }
             ?.replaceFirstChar { it.titlecase(locale) } ?: tag

@@ -63,6 +63,8 @@ class VodRepository(
     private val catalogs = ConcurrentHashMap<String, List<VodEntry>>()
     private val errors = ConcurrentHashMap<String, UiText>()
     private var loadedFor: List<SourceConfig> = emptyList()
+    // Catalogs (by identity) and theater setting of the last build: the same ones are not built again
+    private var builtFrom: Pair<List<List<VodEntry>>, Boolean>? = null
     private var loadJob: Job? = null
     private val dispatcharrClients = ConcurrentHashMap<String, DispatcharrClient>()
 
@@ -89,6 +91,7 @@ class VodRepository(
         indexJob = null
         loadedFor = emptyList()
         catalogs.clear()
+        builtFrom = null
         errors.clear()
         synchronized(details) { details.clear() }
         _library.value = VodLibraryState()
@@ -166,12 +169,21 @@ class VodRepository(
                         catalogs[config.id] = partial
                         publish(loading = true)
                     }
-                }
+                }.let { DispatcharrVod.keepGroups(it, cached?.entries) }
             }
             catalogs[config.id] = entries
             errors.remove(config.id)
             publish(loading = true)
-            withContext(Dispatchers.IO) { settings.saveVodCatalog(config.id, System.currentTimeMillis(), entries) }
+            val savedAt = System.currentTimeMillis()
+            withContext(Dispatchers.IO) { settings.saveVodCatalog(config.id, savedAt, entries) }
+            // Dispatcharr: the groups (languages) come after, the catalog stays usable meanwhile
+            if (config.type == SourceType.DISPATCHARR) {
+                DispatcharrVod.withGroups(dispatcharr(config), entries)?.let { grouped ->
+                    catalogs[config.id] = grouped
+                    publish(loading = true)
+                    withContext(Dispatchers.IO) { settings.saveVodCatalog(config.id, savedAt, grouped) }
+                }
+            }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             // The catalog of the device stays shown
@@ -182,14 +194,27 @@ class VodRepository(
 
     private suspend fun publish(loading: Boolean) {
         val order = loadedFor.map { it.id }
-        val entries = order.flatMap { catalogs[it].orEmpty() }
-        val buildStart = SystemClock.elapsedRealtime()
+        val sources = order.map { catalogs[it].orEmpty() }
         val hideTheater = settings.vodDisplay.value.hideTheater
+        val built = builtFrom
+        if (built != null && built.second == hideTheater && built.first.size == sources.size &&
+            built.first.indices.all { built.first[it] === sources[it] }
+        ) {
+            _library.value = _library.value.copy(
+                loading = loading,
+                error = order.firstNotNullOfOrNull { errors[it] },
+                loaded = !loading || _library.value.titles.isNotEmpty()
+            )
+            return
+        }
+        val entries = sources.flatten()
+        val buildStart = SystemClock.elapsedRealtime()
         val (titles, byKey, featured) = withContext(Dispatchers.Default) {
             val titles = VodLibrary.build(entries).let { all -> if (hideTheater) all.filterNot { VodDisplay.isTheaterCopy(it) } else all }
             Triple(titles, titles.associateBy { it.key }, VodRows.featured(titles))
         }
         Log.i(TAG, "Library of ${titles.size} titles built in ${SystemClock.elapsedRealtime() - buildStart} ms")
+        builtFrom = sources to hideTheater
         _library.value = VodLibraryState(
             titles = titles,
             byKey = byKey,

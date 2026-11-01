@@ -45,8 +45,10 @@ import io.github.sim7b.tele.ui.vod.VodDetailScreen
 import io.github.sim7b.tele.ui.vod.VodHomeScreen
 import io.github.sim7b.tele.ui.vod.VodPlayRequest
 import io.github.sim7b.tele.ui.vod.VodPlayerScreen
+import io.github.sim7b.tele.ui.vod.nextPlayRequest
 import io.github.sim7b.tele.ui.vod.VodSearchScreen
 import io.github.sim7b.tele.ui.vod.VodTitleActions
+import io.github.sim7b.tele.ui.vod.VodSubtitles
 import io.github.sim7b.tele.ui.vod.LocalPosterWidth
 import androidx.compose.ui.unit.dp
 import io.github.sim7b.tele.data.storage.VodStore
@@ -139,6 +141,16 @@ class MainActivity : ComponentActivity() {
             fun vodStore(change: VodStore.() -> Unit) {
                 lifecycleScope.launch(Dispatchers.IO) { configRepository.vodStore.change() }
             }
+            // OpenSubtitles: the search needs the key, the subtitles already downloaded are always read back
+            val openSubtitlesKey by configRepository.openSubtitlesKey.collectAsState()
+            val subtitlesRemaining by viewModel.subtitles.remaining.collectAsState()
+            val vodSubtitles = VodSubtitles(
+                canSearch = openSubtitlesKey.isNotBlank(),
+                search = { query, all -> viewModel.subtitles.search(query, all) },
+                download = { key, result -> viewModel.subtitles.download(key, result) },
+                cached = { key -> viewModel.subtitles.cached(key) },
+                remaining = subtitlesRemaining
+            )
             val vodActions = remember {
                 VodTitleActions(
                     toggleMyList = { key -> vodStore { toggleMyList(key) } },
@@ -221,14 +233,26 @@ class MainActivity : ComponentActivity() {
                     playerManager.stopPreview()
                     return
                 }
+                // Last free connection of the provider kept for the channel the user opens
+                val slots = viewModel.streamSlots.value
+                if (configsById[channel.sourceId]?.type == SourceType.DISPATCHARR && slots != null &&
+                    !slots.allowsPreview(playerManager.isPreviewing)
+                ) {
+                    playerManager.stopPreview()
+                    return
+                }
                 previewJob = previewScope.launch {
                     val url = viewModel.automaticStreamUrls(channel).firstOrNull() ?: channel.activeStreamUrl
+                    // The stream choice can take a moment: a channel opened meanwhile must not be replaced
+                    if (currentScreen !is CurrentScreen.Home) return@launch
                     playerManager.preview(url, configsById[channel.sourceId]?.customUserAgent, streamAuths)
                 }
             }
-            // Settings and search: no preview behind them (the player takes it over, see playStream)
+            // Settings and search: no preview behind them (the player takes it over, see playStream); any other
+            // screen cancels a preview still choosing its stream, so it cannot replace the channel opened
             LaunchedEffect(currentScreen) {
                 if (currentScreen is CurrentScreen.Settings || currentScreen is CurrentScreen.Search) previewChannel(null)
+                else if (currentScreen !is CurrentScreen.Home) previewJob?.cancel()
             }
 
             // Hiding / favoriting a grouped channel applies to all its versions ("TF1 HD", "TF1 FHD")
@@ -471,28 +495,41 @@ class MainActivity : ComponentActivity() {
                                     onBack = { currentScreen = screen.returnTo },
                                     onSetEpisodeWatched = { key, watched ->
                                         vodStore { if (watched) markWatched(key, title.key) else clearProgress(key) }
-                                    }
+                                    },
+                                    subtitles = vodSubtitles
                                 )
                             }
                         }
                         is CurrentScreen.VodPlayer -> {
                             val request = screen.request
+                            val vodTrackPrefs by configRepository.vodStore.trackPrefs.collectAsState()
+                            // Next episode from the sheet's details (with the positions known when it starts)
+                            val next = remember(request) {
+                                nextPlayRequest(request, viewModel.vod.cachedDetails(request.titleKey), configRepository.vodStore.progress.value)
+                            }
                             VodPlayerScreen(
                                 request = request,
                                 playerManager = playerManager,
                                 streamAuths = streamAuths,
                                 userAgent = configsById[request.sourceId]?.customUserAgent,
-                                onProgress = { position, duration ->
+                                onProgress = { played, position, duration ->
                                     lifecycleScope.launch(Dispatchers.IO) {
                                         configRepository.vodStore.saveProgress(
-                                            key = VodRows.progressKey(request.titleKey, request.episodeKey),
-                                            titleKey = request.titleKey,
+                                            key = VodRows.progressKey(played.titleKey, played.episodeKey),
+                                            titleKey = played.titleKey,
                                             positionMs = position,
                                             durationMs = duration
                                         )
                                     }
                                 },
-                                onBack = { currentScreen = screen.returnTo }
+                                onBack = { currentScreen = screen.returnTo },
+                                next = next,
+                                onPlayNext = { upcoming -> currentScreen = CurrentScreen.VodPlayer(upcoming, screen.returnTo) },
+                                trackPrefs = vodTrackPrefs[request.titleKey],
+                                onTrackPrefsChange = { prefs -> vodStore { saveTrackPrefs(request.titleKey, prefs) } },
+                                pictureFormat = pictureFormat,
+                                onPictureFormatChange = { configRepository.setPictureFormat(it) },
+                                subtitles = vodSubtitles
                             )
                         }
                         is CurrentScreen.Player -> {

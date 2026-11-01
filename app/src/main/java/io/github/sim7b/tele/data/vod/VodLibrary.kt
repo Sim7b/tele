@@ -41,10 +41,18 @@ object VodLibrary {
             groups.remove(key)
             groups[target]?.addAll(group)
         }
-        return groups.map { (key, group) -> merge(key, group) }
+        // Same languages for most titles: one shared instance of each
+        val languages = HashMap<VodLanguages, VodLanguages>()
+        val estimator = VodLanguageGuess.Estimator()
+        return groups.map { (key, group) -> merge(key, group, estimator, languages) }
     }
 
-    private fun merge(key: String, group: List<VodEntry>): VodTitle {
+    private fun merge(
+        key: String,
+        group: List<VodEntry>,
+        estimator: VodLanguageGuess.Estimator,
+        shared: MutableMap<VodLanguages, VodLanguages>
+    ): VodTitle {
         val first = group.first()
         // The most complete entry gives the texts; images from the first entry that has them
         val best = group.maxBy { score(it) }
@@ -61,7 +69,9 @@ object VodLibrary {
             tmdbId = group.firstNotNullOfOrNull { it.tmdbId?.takeIf { id -> id.isNotBlank() && id != "0" } },
             imdbId = group.firstNotNullOfOrNull { it.imdbId?.takeIf { id -> id.isNotBlank() } },
             addedAt = group.mapNotNull { it.addedAt }.maxOrNull(),
-            entries = group
+            entries = group,
+            languages = group.fold(VodLanguages()) { all, entry -> all + estimator.estimate(entry.name, entry.languageTags, entry.category) }
+                .let { shared.getOrPut(it) { it } }
         )
     }
 

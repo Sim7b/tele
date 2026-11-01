@@ -2,6 +2,14 @@ package io.github.sim7b.tele.ui.screens
 
 import androidx.compose.ui.platform.LocalResources
 import androidx.annotation.StringRes
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.DisposableEffect
+import io.github.sim7b.tele.ui.components.QrCode
+import io.github.sim7b.tele.data.transfer.KeyEntryServer
+import io.github.sim7b.tele.data.transfer.KeyEntryPage
+import io.github.sim7b.tele.data.transfer.ConfigTransfer
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
@@ -16,6 +24,7 @@ import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodRow
 import io.github.sim7b.tele.data.vod.VodSort
 import io.github.sim7b.tele.ui.vod.countryName
+import io.github.sim7b.tele.ui.vod.languageName
 import io.github.sim7b.tele.ui.vod.sortLabel
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -146,7 +155,9 @@ fun SettingsScreen(
     val vodEnabled by repository.vodEnabled.collectAsState()
     val tmdbKey by repository.tmdbKey.collectAsState()
     val vodDisplay by repository.vodDisplay.collectAsState()
-    var editingTmdbKey by remember { mutableStateOf(false) }
+    var editingKey by remember { mutableStateOf<ApiKeyService?>(null) }
+    val openSubtitlesKey by repository.openSubtitlesKey.collectAsState()
+    val subtitleLanguages by repository.subtitleLanguages.collectAsState()
     val currentBouquet by repository.bouquet.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
     val hiddenGroups by repository.hiddenGroups.collectAsState()
@@ -568,7 +579,7 @@ fun SettingsScreen(
                                             ActionButton(
                                                 label = stringResource(R.string.settings_tmdb_enter),
                                                 icon = Icons.Filled.Edit,
-                                                onClick = { editingTmdbKey = true }
+                                                onClick = { editingKey = ApiKeyService.TMDB }
                                             )
                                             if (tmdbKey.isNotBlank()) {
                                                 ActionButton(
@@ -578,6 +589,59 @@ fun SettingsScreen(
                                                     onClick = { repository.setTmdbKey("") }
                                                 )
                                             }
+                                        }
+                                    }
+                                }
+                                // OpenSubtitles: subtitles searched on request, in the chosen languages
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_opensubtitles_title),
+                                        description = stringResource(R.string.settings_opensubtitles_description)
+                                    ) {
+                                        Text(
+                                            text = stringResource(if (openSubtitlesKey.isBlank()) R.string.settings_tmdb_none else R.string.settings_tmdb_saved),
+                                            fontSize = 12.sp,
+                                            color = TextSecondary,
+                                            modifier = Modifier.padding(bottom = 10.dp)
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            ActionButton(
+                                                label = stringResource(R.string.settings_tmdb_enter),
+                                                icon = Icons.Filled.Edit,
+                                                onClick = { editingKey = ApiKeyService.OPENSUBTITLES }
+                                            )
+                                            if (openSubtitlesKey.isNotBlank()) {
+                                                ActionButton(
+                                                    label = stringResource(R.string.settings_tmdb_remove),
+                                                    icon = Icons.Filled.Delete,
+                                                    destructive = true,
+                                                    onClick = { repository.setOpenSubtitlesKey("") }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_subtitle_languages_title),
+                                        description = stringResource(R.string.settings_subtitle_languages_description)
+                                    ) {
+                                        val offered = remember(subtitleLanguages) {
+                                            (subtitleLanguages + listOf(java.util.Locale.getDefault().language) + DEFAULT_LANGUAGES).filter { it.length == 2 }.distinct()
+                                        }
+                                        // Toggled in place: the order of the choice is the order of the search
+                                        OptionGrid(offered, columns = 4) { language, cellModifier ->
+                                            val index = subtitleLanguages.indexOf(language)
+                                            OptionButton(
+                                                label = (languageName(language) ?: language) + if (index >= 0 && subtitleLanguages.size > 1) " · ${index + 1}" else "",
+                                                selected = index >= 0,
+                                                onClick = {
+                                                    repository.setSubtitleLanguages(
+                                                        if (index >= 0) subtitleLanguages - language else subtitleLanguages + language
+                                                    )
+                                                },
+                                                modifier = cellModifier
+                                            )
                                         }
                                     }
                                 }
@@ -645,6 +709,9 @@ fun SettingsScreen(
                                         val countries = remember {
                                             listOf<String?>(null) + (listOf(java.util.Locale.getDefault().country) + DEFAULT_COUNTRIES).filter { it.length == 2 }.distinct()
                                         }
+                                        val languages = remember {
+                                            listOf<String?>(null) + (listOf(java.util.Locale.getDefault().language) + DEFAULT_LANGUAGES).filter { it.length == 2 }.distinct()
+                                        }
                                         listOf(VodKind.MOVIE to R.string.vod_tab_movies, VodKind.SERIES to R.string.vod_tab_series).forEach { (kind, labelRes) ->
                                             val current = vodDisplay.defaults[kind] ?: VodFilter()
                                             fun update(filter: VodFilter) = repository.setVodDisplay(vodDisplay.copy(defaults = vodDisplay.defaults + (kind to filter)))
@@ -654,11 +721,50 @@ fun SettingsScreen(
                                                 color = TextSecondary,
                                                 modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
                                             )
+                                            // Several countries: each one toggled, "any" clears them
                                             OptionGrid(countries, columns = 5) { country, cellModifier ->
                                                 OptionButton(
                                                     label = country?.let { countryName(it) } ?: stringResource(R.string.vod_filter_any),
-                                                    selected = current.country == country,
-                                                    onClick = { update(current.copy(country = country)) },
+                                                    selected = if (country == null) current.countries.isEmpty() else country in current.countries,
+                                                    onClick = {
+                                                        update(
+                                                            current.copy(
+                                                                countries = when {
+                                                                    country == null -> emptySet()
+                                                                    country in current.countries -> current.countries - country
+                                                                    else -> current.countries + country
+                                                                }
+                                                            )
+                                                        )
+                                                    },
+                                                    modifier = cellModifier
+                                                )
+                                            }
+                                            Text(
+                                                text = stringResource(labelRes) + " · " + stringResource(R.string.vod_filter_audio),
+                                                fontSize = 12.sp,
+                                                color = TextSecondary,
+                                                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+                                            )
+                                            OptionGrid(languages, columns = 5) { language, cellModifier ->
+                                                OptionButton(
+                                                    label = language?.let { languageName(it) ?: it } ?: stringResource(R.string.vod_filter_any),
+                                                    selected = current.audio == language,
+                                                    onClick = { update(current.copy(audio = language)) },
+                                                    modifier = cellModifier
+                                                )
+                                            }
+                                            Text(
+                                                text = stringResource(labelRes) + " · " + stringResource(R.string.vod_filter_subtitles),
+                                                fontSize = 12.sp,
+                                                color = TextSecondary,
+                                                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+                                            )
+                                            OptionGrid(languages, columns = 5) { language, cellModifier ->
+                                                OptionButton(
+                                                    label = language?.let { languageName(it) ?: it } ?: stringResource(R.string.vod_filter_any),
+                                                    selected = current.subtitles == language,
+                                                    onClick = { update(current.copy(subtitles = language)) },
                                                     modifier = cellModifier
                                                 )
                                             }
@@ -711,13 +817,17 @@ fun SettingsScreen(
             }
         }
 
-        if (editingTmdbKey) {
-            TmdbKeyDialog(
+        editingKey?.let { service ->
+            ApiKeyDialog(
+                service = service,
                 accentColorObj = accentColorObj,
-                onDismiss = { editingTmdbKey = false },
+                onDismiss = { editingKey = null },
                 onSave = { key ->
-                    repository.setTmdbKey(key)
-                    editingTmdbKey = false
+                    when (service) {
+                        ApiKeyService.TMDB -> repository.setTmdbKey(key)
+                        ApiKeyService.OPENSUBTITLES -> repository.setOpenSubtitlesKey(key)
+                    }
+                    editingKey = null
                 }
             )
         }
@@ -751,44 +861,134 @@ fun SettingsScreen(
     }
 }
 
-/** Entry of the TMDB API key: hidden as it is typed, never shown back. */
+/** Services whose API key the user brings: the page where it is created, and what the dialog says of it. */
+private enum class ApiKeyService(val label: String, val keyPageUrl: String, @param:StringRes val titleRes: Int, @param:StringRes val hintRes: Int) {
+    TMDB("TMDB", "https://www.themoviedb.org/settings/api", R.string.settings_tmdb_dialog_title, R.string.settings_tmdb_dialog_hint),
+    OPENSUBTITLES("OpenSubtitles", "https://www.opensubtitles.com/consumers", R.string.settings_opensubtitles_dialog_title, R.string.settings_opensubtitles_dialog_hint)
+}
+
+/**
+ * Entry of an API key, from a phone: a QR code of the page where the key is created, and one of a page of the
+ * TV (local network) where it is pasted. It can also be typed with the remote, hidden, never shown back.
+ */
 @Composable
-private fun TmdbKeyDialog(accentColorObj: Color, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+private fun ApiKeyDialog(service: ApiKeyService, accentColorObj: Color, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var typing by remember { mutableStateOf(false) }
     var key by remember { mutableStateOf("") }
+    val currentSave by rememberUpdatedState(onSave)
+    val scope = rememberCoroutineScope()
+    val host = remember { ConfigTransfer.localAddresses().firstOrNull() }
+    val page = KeyEntryPage(
+        title = stringResource(R.string.api_key_page_title, service.label),
+        label = stringResource(service.hintRes),
+        send = stringResource(R.string.api_key_page_send),
+        done = stringResource(R.string.api_key_page_done),
+        invalid = stringResource(R.string.api_key_page_invalid),
+        getKey = stringResource(R.string.api_key_page_get, service.label),
+        providerUrl = service.keyPageUrl
+    )
+    var phoneUrl by remember { mutableStateOf<String?>(null) }
+    // Page of the TV, only while the dialog is open: the first valid key closes it
+    DisposableEffect(host) {
+        val server = host?.let {
+            try {
+                KeyEntryServer(page) { received -> scope.launch { currentSave(received) } }
+            } catch (e: java.io.IOException) {
+                null
+            }
+        }
+        server?.start(scope)
+        phoneUrl = host?.let { server?.url(it) }
+        onDispose { server?.stop() }
+    }
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { firstFocus.requestFocusWithRetry() }
+
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
-                .width(560.dp)
+                .width(780.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(SurfaceDark)
-                .padding(horizontal = 26.dp, vertical = 22.dp)
+                .padding(horizontal = 30.dp, vertical = 24.dp)
         ) {
-            Text(text = stringResource(R.string.settings_tmdb_dialog_title), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Spacer(modifier = Modifier.height(14.dp))
-            TvInputField(
-                label = stringResource(R.string.settings_tmdb_dialog_hint),
-                value = key,
-                onValueChange = { key = it },
-                placeholder = stringResource(R.string.settings_tmdb_dialog_hint),
-                accentColorObj = accentColorObj,
-                secret = true
-            )
+            Text(text = stringResource(service.titleRes), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(modifier = Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                KeyQrBlock(url = service.keyPageUrl, caption = stringResource(R.string.api_key_step_create, service.label))
+                val url = phoneUrl
+                if (url != null) {
+                    KeyQrBlock(url = url, caption = stringResource(R.string.api_key_step_paste))
+                } else {
+                    Text(
+                        text = stringResource(R.string.api_key_no_network),
+                        fontSize = 13.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.width(220.dp).padding(top = 20.dp)
+                    )
+                }
+            }
+            if (phoneUrl != null) {
+                Text(
+                    text = stringResource(R.string.api_key_same_network),
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(top = 14.dp)
+                )
+            }
+            if (typing) {
+                Spacer(modifier = Modifier.height(16.dp))
+                TvInputField(
+                    label = stringResource(service.hintRes),
+                    value = key,
+                    onValueChange = { key = it },
+                    placeholder = stringResource(service.hintRes),
+                    accentColorObj = accentColorObj,
+                    secret = true
+                )
+            }
             Spacer(modifier = Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (typing) {
+                    ActionButton(
+                        label = stringResource(R.string.settings_tmdb_save),
+                        icon = Icons.Filled.Check,
+                        primary = true,
+                        onClick = { if (key.isNotBlank()) onSave(key) }
+                    )
+                } else {
+                    ActionButton(
+                        label = stringResource(R.string.api_key_type),
+                        icon = Icons.Filled.Edit,
+                        onClick = { typing = true },
+                        modifier = Modifier.focusRequester(firstFocus)
+                    )
+                }
                 ActionButton(
-                    label = stringResource(R.string.settings_tmdb_save),
-                    icon = Icons.Filled.Check,
-                    primary = true,
-                    onClick = { if (key.isNotBlank()) onSave(key) }
+                    label = stringResource(R.string.settings_tmdb_cancel),
+                    icon = Icons.Filled.Close,
+                    onClick = onDismiss
                 )
-                ActionButton(label = stringResource(R.string.settings_tmdb_cancel), icon = Icons.Filled.Close, onClick = onDismiss)
             }
         }
     }
 }
 
+/** A QR code to scan, its step and the address it opens. */
+@Composable
+private fun KeyQrBlock(url: String, caption: String) {
+    Column(modifier = Modifier.width(220.dp)) {
+        QrCode(text = url, size = 200.dp)
+        Text(text = caption, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary, modifier = Modifier.padding(top = 10.dp))
+        Text(text = url.removePrefix("https://").removePrefix("http://"), fontSize = 11.sp, color = TextSecondary, maxLines = 2)
+    }
+}
+
 /** Countries offered as default filter, after the TV's own. */
 private val DEFAULT_COUNTRIES = listOf("FR", "US", "GB", "BE", "CH", "CA", "KR", "JP", "ES", "IT", "DE", "IN")
+
+/** Audio and subtitle languages offered as default filter, after the TV's own. */
+private val DEFAULT_LANGUAGES = listOf("fr", "en", "es", "de", "it", "pt", "ar", "tr", "nl")
 
 @Composable
 private fun vodRowLabel(kind: VodRow.Kind): String = stringResource(

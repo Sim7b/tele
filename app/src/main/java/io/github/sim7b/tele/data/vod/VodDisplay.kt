@@ -22,7 +22,14 @@ data class VodDisplay(
         put("hideTheater", hideTheater)
         put("defaults", JSONObject().apply {
             defaults.forEach { (kind, filter) ->
-                put(kind.name, JSONObject().put("country", filter.country).put("sort", filter.sort.name))
+                put(
+                    kind.name,
+                    JSONObject()
+                        .put("countries", JSONArray(filter.countries.toList()))
+                        .putOpt("audio", filter.audio)
+                        .putOpt("subtitles", filter.subtitles)
+                        .put("sort", filter.sort.name)
+                )
             }
         })
     }
@@ -37,8 +44,14 @@ data class VodDisplay(
             val defaults = json.optJSONObject("defaults")?.let { obj ->
                 VodKind.entries.mapNotNull { kind ->
                     val filter = obj.optJSONObject(kind.name) ?: return@mapNotNull null
+                    // "country": a single country, before several could be chosen
+                    val countries = filter.optJSONArray("countries")?.let { array ->
+                        (0 until array.length()).mapNotNull { array.optString(it).takeIf { code -> code.length == 2 } }
+                    } ?: listOfNotNull(filter.optStringOrNull("country"))
                     kind to VodFilter(
-                        country = filter.optStringOrNull("country"),
+                        countries = countries.toSet(),
+                        audio = filter.optStringOrNull("audio"),
+                        subtitles = filter.optStringOrNull("subtitles"),
                         sort = VodSort.entries.firstOrNull { it.name == filter.optString("sort") } ?: VodSort.POPULARITY
                     )
                 }.toMap()
