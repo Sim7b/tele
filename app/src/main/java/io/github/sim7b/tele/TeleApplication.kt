@@ -5,6 +5,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import io.github.sim7b.tele.data.remote.HttpClients
 import io.github.sim7b.tele.data.remote.TlsCompat
+import io.github.sim7b.tele.ui.components.Device
 
 /**
  * Application: sets up the TLS of the HTTP clients and provides the image loader of the logos and artwork.
@@ -15,6 +16,8 @@ class TeleApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         // Before any connection: the shared HTTP client picks its TLS stack when first used
         TlsCompat.init(this)
+        // TV (remote) or phone / tablet (touch), for the whole UI
+        Device.init(this)
     }
 
     // Same connection pool as the API, the guides and the player (Coil would create its own client)

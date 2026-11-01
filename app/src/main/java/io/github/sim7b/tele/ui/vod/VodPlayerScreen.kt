@@ -84,14 +84,30 @@ import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.data.storage.VodTrackPrefs
+import io.github.sim7b.tele.playback.CastInfo
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.playback.StreamInfo
 import io.github.sim7b.tele.playback.TrackChoice
 import io.github.sim7b.tele.playback.TvPlayerManager
+import io.github.sim7b.tele.ui.components.CastButton
+import io.github.sim7b.tele.ui.components.CastRemoteScreen
+import io.github.sim7b.tele.ui.components.Device
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
+import io.github.sim7b.tele.ui.components.TouchSteps
+import io.github.sim7b.tele.ui.components.blockTouches
+import io.github.sim7b.tele.ui.components.onAnyTouch
+import io.github.sim7b.tele.ui.components.playerGestures
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
+import io.github.sim7b.tele.ui.components.screenMargin
+import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.components.trackLabel
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import io.github.sim7b.tele.ui.theme.AccentCyan
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -130,7 +146,10 @@ fun VodPlayerScreen(
     val currentNext by rememberUpdatedState(next)
     val currentPlayNext by rememberUpdatedState(onPlayNext)
     val currentBack by rememberUpdatedState(onBack)
-    val player = remember { playerManager.getPlayer() }
+    val exoPlayer = remember { playerManager.getPlayer() }
+    // Phone / tablet casting: positions, pause and seeks go to the Chromecast
+    val castDevice by playerManager.castDevice.collectAsState()
+    val player: Player by rememberUpdatedState(if (castDevice != null) playerManager.controlPlayer() else exoPlayer)
 
     // Playback state read from the player (its positions are not observable)
     var positionMs by remember(request) { mutableLongStateOf(request.startMs) }
@@ -187,6 +206,11 @@ fun VodPlayerScreen(
         seekTarget = null
     }
 
+    fun jump(delta: Long) {
+        val target = player.currentPosition + delta
+        player.seekTo(if (durationMs > 0) target.coerceIn(0, durationMs) else target.coerceAtLeast(0))
+    }
+
     fun playNext() {
         val upcoming = currentNext ?: return
         if (leaving) return
@@ -212,18 +236,21 @@ fun VodPlayerScreen(
 
     DisposableEffect(request) {
         // Languages and speed of this title only: the live channels keep their own
-        val saved = player.trackSelectionParameters
+        val saved = exoPlayer.trackSelectionParameters
         onDispose {
             report(request)
             playerManager.stop()
-            player.trackSelectionParameters = saved
-            player.setPlaybackSpeed(1f)
+            exoPlayer.trackSelectionParameters = saved
+            exoPlayer.setPlaybackSpeed(1f)
         }
     }
     LaunchedEffect(request) {
         // With the subtitles downloaded for it before (read on the device, no request)
         val downloaded = subtitles?.cached?.invoke(request.itemKey).orEmpty()
-        playerManager.playVod(request.url, request.startMs, userAgent, streamAuths, request.fallbacks, downloaded)
+        playerManager.playVod(
+            request.url, request.startMs, userAgent, streamAuths, request.fallbacks, downloaded,
+            info = CastInfo(title = request.title, subtitle = request.episodeTitle, artworkUrl = request.posterUrl ?: request.imageUrl)
+        )
         trackPrefs?.let { playerManager.applyTrackPreferences(it.audio, it.subtitlesOn, it.subtitles) }
     }
     LaunchedEffect(request) {
@@ -312,6 +339,8 @@ fun VodPlayerScreen(
                 if (showControls) controlsToken++
                 false
             }
+            // Touch: the controls stay while they are used
+            .onAnyTouch { if (showControls) controlsToken++ }
             .focusRequester(rootFocus)
             .focusable()
             .onKeyEvent { event ->
@@ -370,10 +399,20 @@ fun VodPlayerScreen(
                 }
             }
     ) {
-        AndroidView(
+        // Phone / tablet casting: what plays on the Chromecast instead of the picture, this screen is the remote
+        castDevice?.let { device ->
+            CastRemoteScreen(
+                device = device,
+                title = request.title,
+                subtitle = episodeLine(request),
+                imageUrl = request.posterUrl ?: request.imageUrl,
+                hint = stringResource(R.string.cast_remote_hint_vod)
+            )
+        }
+        if (castDevice == null) AndroidView(
             factory = { context ->
                 PlayerView(context).also { view ->
-                    view.player = player
+                    view.player = exoPlayer
                     view.useController = false
                     view.keepScreenOn = true
                     view.isFocusable = false
@@ -389,6 +428,41 @@ fun VodPlayerScreen(
             onRelease = { view -> view.player = null },
             modifier = Modifier.fillMaxSize()
         )
+        // Phone / tablet: tap for the controls (or to close a panel), double tap on a side to jump back or
+        // forward, in the middle to pause
+        if (Device.isTouch) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .playerGestures(
+                        onTap = {
+                            when {
+                                showOptions || showSubtitleSearch -> {
+                                    showOptions = false
+                                    showSubtitleSearch = false
+                                    refocusToken++
+                                }
+                                error != null -> playerManager.retry()
+                                showControls -> showControls = false
+                                else -> revealControls()
+                            }
+                        },
+                        onDoubleTap = { side ->
+                            if (error == null && !showOptions && !showSubtitleSearch) {
+                                when (side) {
+                                    TouchSteps.Side.LEFT -> jump(-10_000)
+                                    TouchSteps.Side.RIGHT -> jump(30_000)
+                                    TouchSteps.Side.CENTER -> togglePause()
+                                }
+                                if (!showControls) {
+                                    showSeekBar = true
+                                    seekBarToken++
+                                }
+                            }
+                        }
+                    )
+            )
+        }
         if (isLoading && error == null && seekTarget == null) {
             CircularProgressIndicator(color = AccentCyan, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(42.dp))
         }
@@ -419,15 +493,21 @@ fun VodPlayerScreen(
                 playFocus = playFocus,
                 onSeekKey = ::seekKeys,
                 onTogglePause = ::togglePause,
-                onJump = { delta ->
-                    val target = player.currentPosition + delta
-                    player.seekTo(if (durationMs > 0) target.coerceIn(0, durationMs) else target.coerceAtLeast(0))
-                },
+                onJump = ::jump,
                 onNext = ::playNext,
                 onOptions = {
                     showControls = false
                     showOptions = true
-                }
+                },
+                onBack = {
+                    leaving = true
+                    report(request)
+                    onBack()
+                },
+                // Touch: the bar follows the finger, the position is applied when it lifts
+                onSeekTo = { position -> seekTarget = position },
+                onSeekDone = ::commitSeek,
+                castButton = { CastButton(playerManager, size = 44.dp) }
             )
         }
 
@@ -441,7 +521,7 @@ fun VodPlayerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
-                    .padding(start = 48.dp, end = 48.dp, top = 40.dp, bottom = 32.dp)
+                    .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 40.dp, bottom = 32.dp)
             ) {
                 ProgressRow(seekTarget ?: positionMs, bufferedMs, durationMs, seeking = seekTarget != null, focused = false)
             }
@@ -538,7 +618,11 @@ fun VodPlayerScreen(
             Column(modifier = Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = request.label, fontSize = 18.sp, color = Color.White)
                 Text(text = message.resolve(), fontSize = 14.sp, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(top = 8.dp))
-                Text(text = stringResource(R.string.vod_player_retry_hint), fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(top = 14.dp))
+                if (Device.isTouch) {
+                    Pill(text = stringResource(R.string.home_retry), onClick = { playerManager.retry() }, modifier = Modifier.padding(top = 14.dp))
+                } else {
+                    Text(text = stringResource(R.string.vod_player_retry_hint), fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(top = 14.dp))
+                }
             }
         }
     }
@@ -547,12 +631,19 @@ fun VodPlayerScreen(
 /** Panel on the right of the picture, like the playback options. */
 @Composable
 private fun SidePanel(title: String, content: @Composable () -> Unit) {
+    // Phone: the whole width, opaque
+    val compact = LocalScreen.current.compact
     Column(
         modifier = Modifier
             .fillMaxHeight()
-            .width(520.dp)
-            .background(Brush.horizontalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f), Color.Black.copy(alpha = 0.94f))))
-            .padding(start = 60.dp, end = 32.dp, top = 36.dp, bottom = 24.dp)
+            .then(if (compact) Modifier.fillMaxWidth() else Modifier.width(520.dp))
+            .background(
+                if (compact) SolidColor(Color.Black.copy(alpha = 0.94f))
+                else Brush.horizontalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f), Color.Black.copy(alpha = 0.94f)))
+            )
+            // Touch: taps here stay in the panel (beside it, they close it)
+            .blockTouches()
+            .padding(start = if (compact) 16.dp else 60.dp, end = screenMargin(32.dp), top = 36.dp, bottom = 24.dp)
     ) {
         Text(text = title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.padding(start = 14.dp, bottom = 10.dp))
         content()
@@ -578,12 +669,20 @@ private fun Controls(
     onTogglePause: () -> Unit,
     onJump: (Long) -> Unit,
     onNext: () -> Unit,
-    onOptions: () -> Unit
+    onOptions: () -> Unit,
+    // Touch: Back, and the bar moved with the finger (position while it moves, then applied)
+    onBack: () -> Unit,
+    onSeekTo: (Long) -> Unit,
+    onSeekDone: () -> Unit,
+    // Touch: the Chromecast button, beside the title
+    castButton: @Composable () -> Unit = {}
 ) {
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
     val timeFormat = remember(context) { DateFormat.getTimeFormat(context) }
     val now = System.currentTimeMillis()
+    // Phone: the buttons above the tracks and the options, smaller titles
+    val compact = LocalScreen.current.compact
     Box(modifier = Modifier.fillMaxSize()) {
         Row(
             verticalAlignment = Alignment.Top,
@@ -591,13 +690,23 @@ private fun Controls(
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.8f), Color.Transparent)))
-                .padding(start = 48.dp, end = 48.dp, top = 28.dp, bottom = 48.dp)
+                .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 28.dp, bottom = 48.dp)
         ) {
+            if (Device.isTouch) {
+                RoundButton(onClick = onBack, label = stringResource(R.string.settings_back), size = 44) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(22.dp))
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = request.title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(text = request.title, fontSize = if (compact) 20.sp else 26.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 episodeLine(request)?.let {
                     Text(text = it, fontSize = 16.sp, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                 }
+            }
+            if (Device.isTouch) {
+                castButton()
+                Spacer(modifier = Modifier.width(14.dp))
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(text = timeFormat.format(Date(now)), fontSize = 20.sp, color = Color.White)
@@ -617,7 +726,7 @@ private fun Controls(
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
-                .padding(start = 48.dp, end = 48.dp, top = 56.dp, bottom = 28.dp)
+                .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 56.dp, bottom = if (compact) 20.dp else 28.dp)
         ) {
             // The bar takes the focus with ↑: ← / → then seek, OK pauses
             val barInteraction = remember { MutableInteractionSource() }
@@ -636,53 +745,74 @@ private fun Controls(
                     }
                     .focusable(interactionSource = barInteraction)
             ) {
-                ProgressRow(positionMs, bufferedMs, durationMs, seeking, focused = barFocused)
+                ProgressRow(
+                    positionMs, bufferedMs, durationMs, seeking, focused = barFocused,
+                    onSeekTo = onSeekTo.takeIf { Device.isTouch },
+                    onSeekDone = onSeekDone
+                )
             }
             Spacer(modifier = Modifier.height(16.dp))
-            // Three parts: tracks, buttons, quality and options; the sides never cover the buttons
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    if (audio != null) Pill(text = trackShortLabel(audio, locale, isAudio = true), onClick = onOptions)
-                    Pill(
-                        text = subtitle?.let { trackShortLabel(it, locale, isAudio = false) }
-                            ?: stringResource(R.string.vod_player_subtitles_off),
-                        onClick = onOptions
+            val tracks: @Composable () -> Unit = {
+                if (audio != null) Pill(text = trackShortLabel(audio, locale, isAudio = true), onClick = onOptions)
+                Pill(
+                    text = subtitle?.let { trackShortLabel(it, locale, isAudio = false) }
+                        ?: stringResource(R.string.vod_player_subtitles_off),
+                    onClick = onOptions
+                )
+            }
+            val buttons: @Composable () -> Unit = {
+                RoundButton(onClick = { onJump(-10_000) }, label = stringResource(R.string.vod_player_back_10)) {
+                    Text(text = "−10", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+                RoundButton(
+                    onClick = onTogglePause,
+                    label = stringResource(if (paused) R.string.vod_player_play else R.string.vod_player_pause),
+                    size = 64,
+                    modifier = Modifier.focusRequester(playFocus)
+                ) {
+                    if (paused) Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(34.dp)) else PauseGlyph()
+                }
+                RoundButton(onClick = { onJump(30_000) }, label = stringResource(R.string.vod_player_forward_30)) {
+                    Text(text = "+30", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+                if (hasNext) {
+                    RoundButton(onClick = onNext, label = stringResource(R.string.vod_player_next_episode)) { NextGlyph() }
+                }
+            }
+            val extras: @Composable () -> Unit = {
+                qualityLabel(streamInfo)?.let { quality ->
+                    Text(
+                        text = quality,
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.White.copy(alpha = 0.12f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
-                    RoundButton(onClick = { onJump(-10_000) }, label = stringResource(R.string.vod_player_back_10)) {
-                        Text(text = "−10", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    RoundButton(
-                        onClick = onTogglePause,
-                        label = stringResource(if (paused) R.string.vod_player_play else R.string.vod_player_pause),
-                        size = 64,
-                        modifier = Modifier.focusRequester(playFocus)
-                    ) {
-                        if (paused) Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(34.dp)) else PauseGlyph()
-                    }
-                    RoundButton(onClick = { onJump(30_000) }, label = stringResource(R.string.vod_player_forward_30)) {
-                        Text(text = "+30", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    if (hasNext) {
-                        RoundButton(onClick = onNext, label = stringResource(R.string.vod_player_next_episode)) { NextGlyph() }
-                    }
+                RoundButton(onClick = onOptions, label = stringResource(R.string.options_title), size = 44) {
+                    Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(22.dp))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    qualityLabel(streamInfo)?.let { quality ->
-                        Text(
-                            text = quality,
-                            fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(Color.White.copy(alpha = 0.12f))
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-                    }
-                    RoundButton(onClick = onOptions, label = stringResource(R.string.options_title), size = 44) {
-                        Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(22.dp))
-                    }
+            }
+            if (compact) {
+                // Phone: the buttons in the middle, the tracks and the options under them
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) { buttons() }
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) { tracks() }
+                    extras()
+                }
+            } else {
+                // Three parts: tracks, buttons, quality and options; the sides never cover the buttons
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) { tracks() }
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) { buttons() }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) { extras() }
                 }
             }
         }
@@ -691,7 +821,18 @@ private fun Controls(
 
 /** Elapsed time, bar (buffered and played parts, thumb and the chosen position while seeking), time left. */
 @Composable
-private fun ProgressRow(positionMs: Long, bufferedMs: Long, durationMs: Long, seeking: Boolean, focused: Boolean) {
+private fun ProgressRow(
+    positionMs: Long,
+    bufferedMs: Long,
+    durationMs: Long,
+    seeking: Boolean,
+    focused: Boolean,
+    // Touch: the position under the finger (tap or drag on the bar), then applied
+    onSeekTo: ((Long) -> Unit)? = null,
+    onSeekDone: () -> Unit = {}
+) {
+    val seekTo by rememberUpdatedState(onSeekTo)
+    val seekDone by rememberUpdatedState(onSeekDone)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(text = positionLabel(positionMs), fontSize = 15.sp, color = Color.White, modifier = Modifier.widthIn(min = 64.dp))
         if (durationMs > 0) {
@@ -701,6 +842,25 @@ private fun ProgressRow(positionMs: Long, bufferedMs: Long, durationMs: Long, se
                     .weight(1f)
                     .height(36.dp)
                     .padding(horizontal = 14.dp)
+                    .then(
+                        if (onSeekTo == null) Modifier else Modifier
+                            .pointerInput(durationMs) {
+                                detectTapGestures { offset ->
+                                    seekTo?.invoke(TouchSteps.seekPosition(offset.x, size.width.toFloat(), durationMs))
+                                    seekDone()
+                                }
+                            }
+                            .pointerInput(durationMs) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = { offset -> seekTo?.invoke(TouchSteps.seekPosition(offset.x, size.width.toFloat(), durationMs)) },
+                                    onDragEnd = { seekDone() },
+                                    onDragCancel = { seekDone() }
+                                ) { change, _ ->
+                                    change.consume()
+                                    seekTo?.invoke(TouchSteps.seekPosition(change.position.x, size.width.toFloat(), durationMs))
+                                }
+                            }
+                    )
             ) {
                 val fraction = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
                 val buffered = (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f)
@@ -729,6 +889,8 @@ private fun ProgressRow(positionMs: Long, bufferedMs: Long, durationMs: Long, se
 /** Paused: the picture dims under the poster, the title and its summary. */
 @Composable
 private fun PauseScreen(request: VodPlayRequest, positionMs: Long, durationMs: Long) {
+    // Phone: the summary alone, the poster takes too much room
+    val compact = LocalScreen.current.compact
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -738,9 +900,9 @@ private fun PauseScreen(request: VodPlayRequest, positionMs: Long, durationMs: L
             verticalAlignment = Alignment.Bottom,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 56.dp, end = 56.dp, bottom = 56.dp)
+                .padding(start = screenMargin(56.dp), end = screenMargin(56.dp), bottom = if (compact) 32.dp else 56.dp)
         ) {
-            if (request.posterUrl != null) {
+            if (request.posterUrl != null && !compact) {
                 FadeInImage(
                     url = request.posterUrl,
                     contentDescription = null,
@@ -785,15 +947,18 @@ private fun UpNextCard(next: VodPlayRequest, countdown: Int, playFocus: FocusReq
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .padding(end = 48.dp, bottom = 40.dp)
-            .width(520.dp)
+            .then(
+                // Phone: across the bottom of the screen
+                if (LocalScreen.current.compact) Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp).fillMaxWidth()
+                else Modifier.padding(end = 48.dp, bottom = 40.dp).width(520.dp)
+            )
             .clip(RoundedCornerShape(14.dp))
             .background(Color.Black.copy(alpha = 0.88f))
             .padding(14.dp)
     ) {
         Box(
             modifier = Modifier
-                .width(180.dp)
+                .width(if (LocalScreen.current.compact) 120.dp else 180.dp)
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White.copy(alpha = 0.08f))
@@ -857,7 +1022,8 @@ private fun RoundButton(
         onClick = onClick,
         modifier = modifier
             .size(size.dp)
-            .semantics { contentDescription = label },
+            .semantics { contentDescription = label }
+            .touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.12f),
         colors = ClickableSurfaceDefaults.colors(
@@ -876,7 +1042,7 @@ private fun RoundButton(
 private fun Pill(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: Boolean = false) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(50)),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
         colors = ClickableSurfaceDefaults.colors(

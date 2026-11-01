@@ -42,6 +42,7 @@ import io.github.sim7b.tele.data.vod.VodVersion
 import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.ProgressLine
 import io.github.sim7b.tele.ui.components.focusRing
+import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.theme.SurfaceCard
 import io.github.sim7b.tele.ui.theme.TextPrimary
 import io.github.sim7b.tele.ui.theme.TextSecondary
@@ -92,7 +93,8 @@ internal fun PosterCard(
             interactionSource = interactionSource,
             modifier = Modifier
                 .width(width)
-                .height(width * 1.5f),
+                .height(width * 1.5f)
+                .touchClick(onClick, onLongClick),
             shape = ClickableSurfaceDefaults.shape(shape = shape),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
             border = focusRing(shape),

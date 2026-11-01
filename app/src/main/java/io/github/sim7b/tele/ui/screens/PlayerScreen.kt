@@ -50,11 +50,24 @@ import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
+import io.github.sim7b.tele.playback.CastInfo
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.playback.StreamInfo
 import io.github.sim7b.tele.playback.TvPlayerManager
+import io.github.sim7b.tele.ui.components.CastButton
+import io.github.sim7b.tele.ui.components.CastRemoteScreen
 import io.github.sim7b.tele.ui.components.ChannelListPanel
+import io.github.sim7b.tele.ui.components.Device
 import io.github.sim7b.tele.ui.components.GuideActions
+import io.github.sim7b.tele.ui.components.LocalScreen
+import io.github.sim7b.tele.ui.components.RoundIconButton
+import io.github.sim7b.tele.ui.components.playerGestures
+import io.github.sim7b.tele.ui.components.screenMargin
+import io.github.sim7b.tele.ui.vod.VodChip
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
 import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
 import io.github.sim7b.tele.ui.components.ChannelNumberBadge
 import io.github.sim7b.tele.ui.components.rememberChannelNumberEntry
@@ -108,6 +121,8 @@ fun PlayerScreen(
     val errorMessage by playerManager.error.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
     val reconnection by playerManager.reconnection.collectAsState()
+    // Phone / tablet casting: the stream plays on the Chromecast, this screen is the remote
+    val castDevice by playerManager.castDevice.collectAsState()
 
     var showOverlay by remember { mutableStateOf(true) }
     // Incremented on every requested display to restart the hide delay
@@ -144,7 +159,8 @@ fun PlayerScreen(
             urls.firstOrNull() ?: streamUrl,
             customUserAgent = userAgent,
             auths = streamAuths,
-            fallbacks = urls.drop(1)
+            fallbacks = urls.drop(1),
+            info = channel.castInfo()
         )
     }
 
@@ -167,7 +183,8 @@ fun PlayerScreen(
         var stoppedInBackground = false
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_STOP -> {
+                // Casting: the Chromecast keeps playing while the phone is locked
+                Lifecycle.Event.ON_STOP -> if (playerManager.castDevice.value == null) {
                     stoppedInBackground = true
                     playerManager.stop()
                 }
@@ -180,7 +197,8 @@ fun PlayerScreen(
                             urls.firstOrNull() ?: currentStreamUrl,
                             customUserAgent = currentUserAgent,
                             auths = currentStreamAuths,
-                            fallbacks = urls.drop(1)
+                            fallbacks = urls.drop(1),
+                            info = currentChannel.castInfo()
                         )
                     }
                     revealOverlay()
@@ -282,8 +300,17 @@ fun PlayerScreen(
                 }
             }
     ) {
+        castDevice?.let { device ->
+            CastRemoteScreen(
+                device = device,
+                title = channel.name,
+                subtitle = channel.currentProgram?.title,
+                imageUrl = channel.logoUrl,
+                hint = stringResource(R.string.cast_remote_hint)
+            )
+        }
         // Native ExoPlayer video view (hardware-accelerated SurfaceView)
-        AndroidView(
+        if (castDevice == null) AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     player = playerManager.getPlayer()
@@ -301,6 +328,34 @@ fun PlayerScreen(
             onRelease = { view -> view.player = null },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Phone / tablet: tap for the banner and its buttons (or to close a panel), swipe up / down to switch
+        // channel, hold for the streams
+        if (Device.isTouch) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .playerGestures(
+                        onTap = {
+                            when {
+                                showChannelPanel || showOptionsPanel -> {
+                                    showChannelPanel = false
+                                    showOptionsPanel = false
+                                    refocusToken++
+                                }
+                                showOverlay -> showOverlay = false
+                                else -> revealOverlay()
+                            }
+                        },
+                        onLongPress = { showStreamPicker = true },
+                        onSwipe = { step ->
+                            if (!showChannelPanel && !showOptionsPanel) {
+                                if (step > 0) onNextChannel() else onPreviousChannel()
+                            }
+                        }
+                    )
+            )
+        }
 
         // Loading spinner (buffering / channel switching)
         if (isLoading && errorMessage == null) {
@@ -340,19 +395,27 @@ fun PlayerScreen(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.player_retry_hint),
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(R.string.player_other_stream_hint),
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                if (Device.isTouch) {
+                    // The keys of the remote, as buttons
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        VodChip(label = stringResource(R.string.home_retry), selected = false, onClick = { playerManager.retry() })
+                        VodChip(label = stringResource(R.string.player_other_stream), selected = false, onClick = { showStreamPicker = true })
+                    }
+                } else {
+                    Text(
+                        text = stringResource(R.string.player_retry_hint),
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.player_other_stream_hint),
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
 
@@ -381,6 +444,29 @@ fun PlayerScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             PlayerOverlay(channel = channel, streamInfo = streamInfo)
+        }
+
+        // Phone / tablet: with the banner, the buttons of the keys (Back, channel panel, options)
+        if (Device.isTouch) {
+            AnimatedVisibility(
+                visible = showOverlay && !showChannelPanel && !showOptionsPanel,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                PlayerTopBar(
+                    playerManager = playerManager,
+                    onBack = onBack,
+                    onChannels = {
+                        showOverlay = false
+                        showChannelPanel = true
+                    },
+                    onOptions = {
+                        showOverlay = false
+                        showOptionsPanel = true
+                    }
+                )
+            }
         }
 
         ChannelNumberBadge(
@@ -460,10 +546,31 @@ fun PlayerScreen(
     }
 }
 
+/** Phone / tablet: Back on the left, the channel panel and the playback options on the right. */
+@Composable
+private fun PlayerTopBar(playerManager: TvPlayerManager, onBack: () -> Unit, onChannels: () -> Unit, onOptions: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
+            .padding(horizontal = screenMargin(32.dp), vertical = 16.dp)
+    ) {
+        RoundIconButton(icon = Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), onClick = onBack)
+        Spacer(modifier = Modifier.weight(1f))
+        CastButton(playerManager)
+        RoundIconButton(icon = Icons.Filled.List, contentDescription = stringResource(R.string.panel_title), onClick = onChannels)
+        RoundIconButton(icon = Icons.Filled.Settings, contentDescription = stringResource(R.string.options_title), onClick = onOptions)
+    }
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
     val program = channel.currentProgram
+    // Phone: narrower banner, without the technical column
+    val compact = LocalScreen.current.compact
 
     Box(
         modifier = Modifier
@@ -475,7 +582,7 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                     1f to Color.Black.copy(alpha = 0.92f)
                 )
             )
-            .padding(start = 56.dp, end = 56.dp, top = 70.dp, bottom = 34.dp)
+            .padding(start = screenMargin(56.dp), end = screenMargin(56.dp), top = 70.dp, bottom = if (compact) 20.dp else 34.dp)
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
             LogoPlate(
@@ -483,10 +590,10 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                 name = channel.name,
                 corner = 10.dp,
                 padding = 8.dp,
-                modifier = Modifier.size(width = 92.dp, height = 64.dp)
+                modifier = if (compact) Modifier.size(width = 64.dp, height = 44.dp) else Modifier.size(width = 92.dp, height = 64.dp)
             )
 
-            Spacer(modifier = Modifier.width(22.dp))
+            Spacer(modifier = Modifier.width(if (compact) 14.dp else 22.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -518,7 +625,7 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
 
                 Text(
                     text = program?.title ?: channel.name,
-                    fontSize = 26.sp,
+                    fontSize = if (compact) 20.sp else 26.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     maxLines = 1,
@@ -534,11 +641,11 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                             progress = program.progress,
                             height = 3.dp,
                             trackColor = Color.White.copy(alpha = 0.2f),
-                            modifier = Modifier.width(280.dp)
+                            modifier = if (compact) Modifier.weight(1f) else Modifier.width(280.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(text = program.endTime, fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-                        if (!program.category.isNullOrBlank()) {
+                        if (!program.category.isNullOrBlank() && !compact) {
                             Spacer(modifier = Modifier.width(14.dp))
                             Text(
                                 text = program.category,
@@ -561,6 +668,7 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                 }
             }
 
+            if (compact) return@Row
             Spacer(modifier = Modifier.width(24.dp))
 
             // Actual technical information and active stream
@@ -584,17 +692,23 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.widthIn(max = 260.dp)
                 )
-                Text(
-                    text = stringResource(R.string.player_change_stream_hint),
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.35f)
-                )
-                Text(
-                    text = stringResource(R.string.player_options_hint),
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.35f)
-                )
+                // Keys of the remote: buttons on a touch screen
+                if (!Device.isTouch) {
+                    Text(
+                        text = stringResource(R.string.player_change_stream_hint),
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.35f)
+                    )
+                    Text(
+                        text = stringResource(R.string.player_options_hint),
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.35f)
+                    )
+                }
             }
         }
     }
 }
+
+/** What the Chromecast shows on the TV: the channel, its current program and its logo. */
+private fun Channel.castInfo() = CastInfo(title = name, subtitle = currentProgram?.title, artworkUrl = logoUrl)

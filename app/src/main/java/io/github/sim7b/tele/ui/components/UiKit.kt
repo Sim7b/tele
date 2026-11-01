@@ -301,7 +301,7 @@ fun MenuRow(
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
         colors = ClickableSurfaceDefaults.colors(
@@ -384,7 +384,7 @@ fun RoundIconButton(
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        modifier = modifier.size(size),
+        modifier = modifier.size(size).touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
         colors = ClickableSurfaceDefaults.colors(

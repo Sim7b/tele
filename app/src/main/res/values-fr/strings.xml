@@ -649,4 +649,30 @@
     <string name="settings_vod_default_country">Pays</string>
     <string name="settings_vod_default_sort">Tri</string>
     <string name="settings_vod_poster_description">Taille des affiches dans la bibliothèque</string>
+
+    <!-- Téléphones et tablettes (tactile) -->
+    <string name="home_move_touch_hint">Touchez un favori pour l\'y déplacer · touchez-le à nouveau pour finir</string>
+    <string name="home_move_category_touch_hint">Touchez une catégorie pour l\'y déplacer · touchez-la à nouveau pour finir</string>
+    <string name="player_other_stream">Autre flux</string>
+    <string name="cast_button">Caster sur une TV</string>
+    <string name="cast_playing_on">Lecture sur %1$s</string>
+    <string name="cast_playing_on_device">Lecture sur le Chromecast</string>
+    <string name="cast_remote_hint">Cet écran sert de télécommande : glissez pour changer de chaîne, touchez pour les boutons</string>
+    <string name="cast_remote_hint_vod">Cet écran sert de télécommande : touchez pour les commandes</string>
+    <string name="cast_error_insecure">Le Chromecast refuse ce flux : il est servi en HTTP simple (non sécurisé). Il ne se lit que sur cet appareil</string>
+    <string name="cast_error_stream">Le Chromecast ne peut pas lire ce flux (format non pris en charge, ou le serveur le refuse)</string>
+    <string name="panel_programs">Programmes de %1$s</string>
+    <string name="guide_now">Maintenant</string>
+    <string name="guide_previous_category">Catégorie précédente</string>
+    <string name="guide_next_category">Catégorie suivante</string>
+    <string name="api_key_open_page">Ouvrir la page %1$s</string>
+    <string name="guide_touch_welcome_1">Touchez pour ouvrir, maintenez pour plus d\'actions, balayez depuis le bord (Retour) pour revenir.</string>
+    <string name="guide_touch_home_2">Maintenez une chaîne : l\'ajouter aux favoris, la masquer, choisir son flux ou la déplacer.</string>
+    <string name="guide_touch_home_3">Maintenez une catégorie pour la renommer, la déplacer ou la masquer.</string>
+    <string name="guide_touch_player_1">Balayez vers le haut ou le bas : chaîne suivante ou précédente.</string>
+    <string name="guide_touch_player_2">Touchez l\'image : infos du programme et boutons (liste des chaînes, options).</string>
+    <string name="guide_touch_player_3">Dans la liste des chaînes, la flèche d\'une chaîne montre ses prochains programmes.</string>
+    <string name="guide_touch_player_4">Maintenez l\'image : choisir un autre flux.</string>
+    <string name="guide_touch_hint_next">Touchez : suivant · Retour : passer</string>
+    <string name="guide_touch_hint_last">Touchez : c\'est parti</string>
 </resources>

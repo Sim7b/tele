@@ -13,7 +13,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -39,6 +45,9 @@ import io.github.sim7b.tele.data.model.SourceType
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.DISPATCHARR_AUTOMATIC
+import io.github.sim7b.tele.ui.components.CastButton
+import io.github.sim7b.tele.ui.components.Device
+import io.github.sim7b.tele.ui.components.touchTap
 import io.github.sim7b.tele.ui.components.PreviewVideo
 import io.github.sim7b.tele.ui.screens.GuideScreen
 import io.github.sim7b.tele.ui.screens.HomeScreen
@@ -114,11 +123,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var playerManager: TvPlayerManager
     private val viewModel: MainViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
+    // Phone / tablet: a player is shown (system bars hidden)
+    private var playerShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        playerManager = TvPlayerManager(this)
+        playerManager = TvPlayerManager(this, castEnabled = Device.isTouch)
         val configRepository = viewModel.configRepository
+        // Phone / tablet: drawn behind the system bars, the screens keep clear of them (safe area below)
+        if (Device.isTouch) WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
             val enabledConfigs by configRepository.enabledConfigs.collectAsState()
@@ -198,6 +211,14 @@ class MainActivity : ComponentActivity() {
             // Back on the home screen: refresh the slots right away (leaving the player frees one)
             LaunchedEffect(currentScreen is CurrentScreen.Home) {
                 if (currentScreen is CurrentScreen.Home) viewModel.refreshStreamSlots()
+            }
+            // Phone / tablet: the players take the whole screen, the other screens keep the navigation bar
+            if (Device.isTouch) {
+                val inPlayer = currentScreen is CurrentScreen.Player || currentScreen is CurrentScreen.VodPlayer
+                LaunchedEffect(inPlayer) {
+                    playerShown = inPlayer
+                    showSystemBars(navigation = !inPlayer)
+                }
             }
             // "Good morning/Good evening" welcome shown only once per app launch
             var showWelcome by rememberSaveable { mutableStateOf(true) }
@@ -368,6 +389,8 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color(themeBackground.backgroundColorHex))
+                        // Phone / tablet: clear of the navigation bar, the camera cutout and the keyboard
+                        .then(if (Device.isTouch) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
                         .onPreviewKeyEvent { event ->
                             if (!showWelcome) return@onPreviewKeyEvent false
                             val keyCode = event.nativeKeyEvent.keyCode
@@ -430,9 +453,11 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onOpenVod = if (vodEnabled) ({ currentScreen = CurrentScreen.Vod }) else null,
                                     onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
-                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide },
+                                    // Not on a phone / tablet: the focus does not follow the eyes there, a tap opens the channel
+                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide && !Device.isTouch },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
-                                    previewSurface = { PreviewVideo(playerManager) }
+                                    previewSurface = { PreviewVideo(playerManager) },
+                                    castButton = { CastButton(playerManager) }
                                 )
                             }
                         }
@@ -694,7 +719,8 @@ class MainActivity : ComponentActivity() {
                         enter = EnterTransition.None,
                         exit = fadeOut(tween(durationMillis = 700))
                     ) {
-                        WelcomeScreen(name = userName)
+                        // A tap skips it, like OK (and the hidden home screen does not get it)
+                        WelcomeScreen(name = userName, modifier = Modifier.touchTap { showWelcome = false })
                     }
                 }
             }
@@ -710,6 +736,20 @@ class MainActivity : ComponentActivity() {
                 context.imageLoader.execute(ImageRequest.Builder(context).data(url).build())
             }
         }.awaitAll()
+    }
+
+    // Back from another app (voice search, installer): the bars as the screen wants them
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && Device.isTouch) showSystemBars(navigation = !playerShown)
+    }
+
+    /** Phone / tablet: no status bar, as on the TV; the navigation bar comes back with a swipe when hidden. */
+    private fun showSystemBars(navigation: Boolean) {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.statusBars())
+        if (navigation) controller.show(WindowInsetsCompat.Type.navigationBars()) else controller.hide(WindowInsetsCompat.Type.navigationBars())
     }
 
     override fun onStop() {

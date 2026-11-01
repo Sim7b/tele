@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -66,17 +69,23 @@ fun PlaybackOptionsPanel(
         onDismiss()
     }
     LaunchedEffect(Unit) { firstRow.requestFocusWithRetry() }
+    // Phone: the whole width, without the fade over the picture
+    val compact = LocalScreen.current.compact
 
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .width(OptionsPanelWidth + OptionsFadeWidth)
+            .then(if (compact) Modifier.fillMaxWidth() else Modifier.width(OptionsPanelWidth + OptionsFadeWidth))
             .background(
-                Brush.horizontalGradient(
-                    0f to Color.Transparent,
-                    0.3f to Color.Black.copy(alpha = 0.78f),
-                    1f to Color.Black.copy(alpha = 0.92f)
-                )
+                if (compact) {
+                    SolidColor(Color.Black.copy(alpha = 0.92f))
+                } else {
+                    Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        0.3f to Color.Black.copy(alpha = 0.78f),
+                        1f to Color.Black.copy(alpha = 0.92f)
+                    )
+                }
             )
             .onPreviewKeyEvent { event ->
                 interactions++
@@ -92,20 +101,36 @@ fun PlaybackOptionsPanel(
         LazyColumn(
             modifier = Modifier
                 .align(androidx.compose.ui.Alignment.CenterEnd)
-                .width(OptionsPanelWidth)
+                .then(if (compact) Modifier.fillMaxWidth() else Modifier.width(OptionsPanelWidth))
                 .fillMaxHeight()
-                .padding(start = 12.dp, end = 32.dp),
+                // Touch: taps here stay in the panel (beside it, they close it)
+                .onAnyTouch { interactions++ }
+                .blockTouches()
+                .padding(start = 12.dp, end = screenMargin(32.dp)),
             contentPadding = PaddingValues(vertical = 36.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             item {
-                Text(
-                    text = stringResource(R.string.options_title),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
-                    modifier = Modifier.padding(start = 14.dp, bottom = 10.dp)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.options_title),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 14.dp, bottom = 10.dp)
+                    )
+                    if (Device.isTouch) {
+                        RoundIconButton(
+                            icon = Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.vod_close),
+                            onClick = onDismiss,
+                            size = 36.dp,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                    }
+                }
                 if (onChooseStream != null) {
                     MenuRow(
                         label = stringResource(R.string.options_choose_stream),

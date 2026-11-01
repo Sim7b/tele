@@ -111,7 +111,8 @@ fun FavoriteChannelCard(
         interactionSource = interactionSource,
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f),
+            .aspectRatio(16f / 9f)
+            .touchClick(onClick, onLongClick),
         shape = ClickableSurfaceDefaults.shape(shape = FavoriteShape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (isMoving) 1.1f else 1.06f),
         // While moving: permanent accent outline to set the "lifted" tile apart
@@ -254,7 +255,8 @@ fun CompactChannelCard(
         interactionSource = interactionSource,
         modifier = modifier
             .fillMaxWidth()
-            .height(62.dp),
+            .height(62.dp)
+            .touchClick(onClick, onLongClick),
         shape = ClickableSurfaceDefaults.shape(shape = CompactShape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
         border = focusRing(CompactShape),
@@ -366,7 +368,7 @@ fun DiscreteCategoryChip(
         onClick = onClick,
         onLongClick = onLongClick,
         interactionSource = interactionSource,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick, onLongClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
         colors = ClickableSurfaceDefaults.colors(
@@ -414,7 +416,7 @@ private fun DialogPanel(
         val shape = RoundedCornerShape(20.dp)
         Column(
             modifier = Modifier
-                .width(width)
+                .dialogWidth(width)
                 .heightIn(max = maxHeight * 0.92f)
                 .clip(shape)
                 .background(SurfaceDark)
@@ -508,7 +510,7 @@ fun ChannelActionMenuDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val favoriteRow: @Composable (Modifier) -> Unit = { modifier ->
                 MenuRow(
                     label = stringResource(if (isFavorite) R.string.card_remove_favorite else R.string.card_add_favorite),
                     icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -516,10 +518,10 @@ fun ChannelActionMenuDialog(
                         onToggleFavorite()
                         onDismiss()
                     },
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(firstItemFocus)
+                    modifier = modifier.focusRequester(firstItemFocus)
                 )
+            }
+            val hideRow: @Composable (Modifier) -> Unit = { modifier ->
                 MenuRow(
                     label = stringResource(R.string.card_hide_channel),
                     icon = Icons.Filled.Close,
@@ -527,8 +529,18 @@ fun ChannelActionMenuDialog(
                         onHideChannel()
                         onDismiss()
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = modifier
                 )
+            }
+            // Phone: one under the other, side by side their labels would be cut
+            if (LocalScreen.current.compact) {
+                favoriteRow(Modifier)
+                hideRow(Modifier)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    favoriteRow(Modifier.weight(1f))
+                    hideRow(Modifier.weight(1f))
+                }
             }
 
             if (onMove != null) {

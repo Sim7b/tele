@@ -640,4 +640,30 @@
     <string name="settings_vod_default_country">Country</string>
     <string name="settings_vod_default_sort">Sort</string>
     <string name="settings_vod_poster_description">Size of the posters in the library</string>
+
+    <!-- Phones and tablets (touch) -->
+    <string name="home_move_touch_hint">Tap a favorite to move it there · tap it again to finish</string>
+    <string name="home_move_category_touch_hint">Tap a category to move it there · tap it again to finish</string>
+    <string name="player_other_stream">Other stream</string>
+    <string name="cast_button">Cast to a TV</string>
+    <string name="cast_playing_on">Playing on %1$s</string>
+    <string name="cast_playing_on_device">Playing on the Chromecast</string>
+    <string name="cast_remote_hint">This screen is the remote: swipe to switch channel, tap for the buttons</string>
+    <string name="cast_remote_hint_vod">This screen is the remote: tap for the controls</string>
+    <string name="cast_error_insecure">The Chromecast refuses this stream: it is served over plain HTTP (not secure). It plays on this device only</string>
+    <string name="cast_error_stream">The Chromecast cannot play this stream (format not supported, or the server refuses it)</string>
+    <string name="panel_programs">Programs of %1$s</string>
+    <string name="guide_now">Now</string>
+    <string name="guide_previous_category">Previous category</string>
+    <string name="guide_next_category">Next category</string>
+    <string name="api_key_open_page">Open the %1$s page</string>
+    <string name="guide_touch_welcome_1">Tap to open, hold for more actions, swipe from the edge (Back) to go back.</string>
+    <string name="guide_touch_home_2">Hold a channel: add it to favorites, hide it, choose its stream or move it.</string>
+    <string name="guide_touch_home_3">Hold a category to rename, move or hide it.</string>
+    <string name="guide_touch_player_1">Swipe up or down: next or previous channel.</string>
+    <string name="guide_touch_player_2">Tap the picture: program info and the buttons (channel list, options).</string>
+    <string name="guide_touch_player_3">In the channel list, the arrow of a channel shows its coming programs.</string>
+    <string name="guide_touch_player_4">Hold the picture: choose another stream.</string>
+    <string name="guide_touch_hint_next">Tap: next · Back: skip</string>
+    <string name="guide_touch_hint_last">Tap: start</string>
 </resources>

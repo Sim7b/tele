@@ -38,6 +38,11 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import io.github.sim7b.tele.ui.components.Device
+import io.github.sim7b.tele.ui.components.LocalScreen
+import io.github.sim7b.tele.ui.components.TouchSteps
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.LocalAppColors
 import io.github.sim7b.tele.ui.theme.TextPrimary
@@ -57,15 +62,30 @@ private val PAGES = listOf(
     GuidePage(Icons.Filled.Search, R.string.guide_search_title, listOf(R.string.guide_search_1, R.string.guide_search_2, R.string.guide_search_3))
 )
 
+// Phones and tablets: the same pages, with the gestures in place of the keys
+private val TOUCH_PAGES = listOf(
+    GuidePage(Icons.Filled.Star, R.string.guide_welcome_title, listOf(R.string.guide_touch_welcome_1, R.string.guide_welcome_2)),
+    GuidePage(Icons.Filled.Home, R.string.guide_home_title, listOf(R.string.guide_home_1, R.string.guide_touch_home_2, R.string.guide_touch_home_3)),
+    GuidePage(
+        Icons.Filled.PlayArrow,
+        R.string.guide_player_title,
+        listOf(R.string.guide_touch_player_1, R.string.guide_touch_player_2, R.string.guide_touch_player_3, R.string.guide_touch_player_4)
+    ),
+    GuidePage(Icons.Filled.Search, R.string.guide_search_title, listOf(R.string.guide_search_1, R.string.guide_search_2, R.string.guide_search_3))
+)
+
 /**
  * Quick start guide, shown once after the first welcome screen and from the settings: a few pages
- * driven by the remote (→ or OK: next, ←: previous, Back: close).
+ * driven by the remote (→ or OK: next, ←: previous, Back: close), or by taps on a touch screen
+ * (the left third goes back).
  */
 @Composable
 fun QuickGuide(onClose: () -> Unit) {
+    val pages = if (Device.isTouch) TOUCH_PAGES else PAGES
     var page by rememberSaveable { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
     val accent = LocalAppColors.current.accent
+    val close by rememberUpdatedState(onClose)
 
     LaunchedEffect(Unit) { focus.requestFocusWithRetry() }
 
@@ -78,13 +98,24 @@ fun QuickGuide(onClose: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(LocalAppColors.current.background)
+                .then(
+                    if (!Device.isTouch) Modifier else Modifier.pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            when {
+                                TouchSteps.side(offset.x, size.width.toFloat()) == TouchSteps.Side.LEFT -> if (page > 0) page--
+                                page < pages.lastIndex -> page++
+                                else -> close()
+                            }
+                        }
+                    }
+                )
                 .focusRequester(focus)
                 .focusable()
                 .onKeyEvent { event ->
                     if (event.type != KeyEventType.KeyUp) return@onKeyEvent false
                     when (event.nativeKeyEvent.keyCode) {
                         KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                            if (page < PAGES.lastIndex) page++ else onClose()
+                            if (page < pages.lastIndex) page++ else onClose()
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -97,7 +128,10 @@ fun QuickGuide(onClose: () -> Unit) {
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.widthIn(max = 760.dp)
+                modifier = Modifier
+                    .widthIn(max = 760.dp)
+                    // Phone: clear of the edges
+                    .then(if (LocalScreen.current.compact) Modifier.padding(horizontal = 24.dp) else Modifier)
             ) {
                 AnimatedContent(
                     targetState = page,
@@ -108,7 +142,7 @@ fun QuickGuide(onClose: () -> Unit) {
                     },
                     label = "guidePage"
                 ) { index ->
-                    val current = PAGES[index]
+                    val current = pages[index]
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(
                             contentAlignment = Alignment.Center,
@@ -149,7 +183,7 @@ fun QuickGuide(onClose: () -> Unit) {
                 Spacer(modifier = Modifier.height(40.dp))
                 // Progress dots: the current page is a wider accent pill
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    PAGES.indices.forEach { index ->
+                    pages.indices.forEach { index ->
                         Box(
                             modifier = Modifier
                                 .height(6.dp)
@@ -161,7 +195,12 @@ fun QuickGuide(onClose: () -> Unit) {
                 }
                 Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = stringResource(if (page < PAGES.lastIndex) R.string.guide_hint_next else R.string.guide_hint_last),
+                    text = stringResource(
+                        when {
+                            Device.isTouch -> if (page < pages.lastIndex) R.string.guide_touch_hint_next else R.string.guide_touch_hint_last
+                            else -> if (page < pages.lastIndex) R.string.guide_hint_next else R.string.guide_hint_last
+                        }
+                    ),
                     fontSize = 13.sp,
                     color = TextSecondary.copy(alpha = 0.75f)
                 )

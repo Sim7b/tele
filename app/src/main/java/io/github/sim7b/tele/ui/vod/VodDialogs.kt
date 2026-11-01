@@ -49,6 +49,7 @@ import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.SelectionDot
+import io.github.sim7b.tele.ui.components.dialogWidth
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.LocalAppColors
 import io.github.sim7b.tele.ui.theme.SurfaceCard
@@ -113,7 +114,7 @@ internal fun VodDialogFrame(title: String, onDismiss: () -> Unit, subtitle: Stri
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
-                .width(560.dp)
+                .dialogWidth(560.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(SurfaceDark)
                 .padding(horizontal = 26.dp, vertical = 22.dp)

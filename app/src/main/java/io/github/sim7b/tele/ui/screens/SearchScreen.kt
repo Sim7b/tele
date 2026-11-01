@@ -46,7 +46,9 @@ import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.search.ChannelSearch
 import io.github.sim7b.tele.ui.components.CompactChannelCard
+import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.RoundIconButton
+import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
@@ -55,6 +57,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 private const val SEARCH_COLUMNS = 4
+private const val COMPACT_SEARCH_COLUMNS = 2
 private const val SEARCH_DEBOUNCE_MS = 150L
 
 // Material "Mic" icon (material-icons-core does not include it, the extended set is very large)
@@ -132,7 +135,9 @@ fun SearchScreen(
         delay(SEARCH_DEBOUNCE_MS)
         value = withContext(Dispatchers.Default) { ChannelSearch.searchIndex(index, query) }
     }
-    val rows = remember(results) { results.chunked(SEARCH_COLUMNS) }
+    // Phone: two results per row
+    val columns = if (LocalScreen.current.compact) COMPACT_SEARCH_COLUMNS else SEARCH_COLUMNS
+    val rows = remember(results, columns) { results.chunked(columns) }
     val focusTargetId = lastFocusedId?.takeIf { id -> results.any { it.id == id } } ?: results.firstOrNull()?.id
 
     // Back from the player: focus returns to the channel that was opened, once the results are recomputed
@@ -159,7 +164,7 @@ fun SearchScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(start = 48.dp, end = 48.dp, top = 26.dp, bottom = 8.dp)
+            .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 26.dp, bottom = 8.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -218,7 +223,7 @@ fun SearchScreen(
                                     )
                                 }
                             }
-                            repeat(SEARCH_COLUMNS - rowChannels.size) {
+                            repeat(columns - rowChannels.size) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }

@@ -41,6 +41,7 @@ import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
+import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.screens.MicIcon
 import io.github.sim7b.tele.ui.screens.SearchField
 import io.github.sim7b.tele.ui.screens.SearchHint
@@ -115,7 +116,7 @@ fun VodSearchScreen(
         modifier = modifier
             .fillMaxSize()
             .background(LocalAppColors.current.background)
-            .padding(start = 48.dp, end = 48.dp, top = 26.dp)
+            .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 26.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
             SearchField(
