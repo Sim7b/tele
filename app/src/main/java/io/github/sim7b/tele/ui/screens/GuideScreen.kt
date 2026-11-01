@@ -15,8 +15,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import io.github.sim7b.tele.ui.components.Device
+import io.github.sim7b.tele.ui.components.LocalScreen
+import io.github.sim7b.tele.ui.components.TouchSteps
+import io.github.sim7b.tele.ui.components.screenMargin
+import io.github.sim7b.tele.ui.components.touchTap
+import io.github.sim7b.tele.ui.vod.VodChip
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,10 +81,15 @@ private const val FAVORITES = "__favorites__"
 private const val RECENTS = "__recents__"
 // Guide kept on the device: 30 hours ahead (see GuideLoader)
 private const val GUIDE_HOURS_AHEAD = 30L
-private val ChannelColumnWidth = 210.dp
 private val RowHeight = 46.dp
+
+/** Width of the channel column and of a minute of the grid. */
+private class GuideScale(val channelColumn: Dp, val perMinute: Dp)
+
 // 150 dp per half hour: about 2 h 30 visible on a TV
-private val DpPerMinute = 5.dp
+private val TvScale = GuideScale(channelColumn = 210.dp, perMinute = 5.dp)
+// Phone: logos and names only, 90 dp per half hour (more than an hour visible in portrait)
+private val CompactScale = GuideScale(channelColumn = 112.dp, perMinute = 3.dp)
 
 /**
  * Guide grid, opened from the home screen: the channels in rows and the next 30 hours in columns.
@@ -124,14 +140,16 @@ fun GuideScreen(
     val headerFocus = remember { FocusRequester() }
     var headerFocused by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val compact = LocalScreen.current.compact
+    val scale = if (compact) CompactScale else TvScale
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .padding(start = 40.dp, end = 40.dp, top = 26.dp, bottom = 18.dp)
+            .padding(start = screenMargin(40.dp), end = screenMargin(40.dp), top = 26.dp, bottom = 18.dp)
     ) {
-        val gridWidth = maxWidth - ChannelColumnWidth
-        val span = (gridWidth / DpPerMinute).toLong() * 60_000L
+        val gridWidth = maxWidth - scale.channelColumn
+        val span = (gridWidth / scale.perMinute).toLong() * 60_000L
         val nowSlot = GuideTimeline.slotStart(now, zone)
         val minStart = if (hasReplay) GuideTimeline.slotStart(now - Catchup.GUIDE_PAST_WINDOW_MS, zone) else nowSlot
         val navigation = remember(span, minStart) {
@@ -208,23 +226,42 @@ fun GuideScreen(
             }
         }
 
+        fun backToNow() {
+            moveTo(navigation.now(row, focusedPrograms, now))
+            scope.launch { listState.scrollToItem((row - 2).coerceAtLeast(0)) }
+        }
+
+        // A number typed is cancelled, then back to now, then out of the guide
+        fun back() {
+            if (numberEntry.isTyping) {
+                numberEntry.cancel()
+            } else if (!headerFocused && (viewStart != nowSlot || cursor !in now - GuideTimeline.SLOT_MS..now + GuideTimeline.SLOT_MS)) {
+                backToNow()
+            } else {
+                onBack()
+            }
+        }
+        // Touch: Back even when the focus left the grid (the key handler below needs it)
+        BackHandler(enabled = Device.isTouch) { back() }
+
+        // Touch: a tap on a program shows it at the top, a second tap opens it (watch, replay, menu)
+        fun tapAt(index: Int, time: Long) {
+            scope.launch { gridFocus.requestFocusWithRetry() }
+            val programs = programsAt(rows, index)
+            if (index == row && GuideTimeline.programAt(programs, time)?.startMillis == focusedProgram?.startMillis) {
+                openFocused()
+            } else {
+                moveTo(navigation.tapped(index, programs, time, position))
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent { event ->
                     if (!headerFocused && numberEntry.onKey(event)) return@onPreviewKeyEvent true
                     if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_BACK) return@onPreviewKeyEvent false
-                    if (event.type == KeyEventType.KeyUp) {
-                        // A number typed is cancelled, then back to now, then out of the guide
-                        if (numberEntry.isTyping) {
-                            numberEntry.cancel()
-                        } else if (!headerFocused && (viewStart != nowSlot || cursor !in now - GuideTimeline.SLOT_MS..now + GuideTimeline.SLOT_MS)) {
-                            moveTo(navigation.now(row, focusedPrograms, now))
-                            scope.launch { listState.scrollToItem((row - 2).coerceAtLeast(0)) }
-                        } else {
-                            onBack()
-                        }
-                    }
+                    if (event.type == KeyEventType.KeyUp) back()
                     true
                 }
         ) {
@@ -237,6 +274,9 @@ fun GuideScreen(
                 },
                 count = rows.size,
                 now = now,
+                onPrevious = { changeCategory(-1) },
+                onNext = { changeCategory(+1) },
+                onNow = ::backToNow,
                 modifier = Modifier
                     .focusRequester(headerFocus)
                     .onFocusChanged { headerFocused = it.isFocused }
@@ -268,7 +308,7 @@ fun GuideScreen(
                         secondary = TextSecondary,
                         descriptionLines = 2,
                         titleSize = 19,
-                        modifier = Modifier.fillMaxWidth(0.8f),
+                        modifier = Modifier.fillMaxWidth(if (compact) 1f else 0.8f),
                         badges = channel?.let { programBadges(actions.canReplay(it, focusedProgram, now), actions.hasReminder(it, focusedProgram)) }.orEmpty()
                     )
                 } else if (channel != null) {
@@ -280,12 +320,28 @@ fun GuideScreen(
                 }
             }
 
-            TimeRuler(viewStart = viewStart, span = span, now = now, gridWidth = gridWidth)
+            TimeRuler(viewStart = viewStart, span = span, now = now, gridWidth = gridWidth, scale = scale)
 
+            // Touch: dragging sideways moves the hours by half hours (the rows scroll up and down by themselves)
+            val slotPx = with(LocalDensity.current) { (scale.perMinute * (GuideTimeline.SLOT_MS / 60_000f)).toPx() }
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .then(
+                        if (!Device.isTouch) Modifier else Modifier.pointerInput(slotPx, navigation) {
+                            var dragged = 0f
+                            detectHorizontalDragGestures(onDragStart = { dragged = 0f }) { change, amount ->
+                                change.consume()
+                                dragged += amount
+                                val slots = TouchSteps.steps(dragged, slotPx)
+                                if (slots != 0) {
+                                    moveTo(navigation.scrolled(GuidePosition(row, cursor, focusedStart, viewStart), slots))
+                                    dragged = TouchSteps.remainder(dragged, slots, slotPx)
+                                }
+                            }
+                        }
+                    )
                     .focusRequester(gridFocus)
                     .focusable()
                     .onKeyEvent { event ->
@@ -325,8 +381,8 @@ fun GuideScreen(
                 }
                 LazyColumn(
                     state = listState,
-                    // Moved by the keys of the grid only
-                    userScrollEnabled = false,
+                    // Moved by the keys of the grid only (and by the finger on a touch screen)
+                    userScrollEnabled = Device.isTouch,
                     modifier = Modifier.fillMaxSize()
                 ) {
                     itemsIndexed(rows, key = { _, channel -> channel.id }) { index, channel ->
@@ -342,7 +398,10 @@ fun GuideScreen(
                             span = span,
                             now = now,
                             gridWidth = gridWidth,
-                            zone = zone
+                            zone = zone,
+                            scale = scale,
+                            onTapTime = { time -> tapAt(index, time) },
+                            onTapChannel = { onWatch(channel) }
                         )
                     }
                 }
@@ -350,7 +409,7 @@ fun GuideScreen(
                 if (now in viewStart until viewStart + span) {
                     Box(
                         modifier = Modifier
-                            .padding(start = ChannelColumnWidth + offsetOf(now, viewStart))
+                            .padding(start = scale.channelColumn + offsetOf(now, viewStart, scale))
                             .width(2.dp)
                             .fillMaxHeight()
                             .background(AccentCyan.copy(alpha = 0.85f))
@@ -358,12 +417,15 @@ fun GuideScreen(
                 }
             }
 
-            Text(
-                text = stringResource(if (headerFocused) R.string.guide_header_keys_hint else R.string.guide_keys_hint),
-                fontSize = 11.sp,
-                color = TextSecondary.copy(alpha = 0.7f),
-                modifier = Modifier.padding(top = 8.dp)
-            )
+            // Keys of the remote: taps and buttons on a touch screen
+            if (!Device.isTouch) {
+                Text(
+                    text = stringResource(if (headerFocused) R.string.guide_header_keys_hint else R.string.guide_keys_hint),
+                    fontSize = 11.sp,
+                    color = TextSecondary.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
         }
 
         ChannelNumberBadge(
@@ -391,26 +453,38 @@ fun GuideScreen(
     }
 }
 
-private fun offsetOf(time: Long, viewStart: Long): Dp = DpPerMinute * ((time - viewStart) / 60_000f)
+private fun offsetOf(time: Long, viewStart: Long, scale: GuideScale): Dp = scale.perMinute * ((time - viewStart) / 60_000f)
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun GuideHeader(category: String, count: Int, now: Long, modifier: Modifier = Modifier) {
+private fun GuideHeader(
+    category: String,
+    count: Int,
+    now: Long,
+    // Touch: the arrows of the selector, and a button back to now
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onNow: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val compact = LocalScreen.current.compact
+    // Touch: the arrows always shown, as buttons
+    val arrows = isFocused || Device.isTouch
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = stringResource(R.string.guide_title),
-            fontSize = 24.sp,
+            fontSize = if (compact) 20.sp else 24.sp,
             fontWeight = FontWeight.SemiBold,
             color = TextPrimary
         )
-        Spacer(modifier = Modifier.width(22.dp))
+        Spacer(modifier = Modifier.width(if (compact) 12.dp else 22.dp))
         // Category selector: focused, ◀ ▶ go through the categories
         Surface(
             onClick = {},
             interactionSource = interactionSource,
-            modifier = modifier,
+            modifier = modifier.then(if (compact) Modifier.weight(1f, fill = false) else Modifier),
             shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(50)),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
             colors = ClickableSurfaceDefaults.colors(
@@ -424,7 +498,13 @@ private fun GuideHeader(category: String, count: Int, now: Long, modifier: Modif
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                if (isFocused) Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+                if (arrows) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowLeft,
+                        contentDescription = if (Device.isTouch) stringResource(R.string.guide_previous_category) else null,
+                        modifier = Modifier.size(18.dp).touchTap(onPrevious)
+                    )
+                }
                 Text(
                     text = "$category  ·  $count",
                     fontSize = 13.sp,
@@ -432,27 +512,42 @@ private fun GuideHeader(category: String, count: Int, now: Long, modifier: Modif
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
+                        .then(if (compact) Modifier.weight(1f, fill = false) else Modifier)
                         .widthIn(max = 360.dp)
                         .padding(horizontal = 6.dp)
                 )
-                if (isFocused) Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                if (arrows) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowRight,
+                        contentDescription = if (Device.isTouch) stringResource(R.string.guide_next_category) else null,
+                        modifier = Modifier.size(18.dp).touchTap(onNext)
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = "${dayLabel(now, now)}  ${EpgResolver.formatClock(now)}",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Light,
-            color = TextSecondary
-        )
+        if (Device.isTouch) {
+            Spacer(modifier = Modifier.width(10.dp))
+            VodChip(label = stringResource(R.string.guide_now), selected = false, onClick = onNow)
+        }
+        // Phone: no room for the clock, the Now button is enough
+        if (!compact) {
+            if (Device.isTouch) Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "${dayLabel(now, now)}  ${EpgResolver.formatClock(now)}",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Light,
+                color = TextSecondary
+            )
+        }
     }
 }
 
 /** Hours of the visible columns, with the day when the grid shows another day than today. */
 @Composable
-private fun TimeRuler(viewStart: Long, span: Long, now: Long, gridWidth: Dp) {
+private fun TimeRuler(viewStart: Long, span: Long, now: Long, gridWidth: Dp, scale: GuideScale) {
     Row(modifier = Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.width(ChannelColumnWidth)) {
+        Box(modifier = Modifier.width(scale.channelColumn)) {
             Text(
                 text = dayLabel(viewStart, now),
                 fontSize = 12.sp,
@@ -468,7 +563,7 @@ private fun TimeRuler(viewStart: Long, span: Long, now: Long, gridWidth: Dp) {
                     fontSize = 12.sp,
                     color = TextSecondary,
                     modifier = Modifier
-                        .padding(start = offsetOf(slot, viewStart) + 6.dp)
+                        .padding(start = offsetOf(slot, viewStart, scale) + 6.dp)
                         .align(Alignment.CenterStart)
                 )
                 slot += GuideTimeline.SLOT_MS
@@ -492,29 +587,38 @@ private fun GuideRow(
     span: Long,
     now: Long,
     gridWidth: Dp,
-    zone: ZoneId
+    zone: ZoneId,
+    scale: GuideScale,
+    // Touch: a tap on the hours (the time tapped), on the channel
+    onTapTime: (Long) -> Unit,
+    onTapChannel: () -> Unit
 ) {
     val replayTag = stringResource(R.string.program_replay_tag)
     val viewEnd = viewStart + span
+    val compact = LocalScreen.current.compact
     Row(modifier = Modifier.fillMaxWidth().height(RowHeight), verticalAlignment = Alignment.CenterVertically) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .width(ChannelColumnWidth)
+                .width(scale.channelColumn)
                 .fillMaxHeight()
                 .padding(vertical = 3.dp, horizontal = 0.dp)
                 .padding(end = 6.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(if (isFocusedRow) SurfaceCard else SurfaceDark.copy(alpha = 0.5f))
-                .padding(horizontal = 8.dp)
+                .touchTap(onTapChannel)
+                .padding(horizontal = if (compact) 6.dp else 8.dp)
         ) {
-            Text(
-                text = channel.number?.toString().orEmpty(),
-                fontSize = 12.sp,
-                color = TextSecondary,
-                maxLines = 1,
-                modifier = Modifier.width(30.dp)
-            )
+            // Phone: the logo and the name only
+            if (!compact) {
+                Text(
+                    text = channel.number?.toString().orEmpty(),
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    modifier = Modifier.width(30.dp)
+                )
+            }
             LogoPlate(
                 logoUrl = channel.logoUrl,
                 name = channel.name,
@@ -537,7 +641,19 @@ private fun GuideRow(
             )
         }
 
-        Box(modifier = Modifier.width(gridWidth).fillMaxHeight().clipToBounds()) {
+        val minutePx = with(LocalDensity.current) { scale.perMinute.toPx() }
+        val tapTime by rememberUpdatedState(onTapTime)
+        Box(
+            modifier = Modifier
+                .width(gridWidth)
+                .fillMaxHeight()
+                .clipToBounds()
+                .then(
+                    if (!Device.isTouch) Modifier else Modifier.pointerInput(viewStart, minutePx) {
+                        detectTapGestures { offset -> tapTime(viewStart + (offset.x / minutePx * 60_000f).toLong()) }
+                    }
+                )
+        ) {
             if (programs.isEmpty()) {
                 // No program in the visible hours: a single cell, the focused half hour when it is a hole
                 val start = holeCursor?.takeIf { focusedStart == null }?.let { GuideTimeline.slotStart(it, zone).coerceAtLeast(viewStart) }
@@ -548,6 +664,7 @@ private fun GuideRow(
                         start = start,
                         end = minOf(start + GuideTimeline.SLOT_MS, viewEnd),
                         viewStart = viewStart,
+                        scale = scale,
                         focused = true,
                         onAir = false
                     )
@@ -558,6 +675,7 @@ private fun GuideRow(
                         start = viewStart,
                         end = viewEnd,
                         viewStart = viewStart,
+                        scale = scale,
                         focused = false,
                         onAir = false,
                         dimmed = true
@@ -573,6 +691,7 @@ private fun GuideRow(
                         start = maxOf(program.startMillis, viewStart),
                         end = minOf(program.endMillis, viewEnd),
                         viewStart = viewStart,
+                        scale = scale,
                         focused = isFocusedRow && program.startMillis == focusedStart,
                         onAir = program.startMillis <= now && now < program.endMillis,
                         // Past without replay: cannot be watched any more
@@ -588,6 +707,7 @@ private fun GuideRow(
                         start = start,
                         end = minOf(start + GuideTimeline.SLOT_MS, viewEnd),
                         viewStart = viewStart,
+                        scale = scale,
                         focused = true,
                         onAir = false
                     )
@@ -604,12 +724,13 @@ private fun GuideCell(
     start: Long,
     end: Long,
     viewStart: Long,
+    scale: GuideScale,
     focused: Boolean,
     onAir: Boolean,
     dimmed: Boolean = false,
     reminder: Boolean = false
 ) {
-    val width = offsetOf(end, viewStart) - offsetOf(start, viewStart)
+    val width = offsetOf(end, viewStart, scale) - offsetOf(start, viewStart, scale)
     if (width <= 2.dp) return
     val background = when {
         focused -> TextPrimary
@@ -620,7 +741,7 @@ private fun GuideCell(
     Column(
         verticalArrangement = Arrangement.Center,
         modifier = Modifier
-            .padding(start = offsetOf(start, viewStart))
+            .padding(start = offsetOf(start, viewStart, scale))
             .width(width - 3.dp)
             .fillMaxHeight()
             .padding(vertical = 3.dp)

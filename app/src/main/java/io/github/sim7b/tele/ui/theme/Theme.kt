@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Density
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
@@ -13,10 +14,14 @@ import androidx.tv.material3.lightColorScheme
 import io.github.sim7b.tele.data.storage.AppAccentColor
 import io.github.sim7b.tele.data.storage.AppThemeBackground
 import io.github.sim7b.tele.data.storage.UiDensity
+import io.github.sim7b.tele.ui.components.Device
+import io.github.sim7b.tele.ui.components.LocalScreen
+import io.github.sim7b.tele.ui.components.ScreenSize
 
 /**
  * App theme: palette derived from the settings (background, accent, light mode) exposed through
- * [LocalAppColors], and UI density applied by rescaling [LocalDensity].
+ * [LocalAppColors], UI density applied by rescaling [LocalDensity], and the window size of a touch
+ * device in [LocalScreen].
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -66,10 +71,16 @@ fun TeleTheme(
     val scaledDensity = remember(baseDensity, uiDensity) {
         Density(baseDensity.density * uiDensity.scaleFactor, baseDensity.fontScale)
     }
+    // Phone or tablet: size of the window in those dp, for the layouts of the narrow screens
+    val screen = if (!Device.isTouch) ScreenSize() else {
+        val windowSize = LocalWindowInfo.current.containerSize
+        with(scaledDensity) { ScreenSize(touch = true, width = windowSize.width.toDp(), height = windowSize.height.toDp()) }
+    }
 
     CompositionLocalProvider(
         LocalAppColors provides appColors,
-        LocalDensity provides scaledDensity
+        LocalDensity provides scaledDensity,
+        LocalScreen provides screen
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

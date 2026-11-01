@@ -29,6 +29,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.ui.components.MenuRow
+import io.github.sim7b.tele.ui.components.dialogWidth
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.SurfaceDark
 import io.github.sim7b.tele.ui.theme.TextPrimary
@@ -46,7 +47,7 @@ fun UnmatchedChannelsDialog(names: List<String>, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
-                .width(560.dp)
+                .dialogWidth(560.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(SurfaceDark)
                 .padding(horizontal = 26.dp, vertical = 22.dp)

@@ -10,10 +10,17 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.TextureView
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
+import androidx.media3.cast.Cast
+import androidx.media3.cast.CastParams
+import androidx.media3.cast.MediaItemConverter
+import androidx.media3.cast.RemoteCastPlayer
+import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -26,6 +33,13 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
+import com.google.android.gms.cast.CastMediaControlIntent
+import com.google.android.gms.cast.MediaInfo
+import com.google.android.gms.cast.MediaMetadata as CastMetadata
+import com.google.android.gms.cast.MediaQueueItem
+import com.google.android.gms.cast.MediaStatus
+import com.google.android.gms.cast.framework.media.RemoteMediaClient
+import com.google.android.gms.common.images.WebImage
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
@@ -66,6 +80,9 @@ data class TrackChoice(
     val selected: Boolean
 )
 
+/** What the Chromecast shows on the TV while it plays a stream: [title], [subtitle] (program) and [artworkUrl] (logo, poster). */
+data class CastInfo(val title: String, val subtitle: String? = null, val artworkUrl: String? = null)
+
 /** Audio and subtitle tracks of the current stream; [subtitlesOn] false when no subtitle is shown. */
 data class PlaybackTracks(
     val audio: List<TrackChoice> = emptyList(),
@@ -73,8 +90,12 @@ data class PlaybackTracks(
     val subtitlesOn: Boolean = false
 )
 
+/**
+ * Plays the streams with ExoPlayer; with [castEnabled] (phones and tablets), on a Chromecast while a Cast
+ * session is open: the app is then only the remote, nothing is played on the device.
+ */
 @OptIn(UnstableApi::class)
-class TvPlayerManager(private val context: Context) {
+class TvPlayerManager(private val context: Context, castEnabled: Boolean = false) {
 
     private var exoPlayer: ExoPlayer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -117,6 +138,13 @@ class TvPlayerManager(private val context: Context) {
     private var externalSubtitles: List<ExternalSubtitle> = emptyList()
     private var pendingSubtitleId: String? = null
     private val retryRunnable = Runnable { prepareCurrent() }
+    // Shown on the TV by the Chromecast
+    private var castInfo: CastInfo? = null
+    // The stream asked of the Chromecast has not failed yet (its error is handled once)
+    private var castActive = false
+    // The Chromecast played the stream asked of it
+    private var castStarted = false
+    private val castTimeoutRunnable = Runnable { if (!castStarted) castFailed() }
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -136,6 +164,50 @@ class TvPlayerManager(private val context: Context) {
     private val _tracks = MutableStateFlow(PlaybackTracks())
     val tracks: StateFlow<PlaybackTracks> = _tracks.asStateFlow()
 
+    private val _castDevice = MutableStateFlow<String?>(null)
+
+    /** Name of the Chromecast the streams play on (empty when unknown); null when they play on the device. */
+    val castDevice: StateFlow<String?> = _castDevice.asStateFlow()
+
+    private val casting: Boolean get() = _castDevice.value != null
+
+    // Errors of the Chromecast (the remote player does not report them)
+    private var castClient: RemoteMediaClient? = null
+    private val castStatusCallback = object : RemoteMediaClient.Callback() {
+        override fun onStatusUpdated() {
+            val status = castClient?.mediaStatus ?: return
+            if (status.playerState == MediaStatus.PLAYER_STATE_IDLE && status.idleReason == MediaStatus.IDLE_REASON_ERROR) {
+                mainHandler.post { castFailed() }
+            }
+        }
+    }
+
+    private val remoteListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (!casting) return
+            _isPlaying.value = isPlaying
+            if (isPlaying) {
+                castStarted = true
+                mainHandler.removeCallbacks(castTimeoutRunnable)
+                _isLoading.value = false
+            }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (!casting) return
+            _isLoading.value = playbackState == Player.STATE_BUFFERING
+            if (playbackState == Player.STATE_READY) _error.value = null
+        }
+    }
+
+    private val remotePlayer: RemoteCastPlayer? = if (castEnabled) createRemotePlayer() else null
+
+    /** A Chromecast can be chosen (Google Play services there). */
+    val castAvailable: Boolean get() = remotePlayer != null
+
+    /** Player of the controls (position, pause, seek): the Chromecast's while casting, else ExoPlayer. */
+    fun controlPlayer(): Player = remotePlayer?.takeIf { casting } ?: getPlayer()
+
     // Network back after a failure (Wi-Fi or router restart): the stream is retried right away
     private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -152,6 +224,124 @@ class TvPlayerManager(private val context: Context) {
         } catch (e: RuntimeException) {
             Log.w(PERF_TAG, "Network callback unavailable: ${e.javaClass.simpleName}")
         }
+        // Session kept from a previous launch
+        if (remotePlayer?.isCastSessionAvailable == true) onCastSessionStarted()
+    }
+
+    private fun createRemotePlayer(): RemoteCastPlayer? = try {
+        val cast = Cast.getSingletonInstance(context)
+        if (cast.needsInitialization()) {
+            cast.initialize(
+                CastParams.Builder()
+                    .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
+                    .build()
+            )
+        }
+        RemoteCastPlayer.Builder(context)
+            .setMediaItemConverter(CastItemConverter())
+            .setSeekBackIncrementMs(10000)
+            .setSeekForwardIncrementMs(10000)
+            .build().apply {
+                addListener(remoteListener)
+                setSessionAvailabilityListener(object : SessionAvailabilityListener {
+                    override fun onCastSessionAvailable() = onCastSessionStarted()
+                    override fun onCastSessionUnavailable() = onCastSessionEnded()
+                })
+            }
+    } catch (e: RuntimeException) {
+        // No Google Play services (or too old): no Chromecast
+        Log.w(PERF_TAG, "Cast unavailable: ${e.javaClass.simpleName}")
+        null
+    }
+
+    /** A Chromecast was chosen: the stream being played moves to it, the device stops playing. */
+    private fun onCastSessionStarted() {
+        val session = Cast.getSingletonInstance(context).currentCastSession
+        _castDevice.value = session?.castDevice?.friendlyName.orEmpty()
+        castClient?.unregisterCallback(castStatusCallback)
+        castClient = session?.remoteMediaClient?.also { it.registerCallback(castStatusCallback) }
+        if (currentUrl == null) return
+        mainHandler.removeCallbacks(retryRunnable)
+        // A movie goes on where it is
+        exoPlayer?.let { player ->
+            if (vodStartMs != null && hasPlayed) vodStartMs = player.currentPosition.coerceAtLeast(0)
+            player.stop()
+        }
+        _streamInfo.value = StreamInfo()
+        _tracks.value = PlaybackTracks()
+        _reconnection.value = null
+        orderForCast()
+        prepareCurrent()
+    }
+
+    /** The Chromecast session ended: the stream comes back on the device. */
+    private fun onCastSessionEnded() {
+        if (!casting) return
+        val position = remotePlayer?.currentPosition ?: 0L
+        _castDevice.value = null
+        castClient?.unregisterCallback(castStatusCallback)
+        castClient = null
+        castActive = false
+        mainHandler.removeCallbacks(castTimeoutRunnable)
+        if (currentUrl == null) return
+        if (vodStartMs != null && castStarted && position > 0) vodStartMs = position
+        retryCount = 0
+        hasPlayed = false
+        prepareCurrent()
+    }
+
+    // The HLS variants first: the Chromecast reads them better than MPEG-TS
+    private fun orderForCast() {
+        val url = currentUrl ?: return
+        val ordered = CastMedia.castOrder(listOf(url) + fallbackUrls, live = vodStartMs == null)
+        currentUrl = ordered.first()
+        fallbackUrls.clear()
+        fallbackUrls.addAll(ordered.drop(1))
+    }
+
+    /** The Chromecast could not play the stream: the next one, else the error. */
+    private fun castFailed() {
+        if (!casting || !castActive) return
+        mainHandler.removeCallbacks(castTimeoutRunnable)
+        if (fallbackUrls.isNotEmpty()) {
+            currentUrl = fallbackUrls.removeFirst()
+            prepareCurrent()
+        } else {
+            castActive = false
+            _isLoading.value = false
+            _isPlaying.value = false
+            val insecure = currentUrl?.let { CastMedia.insecureAdaptive(it, live = vodStartMs == null) } == true
+            _error.value = UiText.Res(if (insecure) R.string.cast_error_insecure else R.string.cast_error_stream)
+        }
+    }
+
+    /** Asks the Chromecast to play the current stream (a movie at its position). */
+    private fun prepareOnCast(remote: RemoteCastPlayer) {
+        val url = currentUrl ?: return
+        val live = vodStartMs == null
+        val info = castInfo
+        val item = MediaItem.Builder()
+            .setUri(url)
+            .setMimeType(CastMedia.mimeType(url, live))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(info?.title)
+                    .setSubtitle(info?.subtitle)
+                    .setArtworkUri(info?.artworkUrl?.toUri())
+                    .setMediaType(if (live) MediaMetadata.MEDIA_TYPE_TV_CHANNEL else MediaMetadata.MEDIA_TYPE_MOVIE)
+                    .build()
+            )
+            .build()
+        _error.value = null
+        _isLoading.value = true
+        castActive = true
+        castStarted = false
+        val start = vodStartMs
+        if (start != null) remote.setMediaItem(item, start) else remote.setMediaItem(item)
+        remote.prepare()
+        remote.play()
+        mainHandler.removeCallbacks(castTimeoutRunnable)
+        mainHandler.postDelayed(castTimeoutRunnable, CAST_START_TIMEOUT_MS)
     }
 
     fun getPlayer(): ExoPlayer {
@@ -339,8 +529,14 @@ class TvPlayerManager(private val context: Context) {
      * Plays [url]; when it fails for good (refused, or every retry spent), [fallbacks] are tried in order
      * before the error is shown.
      */
-    fun playStream(url: String, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
-        start(url, customUserAgent, auths, fallbacks, vodStart = null, subtitles = emptyList())
+    fun playStream(
+        url: String,
+        customUserAgent: String? = null,
+        auths: List<ApiKeyAuth> = emptyList(),
+        fallbacks: List<String> = emptyList(),
+        info: CastInfo? = null
+    ) {
+        start(url, customUserAgent, auths, fallbacks, vodStart = null, subtitles = emptyList(), info = info)
     }
 
     /**
@@ -353,9 +549,10 @@ class TvPlayerManager(private val context: Context) {
         customUserAgent: String? = null,
         auths: List<ApiKeyAuth> = emptyList(),
         fallbacks: List<String> = emptyList(),
-        subtitles: List<ExternalSubtitle> = emptyList()
+        subtitles: List<ExternalSubtitle> = emptyList(),
+        info: CastInfo? = null
     ) {
-        start(url, customUserAgent, auths, fallbacks, vodStart = startPositionMs.coerceAtLeast(0), subtitles = subtitles)
+        start(url, customUserAgent, auths, fallbacks, vodStart = startPositionMs.coerceAtLeast(0), subtitles = subtitles, info = info)
     }
 
     /**
@@ -364,7 +561,7 @@ class TvPlayerManager(private val context: Context) {
      */
     fun addSubtitle(subtitle: ExternalSubtitle) {
         val player = exoPlayer ?: return
-        if (currentUrl == null || vodStartMs == null) return
+        if (currentUrl == null || vodStartMs == null || casting) return
         if (externalSubtitles.none { it.uri == subtitle.uri }) externalSubtitles = externalSubtitles + subtitle
         pendingSubtitleId = subtitleId(subtitle)
         vodStartMs = player.currentPosition.coerceAtLeast(0)
@@ -403,7 +600,8 @@ class TvPlayerManager(private val context: Context) {
         auths: List<ApiKeyAuth>,
         fallbacks: List<String>,
         vodStart: Long?,
-        subtitles: List<ExternalSubtitle>
+        subtitles: List<ExternalSubtitle>,
+        info: CastInfo?
     ) {
         // The home preview of this very channel keeps playing: the sound comes back without a new start
         val player = exoPlayer
@@ -434,6 +632,7 @@ class TvPlayerManager(private val context: Context) {
         currentUrl = url
         currentUserAgent = customUserAgent
         currentAuths = auths
+        castInfo = info
         retryCount = 0
         noFreeConnectionRetried = false
         hasPlayed = false
@@ -441,6 +640,7 @@ class TvPlayerManager(private val context: Context) {
         mainHandler.removeCallbacks(retryRunnable)
         _reconnection.value = null
         _streamInfo.value = StreamInfo()
+        if (casting) orderForCast()
         prepareCurrent()
     }
 
@@ -495,6 +695,11 @@ class TvPlayerManager(private val context: Context) {
 
     private fun prepareCurrent() {
         val url = currentUrl ?: return
+        val remote = remotePlayer
+        if (remote != null && casting) {
+            prepareOnCast(remote)
+            return
+        }
         _error.value = null
         val player = getPlayer()
 
@@ -625,7 +830,7 @@ class TvPlayerManager(private val context: Context) {
     }
 
     fun togglePlayPause() {
-        val player = exoPlayer ?: return
+        val player: Player = remotePlayer?.takeIf { casting } ?: exoPlayer ?: return
         if (player.isPlaying) player.pause() else player.play()
     }
 
@@ -634,6 +839,16 @@ class TvPlayerManager(private val context: Context) {
      */
     fun stop() {
         mainHandler.removeCallbacks(retryRunnable)
+        mainHandler.removeCallbacks(castTimeoutRunnable)
+        // Leaving the player stops the stream on the Chromecast too (the session stays open)
+        if (casting && currentUrl != null) {
+            remotePlayer?.run {
+                stop()
+                clearMediaItems()
+            }
+        }
+        castActive = false
+        castInfo = null
         previewing = false
         currentUrl = null
         fallbackUrls.clear()
@@ -651,6 +866,11 @@ class TvPlayerManager(private val context: Context) {
 
     fun release() {
         mainHandler.removeCallbacks(retryRunnable)
+        mainHandler.removeCallbacks(castTimeoutRunnable)
+        castClient?.unregisterCallback(castStatusCallback)
+        castClient = null
+        // The Chromecast session stays open: the next launch finds it again
+        remotePlayer?.release()
         try {
             connectivityManager?.unregisterNetworkCallback(networkCallback)
         } catch (e: RuntimeException) {
@@ -667,5 +887,49 @@ class TvPlayerManager(private val context: Context) {
         private val DEFINITIVE_HTTP_ERRORS = setOf(401, 403, 404, 410)
         // Dispatcharr: every connection of the provider accounts is in use
         private const val HTTP_NO_FREE_CONNECTION = 503
+        // Time given to the Chromecast to start a stream before the next one is tried
+        private const val CAST_START_TIMEOUT_MS = 20_000L
+    }
+}
+
+/**
+ * Media item -> Chromecast item: the URL and its type, live or not, the title and the image the TV shows.
+ * Nothing else goes to the Chromecast (no API key, no header).
+ */
+@OptIn(UnstableApi::class)
+private class CastItemConverter : MediaItemConverter {
+
+    override fun toMediaQueueItem(mediaItem: MediaItem): MediaQueueItem {
+        val configuration = checkNotNull(mediaItem.localConfiguration)
+        val url = configuration.uri.toString()
+        val live = mediaItem.mediaMetadata.mediaType == MediaMetadata.MEDIA_TYPE_TV_CHANNEL
+        val metadata = CastMetadata(if (live) CastMetadata.MEDIA_TYPE_GENERIC else CastMetadata.MEDIA_TYPE_MOVIE).apply {
+            mediaItem.mediaMetadata.title?.let { putString(CastMetadata.KEY_TITLE, it.toString()) }
+            mediaItem.mediaMetadata.subtitle?.let { putString(CastMetadata.KEY_SUBTITLE, it.toString()) }
+            mediaItem.mediaMetadata.artworkUri?.let { addImage(WebImage(it)) }
+        }
+        val info = MediaInfo.Builder(url)
+            .setContentUrl(url)
+            .setContentType(configuration.mimeType ?: CastMedia.mimeType(url, live))
+            .setStreamType(if (live) MediaInfo.STREAM_TYPE_LIVE else MediaInfo.STREAM_TYPE_BUFFERED)
+            .setMetadata(metadata)
+            .build()
+        return MediaQueueItem.Builder(info).build()
+    }
+
+    override fun toMediaItem(mediaQueueItem: MediaQueueItem): MediaItem {
+        val info = mediaQueueItem.media
+        val live = info?.streamType == MediaInfo.STREAM_TYPE_LIVE
+        return MediaItem.Builder()
+            .setUri(info?.contentUrl ?: info?.contentId.orEmpty())
+            .setMimeType(info?.contentType)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(info?.metadata?.getString(CastMetadata.KEY_TITLE))
+                    .setSubtitle(info?.metadata?.getString(CastMetadata.KEY_SUBTITLE))
+                    .setMediaType(if (live) MediaMetadata.MEDIA_TYPE_TV_CHANNEL else MediaMetadata.MEDIA_TYPE_MOVIE)
+                    .build()
+            )
+            .build()
     }
 }

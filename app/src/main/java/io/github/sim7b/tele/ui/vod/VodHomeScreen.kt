@@ -72,8 +72,13 @@ import io.github.sim7b.tele.data.vod.VodLibraryState
 import io.github.sim7b.tele.data.vod.VodRow
 import io.github.sim7b.tele.data.vod.VodRows
 import io.github.sim7b.tele.data.vod.VodTitle
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.RoundIconButton
+import io.github.sim7b.tele.ui.components.screenMargin
+import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.Tag
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
@@ -134,6 +139,8 @@ fun VodHomeScreen(
     actions: VodTitleActions? = null
 ) {
     BackHandler(onBack = onBack)
+    val screen = LocalScreen.current
+    val compact = screen.compact
     var tab by rememberSaveable { mutableStateOf(VodTab.HOME) }
     // Long press on a title: its actions, then possibly the collection picker
     var menuFor by remember { mutableStateOf<Pair<VodTitle, VodRow?>?>(null) }
@@ -206,8 +213,8 @@ fun VodHomeScreen(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .fillMaxWidth(0.62f)
-                        .height(300.dp)
+                        .fillMaxWidth(if (compact) 1f else 0.62f)
+                        .height(if (compact) 220.dp else 300.dp)
                 ) {
                     FadeInImage(url = url, contentDescription = null, modifier = Modifier.fillMaxSize(), alpha = 0.55f)
                     Box(
@@ -224,16 +231,8 @@ fun VodHomeScreen(
             }
         }
 
-        Column(modifier = Modifier.fillMaxSize().padding(start = 48.dp, end = 48.dp, top = 26.dp)) {
-            // Header: tabs, status, search, refresh, back to live TV
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = stringResource(R.string.vod_title),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
-                Spacer(modifier = Modifier.width(20.dp))
+        Column(modifier = Modifier.fillMaxSize().padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 26.dp)) {
+            val tabs: @Composable () -> Unit = {
                 VodTab.entries.forEach { entry ->
                     VodChip(
                         label = stringResource(entry.labelRes),
@@ -243,6 +242,21 @@ fun VodHomeScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
+            }
+            // Header: tabs, status, search, refresh, back to live TV; on a phone, the tabs under the title
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.vod_title),
+                    fontSize = if (compact) 18.sp else 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    // Phone: the buttons on the right first
+                    maxLines = if (compact) 1 else Int.MAX_VALUE,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = if (compact) Modifier.weight(1f, fill = false) else Modifier
+                )
+                Spacer(modifier = Modifier.width(if (compact) 12.dp else 20.dp))
+                if (!compact) tabs()
                 Spacer(modifier = Modifier.weight(1f))
                 when {
                     library.loading -> {
@@ -288,6 +302,15 @@ fun VodHomeScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 RoundIconButton(icon = Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.vod_back_to_tv), onClick = onBack)
             }
+            if (compact) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .horizontalScroll(rememberScrollState())
+                ) { tabs() }
+            }
 
             if (library.titles.isEmpty()) {
                 if (!library.loading) EmptyLibrary()
@@ -296,12 +319,14 @@ fun VodHomeScreen(
 
             when (tab) {
                 VodTab.HOME -> {
-                    Hero(hero)
+                    // Low screen (phone in landscape): the title scrolls away with the rows
+                    if (!screen.short) Hero(hero)
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 40.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
+                        if (screen.short) item(key = "hero") { Hero(hero) }
                         rows.forEachIndexed { rowIndex, row ->
                             item(key = "${row.kind}:${row.name}") {
                                 PosterRow(
@@ -659,7 +684,7 @@ internal fun sortLabel(sort: VodSort): String = stringResource(
 private fun Hero(title: VodTitle?) {
     Column(
         modifier = Modifier
-            .fillMaxWidth(0.55f)
+            .fillMaxWidth(if (LocalScreen.current.compact) 1f else 0.55f)
             .height(170.dp)
             .padding(top = 18.dp)
     ) {
@@ -725,7 +750,7 @@ internal fun VodChip(label: String, selected: Boolean, onClick: () -> Unit, modi
     val shape = RoundedCornerShape(50)
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
         colors = ClickableSurfaceDefaults.colors(

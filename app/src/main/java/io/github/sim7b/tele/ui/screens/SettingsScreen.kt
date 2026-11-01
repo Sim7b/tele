@@ -102,10 +102,18 @@ import io.github.sim7b.tele.data.storage.AppAccentColor
 import io.github.sim7b.tele.data.storage.AppThemeBackground
 import io.github.sim7b.tele.data.storage.SettingsRepository
 import io.github.sim7b.tele.data.storage.UiDensity
+import io.github.sim7b.tele.ui.components.AdaptiveButtonRow
+import io.github.sim7b.tele.ui.components.Device
+import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.SectionLabel
+import io.github.sim7b.tele.ui.components.dialogWidth
 import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
+import io.github.sim7b.tele.ui.components.screenMargin
+import io.github.sim7b.tele.ui.components.touchClick
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.ui.platform.LocalUriHandler
 import io.github.sim7b.tele.ui.theme.*
 import io.github.sim7b.tele.update.UpdateState
 import io.github.sim7b.tele.data.update.AppRelease
@@ -182,9 +190,18 @@ fun SettingsScreen(
     var showUnmatched by remember { mutableStateOf(false) }
     var showReceiveConfig by remember { mutableStateOf(false) }
 
+    // Phone: the menu, then the section opened from it (Back returns to the menu)
+    val compact = LocalScreen.current.compact
+    var pageOpen by rememberSaveable { mutableStateOf(false) }
+    val showMenu = !compact || !pageOpen
+    val showPage = !compact || pageOpen
+
     // The server form is a Dialog: it handles the Back key itself
     BackHandler {
         onBack()
+    }
+    BackHandler(enabled = compact && pageOpen) {
+        pageOpen = false
     }
 
     LaunchedEffect(Unit) {
@@ -199,7 +216,7 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(themeBgColor)
-            .padding(start = 48.dp, end = 48.dp, top = 26.dp)
+            .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 26.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header
@@ -211,13 +228,13 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.settings_title),
-                        fontSize = 26.sp,
+                        text = stringResource(if (compact && pageOpen) page.labelRes else R.string.settings_title),
+                        fontSize = if (compact) 22.sp else 26.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
                     )
                     Text(
-                        text = stringResource(R.string.settings_subtitle),
+                        text = stringResource(if (compact && pageOpen) page.hintRes else R.string.settings_subtitle),
                         fontSize = 13.sp,
                         color = TextSecondary
                     )
@@ -226,7 +243,7 @@ fun SettingsScreen(
                 ActionButton(
                     label = stringResource(R.string.settings_back),
                     icon = Icons.Filled.ArrowBack,
-                    onClick = onBack
+                    onClick = { if (compact && pageOpen) pageOpen = false else onBack() }
                 )
             }
 
@@ -235,27 +252,39 @@ fun SettingsScreen(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
-                        .width(230.dp)
+                        .then(
+                            when {
+                                !compact -> Modifier.width(230.dp)
+                                showMenu -> Modifier.fillMaxWidth()
+                                else -> Modifier
+                            }
+                        )
                         // Entering the menu (← from a section) lands on the open section, not the nearest one
                         .focusProperties { onEnter = { pageFocus.getValue(page).requestFocus() } }
                         .focusGroup()
                 ) {
-                    SettingsPage.entries.forEach { entry ->
-                        SettingsNavItem(
-                            page = entry,
-                            selected = entry == page,
-                            badge = entry == SettingsPage.SYSTEM && updateState is UpdateState.Available,
-                            onFocused = { page = entry },
-                            modifier = Modifier.focusRequester(pageFocus.getValue(entry))
-                        )
+                    if (showMenu) {
+                        SettingsPage.entries.forEach { entry ->
+                            SettingsNavItem(
+                                page = entry,
+                                selected = entry == page,
+                                badge = entry == SettingsPage.SYSTEM && updateState is UpdateState.Available,
+                                onFocused = { page = entry },
+                                onOpen = {
+                                    page = entry
+                                    pageOpen = true
+                                },
+                                modifier = Modifier.focusRequester(pageFocus.getValue(entry))
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(24.dp))
+                if (!compact) Spacer(modifier = Modifier.width(24.dp))
 
                 // Content of the open section, from its top
                 key(page) {
-                    LazyColumn(
+                    if (showPage) LazyColumn(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
@@ -306,10 +335,7 @@ fun SettingsScreen(
                                         title = stringResource(R.string.settings_sync_title),
                                         description = stringResource(R.string.settings_sync_description)
                                     ) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
+                                        AdaptiveButtonRow(wrap = compact) {
                                             ActionButton(
                                                 label = stringResource(R.string.settings_refresh_channels),
                                                 icon = Icons.Filled.Refresh,
@@ -338,7 +364,7 @@ fun SettingsScreen(
                                         title = stringResource(R.string.settings_transfer_title),
                                         description = stringResource(R.string.settings_transfer_description)
                                     ) {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        AdaptiveButtonRow(wrap = compact) {
                                             ActionButton(
                                                 label = stringResource(R.string.settings_transfer_send),
                                                 icon = Icons.Filled.Share,
@@ -575,7 +601,7 @@ fun SettingsScreen(
                                             color = TextSecondary,
                                             modifier = Modifier.padding(bottom = 10.dp)
                                         )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        AdaptiveButtonRow(wrap = compact) {
                                             ActionButton(
                                                 label = stringResource(R.string.settings_tmdb_enter),
                                                 icon = Icons.Filled.Edit,
@@ -604,7 +630,7 @@ fun SettingsScreen(
                                             color = TextSecondary,
                                             modifier = Modifier.padding(bottom = 10.dp)
                                         )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        AdaptiveButtonRow(wrap = compact) {
                                             ActionButton(
                                                 label = stringResource(R.string.settings_tmdb_enter),
                                                 icon = Icons.Filled.Edit,
@@ -873,11 +899,13 @@ private enum class ApiKeyService(val label: String, val keyPageUrl: String, @par
  */
 @Composable
 private fun ApiKeyDialog(service: ApiKeyService, accentColorObj: Color, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var typing by remember { mutableStateOf(false) }
+    // Phone / tablet: the key is typed (or pasted) here at once, no QR code nor page of the device
+    var typing by remember { mutableStateOf(Device.isTouch) }
     var key by remember { mutableStateOf("") }
     val currentSave by rememberUpdatedState(onSave)
     val scope = rememberCoroutineScope()
-    val host = remember { ConfigTransfer.localAddresses().firstOrNull() }
+    val uriHandler = LocalUriHandler.current
+    val host = remember { if (Device.isTouch) null else ConfigTransfer.localAddresses().firstOrNull() }
     val page = KeyEntryPage(
         title = stringResource(R.string.api_key_page_title, service.label),
         label = stringResource(service.hintRes),
@@ -907,25 +935,34 @@ private fun ApiKeyDialog(service: ApiKeyService, accentColorObj: Color, onDismis
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
-                .width(780.dp)
+                .dialogWidth(780.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(SurfaceDark)
                 .padding(horizontal = 30.dp, vertical = 24.dp)
         ) {
             Text(text = stringResource(service.titleRes), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Spacer(modifier = Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
-                KeyQrBlock(url = service.keyPageUrl, caption = stringResource(R.string.api_key_step_create, service.label))
-                val url = phoneUrl
-                if (url != null) {
-                    KeyQrBlock(url = url, caption = stringResource(R.string.api_key_step_paste))
-                } else {
-                    Text(
-                        text = stringResource(R.string.api_key_no_network),
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.width(220.dp).padding(top = 20.dp)
-                    )
+            if (Device.isTouch) {
+                // The page where the key is created, in the browser of the device
+                ActionButton(
+                    label = stringResource(R.string.api_key_open_page, service.label),
+                    icon = Icons.Filled.ArrowForward,
+                    onClick = { runCatching { uriHandler.openUri(service.keyPageUrl) } }
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                    KeyQrBlock(url = service.keyPageUrl, caption = stringResource(R.string.api_key_step_create, service.label))
+                    val url = phoneUrl
+                    if (url != null) {
+                        KeyQrBlock(url = url, caption = stringResource(R.string.api_key_step_paste))
+                    } else {
+                        Text(
+                            text = stringResource(R.string.api_key_no_network),
+                            fontSize = 13.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.width(220.dp).padding(top = 20.dp)
+                        )
+                    }
                 }
             }
             if (phoneUrl != null) {
@@ -1023,15 +1060,19 @@ private fun <T> OptionGrid(
     columns: Int,
     cell: @Composable (item: T, modifier: Modifier) -> Unit
 ) {
+    // Phone: two options per row at most, their labels stay readable
+    val shown = if (LocalScreen.current.compact) columns.coerceAtMost(COMPACT_OPTION_COLUMNS) else columns
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items.chunked(columns).forEach { row ->
+        items.chunked(shown).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { item -> cell(item, Modifier.weight(1f)) }
-                repeat(columns - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                repeat(shown - row.size) { Spacer(modifier = Modifier.weight(1f)) }
             }
         }
     }
 }
+
+private const val COMPACT_OPTION_COLUMNS = 2
 
 /** Section of the settings menu: icon, name and what it holds; filled when focused, marked when open. */
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -1041,6 +1082,8 @@ private fun SettingsNavItem(
     selected: Boolean,
     badge: Boolean,
     onFocused: () -> Unit,
+    // Touch: a tap opens the section (on a phone, in place of the menu)
+    onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -1055,7 +1098,7 @@ private fun SettingsNavItem(
         // OK enters the section, like →
         onClick = { focusManager.moveFocus(FocusDirection.Right) },
         interactionSource = interactionSource,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().touchClick(onOpen),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
         colors = ClickableSurfaceDefaults.colors(
@@ -1149,7 +1192,7 @@ private fun OptionButton(
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
         border = ClickableSurfaceDefaults.border(
@@ -1233,7 +1276,7 @@ private fun CategoryToggle(
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
         colors = ClickableSurfaceDefaults.colors(
@@ -1311,7 +1354,7 @@ private fun ActionButton(
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
         colors = ClickableSurfaceDefaults.colors(
@@ -1394,7 +1437,7 @@ private fun ServerConfigCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AdaptiveButtonRow(wrap = LocalScreen.current.compact, spacing = 8.dp) {
                 onMoveUp?.let {
                     RoundIconButton(icon = Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.settings_move_up), onClick = it)
                 }
@@ -1470,6 +1513,26 @@ private fun ConfigEditDialog(
         )
     }
 
+    fun testConnection() {
+        if (isTesting) return
+        formError = missingField()
+        if (formError != null) return
+        val tempConfig = buildConfig()
+        isTesting = true
+        testStatus = resources.getString(R.string.settings_checking)
+        scope.launch {
+            val result = onTestConnection(tempConfig)
+            isTesting = false
+            result.onSuccess { message ->
+                isTestSuccess = true
+                testStatus = message.resolve(resources)
+            }.onFailure { error ->
+                isTestSuccess = false
+                testStatus = error.toUiText().resolve(resources)
+            }
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -1481,7 +1544,7 @@ private fun ConfigEditDialog(
         BoxWithConstraints {
             Column(
                 modifier = Modifier
-                    .width(660.dp)
+                    .dialogWidth(660.dp)
                     .heightIn(max = maxHeight * 0.94f)
                     .clip(RoundedCornerShape(20.dp))
                     .background(SurfaceDark)
@@ -1636,33 +1699,19 @@ private fun ConfigEditDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
+                val testLabel = stringResource(if (isTesting) R.string.settings_testing else R.string.settings_test_connection)
+                // Phone: the test on its own line, Cancel and Save under it
+                val compact = LocalScreen.current.compact
+                if (compact) {
+                    ActionButton(label = testLabel, icon = Icons.Filled.Refresh, onClick = ::testConnection)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ActionButton(
-                        label = stringResource(if (isTesting) R.string.settings_testing else R.string.settings_test_connection),
-                        icon = Icons.Filled.Refresh,
-                        onClick = {
-                            if (isTesting) return@ActionButton
-                            formError = missingField()
-                            if (formError != null) return@ActionButton
-                            val tempConfig = buildConfig()
-                            isTesting = true
-                            testStatus = resources.getString(R.string.settings_checking)
-                            scope.launch {
-                                val result = onTestConnection(tempConfig)
-                                isTesting = false
-                                result.onSuccess { message ->
-                                    isTestSuccess = true
-                                    testStatus = message.resolve(resources)
-                                }.onFailure { error ->
-                                    isTestSuccess = false
-                                    testStatus = error.toUiText().resolve(resources)
-                                }
-                            }
-                        }
-                    )
+                    if (!compact) ActionButton(label = testLabel, icon = Icons.Filled.Refresh, onClick = ::testConnection)
 
                     Spacer(modifier = Modifier.weight(1f))
 
@@ -1796,7 +1845,8 @@ private fun TvInputField(
                 onClick = { isEditing = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(displayFocus),
+                    .focusRequester(displayFocus)
+                    .touchClick({ isEditing = true }),
                 shape = ClickableSurfaceDefaults.shape(shape = shape),
                 scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
                 border = ClickableSurfaceDefaults.border(

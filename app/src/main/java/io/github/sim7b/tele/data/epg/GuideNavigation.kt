@@ -61,6 +61,16 @@ class GuideNavigation(
     fun now(row: Int, programs: List<GuideProgram>, now: Long): GuidePosition =
         GuidePosition(row, now, GuideTimeline.programAt(programs, now)?.startMillis ?: -1, maxOf(minStart, GuideTimeline.slotStart(now, zone)))
 
+    /** Touch: the program of [row] aired at [time] (a tap on the grid), the visible hours kept. */
+    fun tapped(row: Int, programs: List<GuideProgram>, time: Long, position: GuidePosition): GuidePosition =
+        position.copy(row = row, cursor = time, focusedStart = GuideTimeline.programAt(programs, time)?.startMillis ?: -1)
+
+    /** Touch: the visible hours moved by [slots] half hours (a drag), within the start of the grid and the end of the guide. */
+    fun scrolled(position: GuidePosition, slots: Int): GuidePosition {
+        val lastStart = maxOf(minStart, GuideTimeline.slotStart(maxTime - span, zone))
+        return position.copy(viewStart = (position.viewStart + slots * slot).coerceIn(minStart, lastStart))
+    }
+
     /** Left edge of the visible hours so that [start, end) can be seen, scrolling by half hours. */
     fun reveal(viewStart: Long, start: Long, end: Long): Long = when {
         // Starts in the last visible half hour or later: it moves to the second column

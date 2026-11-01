@@ -119,4 +119,31 @@ class GuideNavigationTest {
         assertEquals(30 * minute, show.viewStart)
         assertEquals("Early", replayNavigation.focused(programs, replayNavigation.left(programs, show))?.title)
     }
+
+    @Test
+    fun `a tap focuses the program aired at the tapped time, the hours stay`() {
+        val start = navigation.now(row = 0, programs = programs, now = now)
+        val film = navigation.tapped(row = 3, programs = programs, time = 120 * minute, position = start)
+        assertEquals(3, film.row)
+        assertEquals("Film", title(film))
+        assertEquals(start.viewStart, film.viewStart)
+        // In a hole: no program, the cursor on the tapped time
+        val hole = navigation.tapped(row = 3, programs = programs, time = 220 * minute, position = start)
+        assertNull(title(hole))
+        assertEquals(-1L, hole.focusedStart)
+        assertEquals(220 * minute, hole.cursor)
+    }
+
+    @Test
+    fun `a drag moves the hours by half hours within the grid`() {
+        val start = navigation.now(row = 0, programs = programs, now = now)
+        val later = navigation.scrolled(start, slots = 2)
+        assertEquals(90 * minute, later.viewStart)
+        // The focus does not move with the hours
+        assertEquals(start.focusedStart, later.focusedStart)
+        assertEquals(start.cursor, later.cursor)
+        // Never before the start of the grid, never past the end of the guide (600 - 150 = 450)
+        assertEquals(30 * minute, navigation.scrolled(later, slots = -10).viewStart)
+        assertEquals(450 * minute, navigation.scrolled(start, slots = 100).viewStart)
+    }
 }

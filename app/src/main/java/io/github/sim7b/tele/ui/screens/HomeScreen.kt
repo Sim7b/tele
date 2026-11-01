@@ -51,7 +51,10 @@ import io.github.sim7b.tele.ui.components.ChannelNumberBadge
 import io.github.sim7b.tele.ui.components.rememberChannelNumberEntry
 import io.github.sim7b.tele.ui.components.ChannelActionMenuDialog
 import io.github.sim7b.tele.ui.components.CompactChannelCard
+import io.github.sim7b.tele.ui.components.Device
 import io.github.sim7b.tele.ui.components.DiscreteCategoryChip
+import io.github.sim7b.tele.ui.components.LocalScreen
+import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.components.FavoriteChannelCard
 import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.RoundIconButton
@@ -70,6 +73,9 @@ private const val ALL_CATEGORIES = "__all__"
 private const val FAVORITE_KEY_PREFIX = "fav:"
 private const val LIST_KEY_PREFIX = "list:"
 private const val FAVORITE_COLUMNS = 4
+private const val CHANNEL_COLUMNS = 4
+// Phone: two tiles and two channels per row
+private const val COMPACT_COLUMNS = 2
 
 /**
  * Home: favorites, categories and channel grid.
@@ -112,8 +118,13 @@ fun HomeScreen(
     previewDelayMs: Long? = null,
     onPreviewChannel: (Channel?) -> Unit = {},
     previewSurface: @Composable () -> Unit = {},
+    // Phone / tablet: Chromecast button of the header
+    castButton: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val compact = LocalScreen.current.compact
+    val favoriteColumns = if (compact) COMPACT_COLUMNS else FAVORITE_COLUMNS
+    val channelColumns = if (compact) COMPACT_COLUMNS else CHANNEL_COLUMNS
     // Saved states: restored when coming back from the player or the settings
     var selectedCategory by rememberSaveable { mutableStateOf(ALL_CATEGORIES) }
     var lastFocusedKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -146,6 +157,21 @@ fun HomeScreen(
         onMoveFavorite(movingId, favoriteIds.indexOf(favorites[to].id))
     }
 
+    fun endFavoriteMove() {
+        movingChannelId = null
+        focusRestoreRequest++
+    }
+
+    // Touch: a tap on another favorite moves the tile there, a tap on the tile itself (or elsewhere) ends the move
+    fun touchMoveTo(target: Channel) {
+        val movingId = movingChannelId ?: return
+        if (target.id == movingId) return endFavoriteMove()
+        val from = favorites.indexOfFirst { it.id == movingId }
+        val to = favorites.indexOfFirst { it.id == target.id }
+        if (from == -1 || to == -1 || to >= movableCount) return endFavoriteMove()
+        moveBy(to - from)
+    }
+
     // Categories
     val categories = remember(channels, categoryOrder) {
         listOf(ALL_CATEGORIES) + Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
@@ -168,8 +194,8 @@ fun HomeScreen(
     val filteredChannels = remember(channels, effectiveCategory) {
         if (effectiveCategory == ALL_CATEGORIES) channels else channels.filter { it.group == effectiveCategory }
     }
-    // Rows of 4 computed once per list change (and not on every grid recomposition)
-    val channelRows = remember(filteredChannels) { filteredChannels.chunked(4) }
+    // Rows of the grid computed once per list change (and not on every grid recomposition)
+    val channelRows = remember(filteredChannels, channelColumns) { filteredChannels.chunked(channelColumns) }
 
     // Item that gets the focus when shown: the last focused one, otherwise the first favorite.
     // Id sets built once per list change: the last focused key changes on every D-pad move.
@@ -211,6 +237,11 @@ fun HomeScreen(
     val numberEntry = rememberChannelNumberEntry(channels, onChannelSelected)
     BackHandler(enabled = numberEntry.isTyping) {
         numberEntry.cancel()
+    }
+    // Touch: Back ends a move even when the focus left the screen (the keys below need it)
+    BackHandler(enabled = Device.isTouch && (movingChannelId != null || movingCategory != null)) {
+        movingCategory = null
+        endFavoriteMove()
     }
 
     // Card focused right now (key and channel), and the card showing the muted preview
@@ -278,16 +309,27 @@ fun HomeScreen(
                 when (keyCode) {
                     KeyEvent.KEYCODE_DPAD_LEFT -> moveBy(-1)
                     KeyEvent.KEYCODE_DPAD_RIGHT -> moveBy(+1)
-                    KeyEvent.KEYCODE_DPAD_UP -> moveBy(-FAVORITE_COLUMNS)
-                    KeyEvent.KEYCODE_DPAD_DOWN -> moveBy(+FAVORITE_COLUMNS)
+                    KeyEvent.KEYCODE_DPAD_UP -> moveBy(-favoriteColumns)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> moveBy(+favoriteColumns)
                 }
                 true
             }
-            .padding(start = 48.dp, end = 48.dp, top = 22.dp, bottom = 8.dp) // TV Safe Area
+            .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 22.dp, bottom = 8.dp) // TV Safe Area
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header: time and date, sync status, settings
-            Row(
+            if (compact) CompactHomeHeader(
+                hasContent = hasContent,
+                isLoading = isLoading,
+                loadError = loadError,
+                streamSlots = streamSlots,
+                updateAvailable = updateAvailable,
+                onOpenGuide = onOpenGuide,
+                onOpenVod = onOpenVod,
+                onOpenSearch = onOpenSearch,
+                onOpenSettings = onOpenSettings,
+                castButton = castButton
+            ) else Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 14.dp),
@@ -345,25 +387,12 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                 }
 
-                // Discreet accent dot on the settings button when an app update is available
-                Box {
-                    RoundIconButton(
-                        icon = Icons.Filled.Settings,
-                        contentDescription = stringResource(
-                            if (updateAvailable) R.string.home_settings_update else R.string.home_settings
-                        ),
-                        onClick = onOpenSettings
-                    )
-                    if (updateAvailable) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(AccentCyan)
-                        )
-                    }
+                if (Device.isTouch) {
+                    castButton()
+                    Spacer(modifier = Modifier.width(10.dp))
                 }
+
+                SettingsButton(updateAvailable = updateAvailable, onClick = onOpenSettings)
             }
 
             if (isLoading && !hasContent) {
@@ -392,7 +421,7 @@ fun HomeScreen(
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(460.dp)
+                        modifier = if (compact) Modifier.fillMaxWidth() else Modifier.width(460.dp)
                     ) {
                         Text(
                             text = if (!hasSource) stringResource(R.string.home_welcome) else stringResource(R.string.home_no_channels),
@@ -445,7 +474,7 @@ fun HomeScreen(
                                 if (movingChannelId != null) {
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Text(
-                                        text = stringResource(R.string.home_move_hint),
+                                        text = stringResource(if (Device.isTouch) R.string.home_move_touch_hint else R.string.home_move_hint),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = AccentCyan
@@ -453,7 +482,7 @@ fun HomeScreen(
                                 }
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                favoriteChannels.chunked(FAVORITE_COLUMNS).forEachIndexed { rowIndex, favRow ->
+                                favoriteChannels.chunked(favoriteColumns).forEachIndexed { rowIndex, favRow ->
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                                         modifier = Modifier.fillMaxWidth()
@@ -461,7 +490,7 @@ fun HomeScreen(
                                         for ((column, channel) in favRow.withIndex()) {
                                             val isMoving = channel.id == movingChannelId
                                             // No favorite below this one: Down goes to the categories
-                                            val isBottom = (rowIndex + 1) * FAVORITE_COLUMNS + column >= favoriteChannels.size
+                                            val isBottom = (rowIndex + 1) * favoriteColumns + column >= favoriteChannels.size
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
@@ -470,8 +499,9 @@ fun HomeScreen(
                                             ) {
                                                 FavoriteChannelCard(
                                                     channel = channel,
-                                                    onClick = { onChannelSelected(channel) },
-                                                    onLongClick = { actionMenuChannel = channel },
+                                                    // During a move only a tap gets here (the remote keys move the tile)
+                                                    onClick = { if (movingChannelId != null) touchMoveTo(channel) else onChannelSelected(channel) },
+                                                    onLongClick = { if (movingChannelId != null) touchMoveTo(channel) else actionMenuChannel = channel },
                                                     isMoving = isMoving,
                                                     preview = if (previewKey == FAVORITE_KEY_PREFIX + channel.id) previewSurface else null,
                                                     modifier = Modifier
@@ -486,7 +516,7 @@ fun HomeScreen(
                                                 )
                                             }
                                         }
-                                        repeat(4 - favRow.size) {
+                                        repeat(favoriteColumns - favRow.size) {
                                             Spacer(modifier = Modifier.weight(1f))
                                         }
                                     }
@@ -499,7 +529,7 @@ fun HomeScreen(
                     item {
                         if (movingCategory != null) {
                             Text(
-                                text = stringResource(R.string.home_move_category_hint),
+                                text = stringResource(if (Device.isTouch) R.string.home_move_category_touch_hint else R.string.home_move_category_hint),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = AccentCyan,
@@ -518,7 +548,17 @@ fun HomeScreen(
                                 DiscreteCategoryChip(
                                     text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else groupLabel(category),
                                     isSelected = category == effectiveCategory,
-                                    onClick = { selectedCategory = category },
+                                    onClick = {
+                                        // During a move only a tap gets here: the chip goes to the tapped place, a tap on it ends the move
+                                        val moving = movingCategory
+                                        when {
+                                            moving == null -> selectedCategory = category
+                                            category == moving || category == ALL_CATEGORIES -> movingCategory = null
+                                            else -> onReorderCategories(
+                                                Categories.moved(categories.drop(1), moving, categories.indexOf(category) - categories.indexOf(moving))
+                                            )
+                                        }
+                                    },
                                     onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category }),
                                     modifier = when (category) {
                                         movingCategory -> Modifier.focusRequester(categoryMoveFocus)
@@ -545,14 +585,15 @@ fun HomeScreen(
                                 Box(modifier = Modifier.weight(1f)) {
                                     CompactChannelCard(
                                         channel = channel,
-                                        onClick = { onChannelSelected(channel) },
-                                        onLongClick = { actionMenuChannel = channel },
+                                        // During a move only a tap gets here: it ends the move
+                                        onClick = { if (movingChannelId != null) endFavoriteMove() else onChannelSelected(channel) },
+                                        onLongClick = { if (movingChannelId != null) endFavoriteMove() else actionMenuChannel = channel },
                                         preview = if (previewKey == LIST_KEY_PREFIX + channel.id) previewSurface else null,
                                         modifier = Modifier.trackFocus(LIST_KEY_PREFIX + channel.id, channel)
                                     )
                                 }
                             }
-                            repeat(4 - rowChannels.size) {
+                            repeat(channelColumns - rowChannels.size) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
@@ -603,6 +644,93 @@ fun HomeScreen(
                     focusRestoreRequest++
                 }
             )
+        }
+    }
+}
+
+/** Settings button, with a discreet accent dot when an app update is available. */
+@Composable
+private fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) {
+    Box {
+        RoundIconButton(
+            icon = Icons.Filled.Settings,
+            contentDescription = stringResource(
+                if (updateAvailable) R.string.home_settings_update else R.string.home_settings
+            ),
+            onClick = onClick
+        )
+        if (updateAvailable) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(AccentCyan)
+            )
+        }
+    }
+}
+
+/** Header of a phone: time, search and settings, then the guide, the movies and the sync status below them. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun CompactHomeHeader(
+    hasContent: Boolean,
+    isLoading: Boolean,
+    loadError: UiText?,
+    streamSlots: StreamSlots?,
+    updateAvailable: Boolean,
+    onOpenGuide: (() -> Unit)?,
+    onOpenVod: (() -> Unit)?,
+    onOpenSearch: (voice: Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
+    castButton: @Composable () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            HeaderClock()
+            Spacer(modifier = Modifier.weight(1f))
+            streamSlots?.let { slots ->
+                StreamSlotsBadge(slots)
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            if (hasContent) {
+                RoundIconButton(
+                    icon = Icons.Filled.Search,
+                    contentDescription = stringResource(R.string.home_search),
+                    onClick = { onOpenSearch(false) }
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            castButton()
+            Spacer(modifier = Modifier.width(10.dp))
+            SettingsButton(updateAvailable = updateAvailable, onClick = onOpenSettings)
+        }
+        val openGuide = onOpenGuide?.takeIf { hasContent }
+        val syncing = isLoading && hasContent
+        val error = loadError?.takeIf { hasContent }
+        if (openGuide != null || onOpenVod != null || syncing || error != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+            ) {
+                openGuide?.let { VodChip(label = stringResource(R.string.home_open_guide), selected = false, onClick = it) }
+                onOpenVod?.let { VodChip(label = stringResource(R.string.home_open_vod), selected = false, onClick = it) }
+                if (syncing) {
+                    CircularProgressIndicator(color = TextSecondary, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
+                    Text(text = stringResource(R.string.home_syncing), fontSize = 12.sp, color = TextSecondary, maxLines = 1)
+                } else if (error != null) {
+                    Text(
+                        text = error.resolve(),
+                        fontSize = 12.sp,
+                        color = LiveRed.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+            }
         }
     }
 }

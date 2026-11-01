@@ -36,6 +36,7 @@ import io.github.sim7b.tele.data.transfer.ConfigTransfer
 import io.github.sim7b.tele.data.transfer.TransferCrypto
 import io.github.sim7b.tele.data.transfer.TransferPeer
 import io.github.sim7b.tele.ui.components.MenuRow
+import io.github.sim7b.tele.ui.components.dialogWidth
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.CancellationException
@@ -51,7 +52,7 @@ private fun TransferDialogFrame(title: String, onDismiss: () -> Unit, content: @
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
-                .width(560.dp)
+                .dialogWidth(560.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(SurfaceDark)
                 .padding(horizontal = 26.dp, vertical = 22.dp)

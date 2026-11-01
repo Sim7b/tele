@@ -8,6 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -18,6 +20,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
@@ -219,10 +222,46 @@ fun ChannelListPanel(
         if (zone != PanelZone.HEADER) rowFocus.requestFocusWithRetry()
     }
 
+    // Phone: the panel takes the whole width; phone or small tablet: the programs of a channel take the
+    // place of the channels instead of showing beside them
+    val screen = LocalScreen.current
+    val compact = screen.compact
+    val stacked = screen.touch && screen.width < PanelWidth + ScheduleWidth + FadeWidth / 2
+    fun openSchedule(channel: Channel) {
+        scheduleChannel = channel
+        scope.launch { scheduleFocus.requestFocusWithRetry() }
+    }
+    val schedule: @Composable (Modifier) -> Unit = { columnModifier ->
+        // Last channel shown, kept while the column closes
+        val shownChannel = remember { mutableStateOf(columnChannel) }
+        if (columnChannel != null) shownChannel.value = columnChannel
+        ScheduleColumn(
+            channel = shownChannel.value,
+            programs = columnPrograms,
+            firstComing = firstComing,
+            now = now,
+            interactive = scheduleChannel != null,
+            firstFocus = scheduleFocus,
+            actions = actions,
+            onOpen = { program -> scheduleChannel?.let { openProgram(it, program) } },
+            onFocusIndex = { scheduleIndex = it },
+            onClose = if (stacked) ({ closeSchedule() }) else null,
+            modifier = columnModifier
+                .fillMaxHeight()
+                .onFocusChanged { if (it.hasFocus) zone = PanelZone.SCHEDULE }
+                .onAnyTouch { interactions++ }
+                .blockTouches()
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxHeight()
             .drawBehind {
+                if (compact) {
+                    drawRect(Color.Black.copy(alpha = 0.9f))
+                    return@drawBehind
+                }
                 // Opaque behind the text, then fading out over the video, whatever the width of the panel
                 val contentEnd = ((size.width - FadeWidth.toPx()) / size.width).coerceIn(0.1f, 1f)
                 drawRect(
@@ -309,8 +348,11 @@ fun ChannelListPanel(
         Row(modifier = Modifier.fillMaxHeight()) {
             Column(
                 modifier = Modifier
-                    .width(PanelWidth)
+                    .then(if (compact) Modifier.fillMaxWidth() else Modifier.width(PanelWidth))
                     .fillMaxHeight()
+                    // Touch: taps here stay in the panel (beside it, they close it)
+                    .onAnyTouch { interactions++ }
+                    .blockTouches()
             ) {
                 val index = categories.indexOf(category)
                 PanelHeader(
@@ -318,6 +360,9 @@ fun ChannelListPanel(
                     previous = categoryLabel(categories[Math.floorMod(index - 1, categories.size)]),
                     next = categoryLabel(categories[Math.floorMod(index + 1, categories.size)]),
                     count = shown.size,
+                    onPrevious = { moveCategory(-1) },
+                    onNext = { moveCategory(+1) },
+                    onClose = onDismiss,
                     modifier = Modifier
                         .focusRequester(headerFocus)
                         .onFocusChanged { if (it.isFocused) zone = PanelZone.HEADER }
@@ -339,6 +384,8 @@ fun ChannelListPanel(
                             isSelected = channel.id == scheduleChannel?.id,
                             onClick = { onSelectChannel(channel) },
                             onLongClick = if (actions.loadStreams != null) ({ menuChannel = channel }) else null,
+                            // Touch: the arrow of the remote's ▶, toward the programs of the channel
+                            onPrograms = if (Device.isTouch && programsOf(channel).isNotEmpty()) ({ openSchedule(channel) }) else null,
                             modifier = Modifier
                                 .then(if (channel.id == anchorId) Modifier.focusRequester(rowFocus) else Modifier)
                                 .onFocusChanged {
@@ -351,47 +398,51 @@ fun ChannelListPanel(
                     }
                 }
 
-                Text(
-                    text = stringResource(
-                        when (zone) {
-                            PanelZone.HEADER -> R.string.panel_header_keys_hint
-                            PanelZone.LIST -> R.string.panel_keys_hint
-                            PanelZone.SCHEDULE -> R.string.panel_schedule_keys_hint
-                        }
-                    ),
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.38f),
-                    maxLines = 1,
-                    modifier = Modifier.padding(start = 30.dp, bottom = 22.dp, top = 6.dp)
-                )
+                // Keys of the remote: buttons on a touch screen
+                if (!Device.isTouch) {
+                    Text(
+                        text = stringResource(
+                            when (zone) {
+                                PanelZone.HEADER -> R.string.panel_header_keys_hint
+                                PanelZone.LIST -> R.string.panel_keys_hint
+                                PanelZone.SCHEDULE -> R.string.panel_schedule_keys_hint
+                            }
+                        ),
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.38f),
+                        maxLines = 1,
+                        modifier = Modifier.padding(start = 30.dp, bottom = 22.dp, top = 6.dp)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
 
+            if (!stacked) {
+                AnimatedVisibility(
+                    visible = columnChannel != null && columnPrograms.isNotEmpty(),
+                    enter = fadeIn() + expandHorizontally(),
+                    exit = fadeOut() + shrinkHorizontally()
+                ) {
+                    schedule(Modifier.width(ScheduleWidth))
+                }
+            }
+
+            if (!compact) Spacer(modifier = Modifier.width(FadeWidth))
+        }
+
+        // Phone or small tablet: the programs browsed over the channels, until their arrow brings them back
+        if (stacked) {
             AnimatedVisibility(
-                visible = columnChannel != null && columnPrograms.isNotEmpty(),
-                enter = fadeIn() + expandHorizontally(),
-                exit = fadeOut() + shrinkHorizontally()
+                visible = scheduleChannel != null && columnPrograms.isNotEmpty(),
+                enter = fadeIn() + slideInHorizontally { it / 4 },
+                exit = fadeOut() + slideOutHorizontally { it / 4 }
             ) {
-                // Last channel shown, kept while the column closes
-                val shownChannel = remember { mutableStateOf(columnChannel) }
-                if (columnChannel != null) shownChannel.value = columnChannel
-                ScheduleColumn(
-                    channel = shownChannel.value,
-                    programs = columnPrograms,
-                    firstComing = firstComing,
-                    now = now,
-                    interactive = scheduleChannel != null,
-                    firstFocus = scheduleFocus,
-                    actions = actions,
-                    onOpen = { program -> scheduleChannel?.let { openProgram(it, program) } },
-                    onFocusIndex = { scheduleIndex = it },
-                    modifier = Modifier
-                        .width(ScheduleWidth)
-                        .fillMaxHeight()
-                        .onFocusChanged { if (it.hasFocus) zone = PanelZone.SCHEDULE }
+                schedule(
+                    (if (compact) Modifier.fillMaxWidth() else Modifier.width(PanelWidth))
+                        .background(Color.Black.copy(alpha = 0.94f))
                 )
             }
-
-            Spacer(modifier = Modifier.width(FadeWidth))
         }
 
         ChannelNumberBadge(
@@ -454,7 +505,17 @@ private fun categoryLabel(category: String): String = when (category) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun PanelHeader(category: String, previous: String, next: String, count: Int, modifier: Modifier = Modifier) {
+private fun PanelHeader(
+    category: String,
+    previous: String,
+    next: String,
+    count: Int,
+    // Touch: the arrows go through the categories, a button closes the panel
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val now by produceState(initialValue = LocalTime.now()) {
         while (true) {
             value = LocalTime.now()
@@ -462,7 +523,9 @@ private fun PanelHeader(category: String, previous: String, next: String, count:
         }
     }
     val interactionSource = remember { MutableInteractionSource() }
+    // Touch: the neighbors always shown, the arrows are buttons
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val expanded = isFocused || Device.isTouch
 
     Column(modifier = Modifier.padding(start = 18.dp, end = 10.dp, top = 30.dp, bottom = 10.dp)) {
         Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(start = 12.dp, end = 12.dp)) {
@@ -479,6 +542,10 @@ private fun PanelHeader(category: String, previous: String, next: String, count:
                 fontWeight = FontWeight.Light,
                 color = Color.White.copy(alpha = 0.7f)
             )
+            if (Device.isTouch) {
+                Spacer(modifier = Modifier.width(14.dp))
+                RoundIconButton(icon = Icons.Filled.Close, contentDescription = stringResource(R.string.vod_close), onClick = onClose, size = 36.dp)
+            }
         }
         Spacer(modifier = Modifier.height(4.dp))
         // Category selector: focused, ◀ ▶ go through the categories (no action on OK), the neighbors on its sides
@@ -497,21 +564,26 @@ private fun PanelHeader(category: String, previous: String, next: String, count:
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
             ) {
-                if (isFocused) {
+                if (expanded) {
                     Text(
                         text = previous,
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.4f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 90.dp)
+                        modifier = Modifier
+                            .widthIn(max = 90.dp)
+                            .touchTap(onPrevious)
                     )
                 }
                 Icon(
                     imageVector = Icons.Filled.KeyboardArrowLeft,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = if (isFocused) 0.9f else 0.45f),
-                    modifier = Modifier.size(18.dp)
+                    tint = Color.White.copy(alpha = if (expanded) 0.9f else 0.45f),
+                    // Small: the touch area grows to the minimum touch size
+                    modifier = Modifier
+                        .size(18.dp)
+                        .touchTap(onPrevious)
                 )
                 Text(
                     text = category,
@@ -530,17 +602,21 @@ private fun PanelHeader(category: String, previous: String, next: String, count:
                 Icon(
                     imageVector = Icons.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = if (isFocused) 0.9f else 0.45f),
-                    modifier = Modifier.size(18.dp)
+                    tint = Color.White.copy(alpha = if (expanded) 0.9f else 0.45f),
+                    modifier = Modifier
+                        .size(18.dp)
+                        .touchTap(onNext)
                 )
-                if (isFocused) {
+                if (expanded) {
                     Text(
                         text = next,
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.4f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 90.dp)
+                        modifier = Modifier
+                            .widthIn(max = 90.dp)
+                            .touchTap(onNext)
                     )
                 }
             }
@@ -556,7 +632,9 @@ private fun PanelChannelRow(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Touch: button toward the programs of the channel (null: none)
+    onPrograms: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -566,7 +644,7 @@ private fun PanelChannelRow(
         onClick = onClick,
         onLongClick = onLongClick,
         interactionSource = interactionSource,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().touchClick(onClick, onLongClick),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
         colors = ClickableSurfaceDefaults.colors(
@@ -676,6 +754,17 @@ private fun PanelChannelRow(
                     }
                 }
             }
+
+            onPrograms?.let { open ->
+                Spacer(modifier = Modifier.width(8.dp))
+                RoundIconButton(
+                    icon = Icons.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.panel_programs, channel.name),
+                    onClick = open,
+                    size = 36.dp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
         }
     }
 }
@@ -697,21 +786,34 @@ private fun ScheduleColumn(
     actions: GuideActions,
     onOpen: (GuideProgram) -> Unit,
     onFocusIndex: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Shown in place of the channels (phone): an arrow back to them
+    onClose: (() -> Unit)? = null
 ) {
     val zone = remember { ZoneId.systemDefault() }
     // The program on air at the top, the replays above it
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstComing)
     Column(modifier = modifier) {
-        Text(
-            text = channel?.name.orEmpty(),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White.copy(alpha = 0.9f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 34.dp, bottom = 14.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            onClose?.let { close ->
+                RoundIconButton(
+                    icon = Icons.Filled.KeyboardArrowLeft,
+                    contentDescription = stringResource(R.string.panel_title),
+                    onClick = close,
+                    size = 36.dp,
+                    modifier = Modifier.padding(start = 12.dp, top = 24.dp, bottom = 4.dp)
+                )
+            }
+            Text(
+                text = channel?.name.orEmpty(),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 34.dp, bottom = 14.dp)
+            )
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f),
@@ -743,7 +845,8 @@ private fun ScheduleColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(if (index == firstComing) Modifier.focusRequester(firstFocus) else Modifier)
-                            .onFocusChanged { if (it.isFocused) onFocusIndex(index) },
+                            .onFocusChanged { if (it.isFocused) onFocusIndex(index) }
+                            .touchClick({ onOpen(program) }),
                         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
                         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
                         colors = ClickableSurfaceDefaults.colors(

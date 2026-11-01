@@ -68,8 +68,12 @@ import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.vod.VodRows
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.data.vod.VodVersion
+import io.github.sim7b.tele.ui.components.AdaptiveButtonRow
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.MenuRow
+import io.github.sim7b.tele.ui.components.screenMargin
+import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.components.ProgressLine
 import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.Tag
@@ -108,6 +112,7 @@ fun VodDetailScreen(
     subtitles: VodSubtitles? = null
 ) {
     BackHandler(onBack = onBack)
+    val compact = LocalScreen.current.compact
     val shown = details?.title ?: title
     val playFocus = remember { FocusRequester() }
     // The first composition of a sheet can be slow: up to 2 s to take the focus
@@ -172,7 +177,7 @@ fun VodDetailScreen(
         }
 
         LazyColumn(
-            contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 36.dp, bottom = 40.dp),
+            contentPadding = PaddingValues(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 36.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier.fillMaxSize()
         ) {
@@ -180,16 +185,17 @@ fun VodDetailScreen(
                 Row {
                     Box(
                         modifier = Modifier
-                            .width(150.dp)
-                            .height(225.dp)
+                            // Phone: smaller poster, the text keeps some room
+                            .width(if (compact) 96.dp else 150.dp)
+                            .height(if (compact) 144.dp else 225.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(SurfaceCard)
                     ) {
                         FadeInImage(url = shown.posterUrl, contentDescription = shown.title, modifier = Modifier.fillMaxSize())
                     }
-                    Spacer(modifier = Modifier.width(26.dp))
+                    Spacer(modifier = Modifier.width(if (compact) 16.dp else 26.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = shown.title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(text = shown.title, fontSize = if (compact) 22.sp else 28.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
                             val meta = listOfNotNull(
                                 shown.year?.toString(),
@@ -219,7 +225,8 @@ fun VodDetailScreen(
                                     .fillMaxWidth(0.85f)
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 16.dp)) {
+                        // Phone: the buttons wrap on several lines
+                        AdaptiveButtonRow(wrap = compact, modifier = Modifier.padding(top = 16.dp)) {
                             VodButton(
                                 label = resumeAt?.let { stringResource(R.string.vod_resume, positionLabel(it.positionMs)) }
                                     ?: if (title.kind == VodKind.SERIES && nextEpisode != null) "${stringResource(R.string.vod_play)} · ${episodeShort(nextEpisode)}" else stringResource(R.string.vod_play),
@@ -405,8 +412,8 @@ private fun FileInfo(
     downloaded: List<String> = emptyList()
 ) {
     val version = versions[selected]
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        InfoBlock(title = stringResource(R.string.vod_version), modifier = Modifier.weight(1.2f)) {
+    val fileBlock: @Composable (Modifier) -> Unit = { modifier ->
+        InfoBlock(title = stringResource(R.string.vod_version), modifier = modifier) {
             if (onSelect != null && versions.size > 1) {
                 versions.forEachIndexed { index, file ->
                     VodChip(label = versionLabel(file), selected = index == selected, onClick = { onSelect(index) }, modifier = Modifier.padding(bottom = 6.dp))
@@ -418,14 +425,32 @@ private fun FileInfo(
                 }
             }
         }
-        InfoBlock(title = stringResource(R.string.vod_audio), modifier = Modifier.weight(1f)) {
+    }
+    val audioBlock: @Composable (Modifier) -> Unit = { modifier ->
+        InfoBlock(title = stringResource(R.string.vod_audio), modifier = modifier) {
             ValueList(audioLabels(version, estimated))
         }
-        InfoBlock(title = stringResource(R.string.vod_subtitles), modifier = Modifier.weight(1f)) {
+    }
+    val subtitlesBlock: @Composable (Modifier) -> Unit = { modifier ->
+        InfoBlock(title = stringResource(R.string.vod_subtitles), modifier = modifier) {
             ValueList(
                 downloaded.map { stringResource(R.string.subtitles_online_label, languageName(it) ?: it) } +
                     subtitleLabels(version, estimated)
             )
+        }
+    }
+    // Phone: one block under the other
+    if (LocalScreen.current.compact) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            fileBlock(Modifier.fillMaxWidth())
+            audioBlock(Modifier.fillMaxWidth())
+            subtitlesBlock(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            fileBlock(Modifier.weight(1.2f))
+            audioBlock(Modifier.weight(1f))
+            subtitlesBlock(Modifier.weight(1f))
         }
     }
 }
@@ -470,7 +495,8 @@ private fun EpisodeCard(episode: VodEpisode, progress: VodProgress?, onFocused: 
             interactionSource = interactionSource,
             modifier = Modifier
                 .width(220.dp)
-                .height(124.dp),
+                .height(124.dp)
+                .touchClick(onClick, onLongClick),
             shape = ClickableSurfaceDefaults.shape(shape = shape),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
             border = focusRing(shape),
@@ -548,7 +574,7 @@ private fun VodButton(label: String, icon: ImageVector, onClick: () -> Unit, mod
     val shape = RoundedCornerShape(50)
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
         colors = ClickableSurfaceDefaults.colors(

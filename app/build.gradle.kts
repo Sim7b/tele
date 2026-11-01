@@ -112,6 +112,15 @@ dependencies {
     implementation("androidx.media3:media3-common:$media3Version")
     // Player HTTP transport through OkHttp: connections shared with the API, headers controlled per host
     implementation("androidx.media3:media3-datasource-okhttp:$media3Version")
+    // Chromecast (phones and tablets only: never initialized on a TV). Its Compose button is not used:
+    // without its Compose BOM, the app keeps its own Compose versions (the TV runs the same libraries)
+    implementation("androidx.media3:media3-cast:$media3Version") {
+        exclude(group = "androidx.compose")
+        exclude(group = "androidx.compose.material3")
+    }
+    // Device picker and Chromecast dialogs (AppCompat dialogs), at the versions media3-cast was built with
+    implementation("androidx.mediarouter:mediarouter:1.8.1")
+    implementation("androidx.appcompat:appcompat:1.6.1")
 
     // QR codes of the API key pages (encoder only)
     implementation("com.google.zxing:core:3.5.4")
