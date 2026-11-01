@@ -37,6 +37,7 @@ import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.vod.VodRow
 import io.github.sim7b.tele.data.vod.VodTitle
+import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.vod.VodVersion
 import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.ProgressLine
@@ -168,6 +169,12 @@ internal fun rowTitle(row: VodRow): String = when (row.kind) {
 }
 
 /** Country name of an ISO 3166 code ("KR" -> Corée du Sud) in the language of the TV. */
+/** "France, Belgique", or "France +2" past [max] countries. */
+internal fun countriesLabel(codes: Set<String>, max: Int = 2): String {
+    val names = codes.map { countryName(it) }
+    return if (names.size <= max) names.joinToString(", ") else names.take(max).joinToString(", ") + " +${names.size - max}"
+}
+
 internal fun countryName(code: String): String =
     try {
         Locale.Builder().setRegion(code).build().getDisplayCountry(Locale.getDefault()).ifBlank { code }
@@ -191,7 +198,7 @@ internal fun ratingLabel(rating: Double): String =
 
 /** "1:23:45" / "23:45" for a playback position. */
 internal fun positionLabel(ms: Long): String {
-    val total = ms / 1000
+    val total = ms.coerceAtLeast(0) / 1000
     val hours = total / 3600
     val minutes = (total % 3600) / 60
     val seconds = total % 60
@@ -220,9 +227,28 @@ internal fun languageName(code: String?): String? {
         ?: code
 }
 
-/** Audio of a file: its tracks ("Français · 5.1 · E-AC3"), else what its name says ("MULTI", "VF"). */
+/**
+ * Audio of a file: its tracks ("Français · 5.1 · E-AC3"), else what its name says ("MULTI", "VF");
+ * the languages estimated from the playlist first when the provider gives none.
+ */
 @Composable
-internal fun audioLabels(version: VodVersion): List<String> {
+internal fun audioLabels(version: VodVersion, estimated: VodLanguages = VodLanguages()): List<String> {
+    val labels = providerAudioLabels(version)
+    // Without any language from the provider: the languages of the playlist groups and names
+    val hasLanguage = version.audio.any { it.language != null } || version.languageTags.isNotEmpty()
+    if (hasLanguage || estimated.audio.isEmpty()) return labels
+    return estimated.audio.map { stringResource(R.string.vod_lang_estimated, languageName(it) ?: it) } + labels
+}
+
+/** Subtitles of a file, else the ones estimated from the playlist. */
+@Composable
+internal fun subtitleLabels(version: VodVersion, estimated: VodLanguages = VodLanguages()): List<String> =
+    providerSubtitleLabels(version).ifEmpty {
+        estimated.subtitles.map { stringResource(R.string.vod_lang_estimated, languageName(it) ?: it) }
+    }
+
+@Composable
+private fun providerAudioLabels(version: VodVersion): List<String> {
     if (version.audio.isNotEmpty()) {
         // Tracks without any detail fall back to what the name says
         version.audio.map { track ->
@@ -247,7 +273,7 @@ internal fun audioLabels(version: VodVersion): List<String> {
 
 /** Subtitles of a file: its tracks, else "French" for a VOSTFR file. */
 @Composable
-internal fun subtitleLabels(version: VodVersion): List<String> {
+private fun providerSubtitleLabels(version: VodVersion): List<String> {
     if (version.subtitles.isNotEmpty()) return version.subtitles.mapNotNull { languageName(it) }
     return if ("VOSTFR" in version.languageTags) listOf(stringResource(R.string.vod_lang_vf)) else emptyList()
 }

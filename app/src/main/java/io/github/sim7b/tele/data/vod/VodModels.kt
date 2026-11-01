@@ -53,7 +53,9 @@ data class VodTitle(
     val tmdbId: String?,
     val imdbId: String?,
     val addedAt: Long?,
-    val entries: List<VodEntry>
+    val entries: List<VodEntry>,
+    // Estimated from the groups and names of its files (see VodLanguageGuess)
+    val languages: VodLanguages = VodLanguages()
 )
 
 /** An audio track as described by the provider. */

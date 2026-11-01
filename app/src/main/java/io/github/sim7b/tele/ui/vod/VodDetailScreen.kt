@@ -55,11 +55,16 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.produceState
+import androidx.compose.material.icons.filled.Search
+import io.github.sim7b.tele.data.subtitles.SubtitleQuery
 import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.storage.VodProgress
 import io.github.sim7b.tele.data.vod.VodDetails
 import io.github.sim7b.tele.data.vod.VodEpisode
 import io.github.sim7b.tele.data.vod.VodKind
+import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.vod.VodRows
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.data.vod.VodVersion
@@ -76,17 +81,6 @@ import io.github.sim7b.tele.ui.theme.SurfaceCard
 import io.github.sim7b.tele.ui.theme.SurfaceDark
 import io.github.sim7b.tele.ui.theme.TextPrimary
 import io.github.sim7b.tele.ui.theme.TextSecondary
-
-/** What to play: a movie or an episode file, its other files as fallbacks, from a position. */
-data class VodPlayRequest(
-    val titleKey: String,
-    val episodeKey: String?,
-    val label: String,
-    val sourceId: String,
-    val url: String,
-    val fallbacks: List<String>,
-    val startMs: Long
-)
 
 /**
  * Sheet of a movie or a series: wide image, poster, year, duration, genres, rating, summary, play /
@@ -110,12 +104,14 @@ fun VodDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     // Episode marked watched (true) or unwatched, by its progress key
-    onSetEpisodeWatched: (episodeKey: String, watched: Boolean) -> Unit = { _, _ -> }
+    onSetEpisodeWatched: (episodeKey: String, watched: Boolean) -> Unit = { _, _ -> },
+    subtitles: VodSubtitles? = null
 ) {
     BackHandler(onBack = onBack)
     val shown = details?.title ?: title
     val playFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { playFocus.requestFocusWithRetry() }
+    // The first composition of a sheet can be slow: up to 2 s to take the focus
+    LaunchedEffect(Unit) { playFocus.requestFocusWithRetry(attempts = 40) }
 
     var versionIndex by rememberSaveable(title.key) { mutableIntStateOf(0) }
     val versions = details?.versions.orEmpty()
@@ -125,6 +121,9 @@ fun VodDetailScreen(
     var focusedEpisode by remember(title.key) { mutableStateOf<VodEpisode?>(null) }
     var pickingCollections by remember { mutableStateOf(false) }
     var episodeMenu by remember { mutableStateOf<VodEpisode?>(null) }
+    // OpenSubtitles search open for a movie or an episode (its key and query)
+    var subtitleTarget by remember { mutableStateOf<Pair<String, SubtitleQuery>?>(null) }
+    var downloadedToken by remember { mutableIntStateOf(0) }
     val inSomeCollection = inMyList || collections.any { title.key in it.titleKeys }
 
     // Series: the episode to play (the one in progress, else the one after the last watched, else the first)
@@ -137,18 +136,16 @@ fun VodDetailScreen(
     val resumeAt = if (title.kind == VodKind.MOVIE) moviePosition else episodePosition
 
     fun request(episode: VodEpisode?, files: List<VodVersion>, chosen: VodVersion?, fromStart: Boolean): VodPlayRequest? {
-        val file = chosen ?: files.firstOrNull() ?: return null
         val key = VodRows.progressKey(title.key, episode?.key)
         val position = if (fromStart) 0L else progress[key]?.takeIf { !it.finished }?.positionMs ?: 0L
-        return VodPlayRequest(
-            titleKey = title.key,
-            episodeKey = episode?.key,
-            label = if (episode == null) shown.title else "${shown.title} · ${episodeLabelPlain(episode)}",
-            sourceId = file.sourceId,
-            url = file.url,
-            fallbacks = files.filter { it !== file }.map { it.url },
-            startMs = position
-        )
+        return playRequest(shown, title.key, episode, files, chosen, position)
+    }
+
+    // Subtitles downloaded for the movie, or for the episode shown under the episodes
+    val shownEpisode = focusedEpisode ?: nextEpisode
+    val downloadedKey = if (title.kind == VodKind.MOVIE) title.key else shownEpisode?.let { VodRows.progressKey(title.key, it.key) }
+    val downloaded by produceState(emptyList<String>(), downloadedKey, downloadedToken) {
+        value = downloadedKey?.let { key -> subtitles?.cached?.invoke(key)?.map { it.language }?.distinct() }.orEmpty()
     }
 
     fun play(fromStart: Boolean) {
@@ -239,6 +236,13 @@ fun VodDetailScreen(
                                 icon = if (inSomeCollection) Icons.Filled.Check else Icons.Filled.Add,
                                 onClick = { pickingCollections = true }
                             )
+                            if (title.kind == VodKind.MOVIE && subtitles?.canSearch == true) {
+                                VodButton(
+                                    label = stringResource(R.string.subtitles_button),
+                                    icon = Icons.Filled.Search,
+                                    onClick = { subtitleTarget = title.key to subtitleQuery(shown, null) }
+                                )
+                            }
                             if (details == null && !loadFailed) {
                                 CircularProgressIndicator(color = AccentCyan, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                                 Text(text = stringResource(R.string.vod_loading_details), fontSize = 12.sp, color = TextSecondary)
@@ -257,7 +261,7 @@ fun VodDetailScreen(
                     if (versions.isEmpty()) {
                         Text(text = stringResource(R.string.vod_no_files), fontSize = 13.sp, color = TextSecondary)
                     } else {
-                        FileInfo(versions = versions, selected = versionIndex.coerceIn(0, versions.lastIndex), onSelect = { versionIndex = it })
+                        FileInfo(versions = versions, selected = versionIndex.coerceIn(0, versions.lastIndex), onSelect = { versionIndex = it }, estimated = title.languages, downloaded = downloaded)
                     }
                 }
             }
@@ -290,7 +294,7 @@ fun VodDetailScreen(
                     }
                 }
                 item {
-                    val episode = focusedEpisode ?: nextEpisode
+                    val episode = shownEpisode
                     if (episode != null) {
                         Column {
                             Text(
@@ -304,7 +308,7 @@ fun VodDetailScreen(
                             }
                             if (episode.versions.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(12.dp))
-                                FileInfo(versions = episode.versions, selected = 0, onSelect = null)
+                                FileInfo(versions = episode.versions, selected = 0, onSelect = null, estimated = title.languages, downloaded = downloaded)
                             }
                         }
                     }
@@ -338,6 +342,16 @@ fun VodDetailScreen(
                 },
                 modifier = Modifier.focusRequester(firstFocus)
             )
+            if (subtitles?.canSearch == true) {
+                MenuRow(
+                    label = stringResource(R.string.subtitles_search),
+                    icon = Icons.Filled.Search,
+                    onClick = {
+                        subtitleTarget = key to subtitleQuery(shown, episode)
+                        episodeMenu = null
+                    }
+                )
+            }
             if (state != null && !state.finished && state.positionMs > 0) {
                 MenuRow(
                     label = stringResource(R.string.vod_menu_remove_continue),
@@ -348,6 +362,22 @@ fun VodDetailScreen(
                     }
                 )
             }
+        }
+    }
+
+    subtitleTarget?.let { (itemKey, query) ->
+        val source = subtitles ?: return@let
+        VodDialogFrame(title = stringResource(R.string.subtitles_search_title), onDismiss = { subtitleTarget = null }) {
+            SubtitleSearchList(
+                search = { all -> source.search(query, all) },
+                download = { result -> source.download(itemKey, result) },
+                onDownloaded = {
+                    subtitleTarget = null
+                    downloadedToken++
+                },
+                remaining = source.remaining,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
+            )
         }
     }
 
@@ -366,7 +396,14 @@ fun VodDetailScreen(
 
 /** Quality, audio and subtitles of a file, and the choice of the file when there are several. */
 @Composable
-private fun FileInfo(versions: List<VodVersion>, selected: Int, onSelect: ((Int) -> Unit)?) {
+private fun FileInfo(
+    versions: List<VodVersion>,
+    selected: Int,
+    onSelect: ((Int) -> Unit)?,
+    estimated: VodLanguages = VodLanguages(),
+    // Languages of the subtitles downloaded from OpenSubtitles
+    downloaded: List<String> = emptyList()
+) {
     val version = versions[selected]
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         InfoBlock(title = stringResource(R.string.vod_version), modifier = Modifier.weight(1.2f)) {
@@ -382,10 +419,13 @@ private fun FileInfo(versions: List<VodVersion>, selected: Int, onSelect: ((Int)
             }
         }
         InfoBlock(title = stringResource(R.string.vod_audio), modifier = Modifier.weight(1f)) {
-            ValueList(audioLabels(version))
+            ValueList(audioLabels(version, estimated))
         }
         InfoBlock(title = stringResource(R.string.vod_subtitles), modifier = Modifier.weight(1f)) {
-            ValueList(subtitleLabels(version))
+            ValueList(
+                downloaded.map { stringResource(R.string.subtitles_online_label, languageName(it) ?: it) } +
+                    subtitleLabels(version, estimated)
+            )
         }
     }
 }
@@ -490,13 +530,10 @@ private fun episodeLabel(episode: VodEpisode): String =
 @Composable
 private fun episodeShort(episode: VodEpisode): String = "S${episode.season} " + stringResource(R.string.vod_episode_short, episode.number)
 
-private fun episodeLabelPlain(episode: VodEpisode): String =
-    "S${episode.season}E${episode.number}" + if (episode.title.isNotBlank()) " · ${episode.title}" else ""
-
 /** Episode in progress (the latest), else the one after the last watched, else the first. */
 internal fun nextEpisode(titleKey: String, episodes: List<VodEpisode>, progress: Map<String, VodProgress>): VodEpisode? {
     if (episodes.isEmpty()) return null
-    val ordered = episodes.sortedWith(compareBy<VodEpisode> { if (it.season == 0) Int.MAX_VALUE else it.season }.thenBy { it.number })
+    val ordered = watchingOrder(episodes)
     val withProgress = ordered.mapNotNull { episode -> progress[VodRows.progressKey(titleKey, episode.key)]?.let { episode to it } }
     withProgress.filter { !it.second.finished && it.second.positionMs > 0 }.maxByOrNull { it.second.updatedAt }?.let { return it.first }
     val lastWatched = withProgress.filter { it.second.finished }.maxByOrNull { it.second.updatedAt }?.first ?: return ordered.first()

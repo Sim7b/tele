@@ -165,6 +165,42 @@ internal fun <T> FilterDialog(
     }
 }
 
+/** Values of a filter where several can be chosen (countries): each toggled by OK, "any" clears them. */
+@Composable
+internal fun <T> MultiFilterDialog(
+    title: String,
+    options: List<Pair<T, Int>>,
+    selected: Set<T>,
+    label: @Composable (T) -> String,
+    onToggle: (T) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+    subtitle: String? = null
+) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { firstFocus.requestFocusWithRetry() }
+    VodDialogFrame(title = title, subtitle = subtitle, onDismiss = onDismiss) {
+        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+            item {
+                MenuRow(
+                    label = stringResource(R.string.vod_filter_any),
+                    onClick = onClear,
+                    leading = { focused -> SelectionDot(selected = selected.isEmpty(), focused = focused) },
+                    modifier = Modifier.focusRequester(firstFocus)
+                )
+            }
+            items(options, key = { it.first.toString() }) { (value, count) ->
+                MenuRow(
+                    label = label(value),
+                    subtitle = pluralStringResource(R.plurals.vod_titles_count, count, count),
+                    onClick = { onToggle(value) },
+                    leading = { focused -> SelectionDot(selected = value in selected, focused = focused) }
+                )
+            }
+        }
+    }
+}
+
 /**
  * Collections a title is in: "my list" and the user's collections, each toggled by OK, and a new
  * collection (the title is added to it).

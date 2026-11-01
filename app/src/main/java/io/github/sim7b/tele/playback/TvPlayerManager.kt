@@ -3,6 +3,7 @@ package io.github.sim7b.tele.playback
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -13,11 +14,13 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -28,6 +31,7 @@ import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.data.remote.ApiKeyInterceptor
 import io.github.sim7b.tele.data.remote.HttpClients
+import io.github.sim7b.tele.data.subtitles.ExternalSubtitle
 import java.util.concurrent.TimeUnit
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -107,6 +111,9 @@ class TvPlayerManager(private val context: Context) {
     private var zapStartedAt = 0L
     // Movie or episode (not a live stream): played from this position, and resumed where it stopped on a retry
     private var vodStartMs: Long? = null
+    // Subtitle files added to the movie or episode (OpenSubtitles), and the one to show once loaded
+    private var externalSubtitles: List<ExternalSubtitle> = emptyList()
+    private var pendingSubtitleId: String? = null
     private val retryRunnable = Runnable { prepareCurrent() }
 
     private val _isPlaying = MutableStateFlow(false)
@@ -200,6 +207,7 @@ class TvPlayerManager(private val context: Context) {
 
                     override fun onTracksChanged(tracks: Tracks) {
                         updateStreamInfo()
+                        pendingSubtitleId?.let { id -> if (selectSubtitleById(tracks, id)) pendingSubtitleId = null }
                         _tracks.value = readTracks(tracks)
                     }
 
@@ -314,15 +322,71 @@ class TvPlayerManager(private val context: Context) {
      * before the error is shown.
      */
     fun playStream(url: String, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
-        start(url, customUserAgent, auths, fallbacks, vodStart = null)
+        start(url, customUserAgent, auths, fallbacks, vodStart = null, subtitles = emptyList())
     }
 
-    /** Plays a movie or an episode from [startPositionMs]; [fallbacks] are its other files. */
-    fun playVod(url: String, startPositionMs: Long, customUserAgent: String? = null, auths: List<ApiKeyAuth> = emptyList(), fallbacks: List<String> = emptyList()) {
-        start(url, customUserAgent, auths, fallbacks, vodStart = startPositionMs.coerceAtLeast(0))
+    /**
+     * Plays a movie or an episode from [startPositionMs]; [fallbacks] are its other files, [subtitles] the
+     * subtitle files downloaded for it.
+     */
+    fun playVod(
+        url: String,
+        startPositionMs: Long,
+        customUserAgent: String? = null,
+        auths: List<ApiKeyAuth> = emptyList(),
+        fallbacks: List<String> = emptyList(),
+        subtitles: List<ExternalSubtitle> = emptyList()
+    ) {
+        start(url, customUserAgent, auths, fallbacks, vodStart = startPositionMs.coerceAtLeast(0), subtitles = subtitles)
     }
 
-    private fun start(url: String, customUserAgent: String?, auths: List<ApiKeyAuth>, fallbacks: List<String>, vodStart: Long?) {
+    /**
+     * Adds [subtitle] to the movie or episode being played and shows it: the stream is prepared again
+     * at the current position, with the subtitle file beside it.
+     */
+    fun addSubtitle(subtitle: ExternalSubtitle) {
+        val player = exoPlayer ?: return
+        if (currentUrl == null || vodStartMs == null) return
+        if (externalSubtitles.none { it.uri == subtitle.uri }) externalSubtitles = externalSubtitles + subtitle
+        pendingSubtitleId = subtitleId(subtitle)
+        vodStartMs = player.currentPosition.coerceAtLeast(0)
+        hasPlayed = false
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .setPreferredTextLanguage(subtitle.language)
+            .build()
+        prepareCurrent()
+    }
+
+    private fun subtitleId(subtitle: ExternalSubtitle) = "external:" + subtitle.uri.hashCode().toUInt().toString(16)
+
+    /** Shows the text track loaded from the subtitle file [id]; false while it is not there yet. */
+    private fun selectSubtitleById(tracks: Tracks, id: String): Boolean {
+        val player = exoPlayer ?: return false
+        tracks.groups.forEach { group ->
+            if (group.type != C.TRACK_TYPE_TEXT) return@forEach
+            for (index in 0 until group.length) {
+                if (group.getTrackFormat(index).id?.contains(id) == true) {
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+                        .build()
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun start(
+        url: String,
+        customUserAgent: String?,
+        auths: List<ApiKeyAuth>,
+        fallbacks: List<String>,
+        vodStart: Long?,
+        subtitles: List<ExternalSubtitle>
+    ) {
         // The home preview of this very channel keeps playing: the sound comes back without a new start
         val player = exoPlayer
         if (previewing && url == currentUrl && player != null && _error.value == null &&
@@ -344,6 +408,8 @@ class TvPlayerManager(private val context: Context) {
         }
         _tracks.value = PlaybackTracks()
         vodStartMs = vodStart
+        externalSubtitles = subtitles
+        pendingSubtitleId = null
         fallbackUrls.clear()
         fallbackUrls.addAll(fallbacks)
         zapStartedAt = SystemClock.elapsedRealtime()
@@ -415,6 +481,8 @@ class TvPlayerManager(private val context: Context) {
         val httpDataSourceFactory = OkHttpDataSource.Factory(streamHttpClient)
             .setUserAgent(userAgent)
 
+        val hls = forceHls || isHlsUrl(url)
+        val subtitles = externalSubtitles
         val mediaItem = MediaItem.Builder()
             .setUri(url)
             .setLiveConfiguration(
@@ -423,9 +491,27 @@ class TvPlayerManager(private val context: Context) {
                     .setMinPlaybackSpeed(0.98f)
                     .build()
             )
+            .apply {
+                if (subtitles.isNotEmpty()) {
+                    setSubtitleConfigurations(subtitles.map { subtitle ->
+                        MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.uri))
+                            .setId(subtitleId(subtitle))
+                            .setMimeType(subtitle.mimeType)
+                            .setLanguage(subtitle.language)
+                            .setLabel(subtitle.label)
+                            .build()
+                    })
+                    if (hls) setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+            }
             .build()
 
-        val mediaSource: MediaSource = if (forceHls || isHlsUrl(url)) {
+        val mediaSource: MediaSource = if (subtitles.isNotEmpty()) {
+            // Subtitle files on the device beside the stream: the default factory merges them, and reads
+            // both the network (OkHttp, with the API key interceptor) and the local files
+            DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory), extractorsFactory)
+                .createMediaSource(mediaItem)
+        } else if (hls) {
             HlsMediaSource.Factory(httpDataSourceFactory)
                 .setAllowChunklessPreparation(true)
                 .createMediaSource(mediaItem)
@@ -498,6 +584,19 @@ class TvPlayerManager(private val context: Context) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setPreferredAudioLanguage(language)
             .build()
+    }
+
+    /**
+     * Languages kept for a movie or a series: [audioLanguage] null keeps the stream's default track;
+     * subtitles in [subtitleLanguage] when [subtitlesOn]. Set after [playVod].
+     */
+    fun applyTrackPreferences(audioLanguage: String?, subtitlesOn: Boolean, subtitleLanguage: String?) {
+        val player = getPlayer()
+        val builder = player.trackSelectionParameters.buildUpon()
+        audioLanguage?.let { builder.setPreferredAudioLanguage(it) }
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesOn)
+        if (subtitlesOn) builder.setPreferredTextLanguage(subtitleLanguage)
+        player.trackSelectionParameters = builder.build()
     }
 
     fun togglePlayPause() {

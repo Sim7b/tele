@@ -30,7 +30,7 @@ class VodBrowseTest {
 
     @Test
     fun `filters by country, studio, genre and decade, sorted by popularity`() {
-        val korean = VodBrowse.filter(titles, VodKind.MOVIE, VodFilter(country = "KR"), facts)
+        val korean = VodBrowse.filter(titles, VodKind.MOVIE, VodFilter(countries = setOf("KR")), facts)
         assertEquals(listOf("p", "o"), korean.map { it.key })
         assertEquals(listOf("d"), VodBrowse.filter(titles, VodKind.MOVIE, VodFilter(studio = Studio("3", "Legendary")), facts).map { it.key })
         assertEquals(listOf("o"), VodBrowse.filter(titles, VodKind.MOVIE, VodFilter(decade = 2000), facts).map { it.key })
@@ -99,7 +99,7 @@ class VodBrowseTest {
             hiddenRows = setOf(VodRow.Kind.TRENDING),
             posterSize = PosterSize.LARGE,
             hideTheater = true,
-            defaults = mapOf(VodKind.MOVIE to VodFilter(country = "FR", sort = VodSort.TITLE))
+            defaults = mapOf(VodKind.MOVIE to VodFilter(countries = setOf("FR", "BE"), audio = "fr", subtitles = "en", sort = VodSort.TITLE))
         )
         assertEquals(display, VodDisplay.fromJson(display.toJson()))
         assertEquals(VodDisplay(), VodDisplay.fromJson(null))

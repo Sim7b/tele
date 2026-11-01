@@ -13,15 +13,21 @@ import java.util.Locale
 
 enum class VodSort { POPULARITY, TITLE, YEAR, RATING, ADDED }
 
-/** Filters of the Movies and Series tabs; null fields do not filter. */
+/**
+ * Filters of the Movies and Series tabs; null or empty fields do not filter. A title matches one of the
+ * [countries]; [audio] and [subtitles] are languages ("fr") estimated from the playlist.
+ */
 data class VodFilter(
-    val country: String? = null,
+    val countries: Set<String> = emptySet(),
     val studio: Studio? = null,
     val genre: String? = null,
     val decade: Int? = null,
+    val audio: String? = null,
+    val subtitles: String? = null,
     val sort: VodSort = VodSort.POPULARITY
 ) {
-    val active: Boolean get() = country != null || studio != null || genre != null || decade != null
+    val active: Boolean
+        get() = countries.isNotEmpty() || studio != null || genre != null || decade != null || audio != null || subtitles != null
 }
 
 /** Values of each filter among the titles of a tab, with their number of titles, most frequent first. */
@@ -29,7 +35,9 @@ data class VodFilterOptions(
     val countries: List<Pair<String, Int>> = emptyList(),
     val studios: List<Pair<Studio, Int>> = emptyList(),
     val genres: List<Pair<String, Int>> = emptyList(),
-    val decades: List<Pair<Int, Int>> = emptyList()
+    val decades: List<Pair<Int, Int>> = emptyList(),
+    val audio: List<Pair<String, Int>> = emptyList(),
+    val subtitles: List<Pair<String, Int>> = emptyList()
 )
 
 /**
@@ -44,7 +52,9 @@ object VodBrowse {
         val kept = titles.filter { title ->
             if (title.kind != kind) return@filter false
             val known = facts[title.key]
-            (filter.country == null || known?.countries?.contains(filter.country) == true) &&
+            (filter.countries.isEmpty() || known?.countries?.any { it in filter.countries } == true) &&
+                (filter.audio == null || filter.audio in title.languages.audio) &&
+                (filter.subtitles == null || filter.subtitles in title.languages.subtitles) &&
                 (filter.studio == null || known?.studios?.any { it.id == filter.studio.id } == true) &&
                 (filter.genre == null || filter.genre in title.genres) &&
                 (filter.decade == null || title.year?.let { it / 10 * 10 } == filter.decade)
@@ -73,7 +83,9 @@ object VodBrowse {
             countries = counted(ofKind.asSequence().flatMap { facts[it.key]?.countries.orEmpty() }),
             studios = counted(ofKind.asSequence().flatMap { facts[it.key]?.studios.orEmpty() }).take(MAX_STUDIOS),
             genres = counted(ofKind.asSequence().flatMap { it.genres }),
-            decades = counted(ofKind.asSequence().mapNotNull { title -> title.year?.let { it / 10 * 10 } }).sortedByDescending { it.first }
+            decades = counted(ofKind.asSequence().mapNotNull { title -> title.year?.let { it / 10 * 10 } }).sortedByDescending { it.first },
+            audio = counted(ofKind.asSequence().flatMap { it.languages.audio }),
+            subtitles = counted(ofKind.asSequence().flatMap { it.languages.subtitles })
         )
     }
 

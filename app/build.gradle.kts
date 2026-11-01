@@ -74,6 +74,8 @@ android {
 
     buildFeatures {
         compose = true
+        // VERSION_NAME in the user agent of the subtitle requests
+        buildConfig = true
     }
 
     // Robolectric tests (app startup) read the merged resources
@@ -110,6 +112,9 @@ dependencies {
     implementation("androidx.media3:media3-common:$media3Version")
     // Player HTTP transport through OkHttp: connections shared with the API, headers controlled per host
     implementation("androidx.media3:media3-datasource-okhttp:$media3Version")
+
+    // QR codes of the API key pages (encoder only)
+    implementation("com.google.zxing:core:3.5.4")
 
     // Image loading for Channel Logos (Coil)
     implementation("io.coil-kt:coil-compose:2.7.0")
