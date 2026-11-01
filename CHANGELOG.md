@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.13](https://github.com/Sim7b/tele/compare/v0.3.12...v0.3.13) (2026-11-01)
+
+### Features
+
+* phones and tablets, with a Chromecast remote mode ([5e6b2ff](https://github.com/Sim7b/tele/commit/5e6b2ffae77594ddf6910ebb9fd866d5f5ed18b0))
+
 ## [0.3.12](https://github.com/Sim7b/tele/compare/v0.3.11...v0.3.12) (2026-11-01)
 
 ### Features
