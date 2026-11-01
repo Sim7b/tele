@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.12](https://github.com/Sim7b/tele/compare/v0.3.11...v0.3.12) (2026-11-01)
+
+### Features
+
+* **guide:** guide grid, reminders and replay ([722f644](https://github.com/Sim7b/tele/commit/722f6440d3a45a30106d4618098c04bae7729241))
+
 ## [0.3.11](https://github.com/Sim7b/tele/compare/v0.3.10...v0.3.11) (2026-11-01)
 
 ### Features
