@@ -497,8 +497,11 @@ class DispatcharrClient(
         withContext(Dispatchers.IO) { fetchObjects("$baseUrl/api/vod/$path", action) }
 
     /** A VOD object (provider information of a movie or a series), null when unavailable. */
-    suspend fun getVodObject(path: String): JSONObject? = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url("$baseUrl/api/vod/$path").get().build()
+    suspend fun getVodObject(path: String): JSONObject? = getObject("$baseUrl/api/vod/$path")
+
+    /** A JSON object of the server, null when unavailable (no admin rights, older server, error). */
+    private suspend fun getObject(url: String): JSONObject? = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).get().build()
         try {
             client.newCall(request).executeCancellable { response ->
                 if (!response.isSuccessful) return@executeCancellable null
@@ -532,7 +535,10 @@ class DispatcharrClient(
         if (baseUrl.isBlank()) return@withContext null
         val accounts = mutableListOf<JSONObject>()
         if (!fetchObjects("$baseUrl/api/m3u/accounts/") { accounts.add(it) }) return@withContext null
-        StreamSlots.fromAccounts(accounts)
+        // Connections in use: only the live stats of the server are right (admin rights needed); the profiles
+        // of the accounts keep a count the server does not update. Without them, no count rather than a wrong one
+        val stats = getObject("$baseUrl/proxy/stats/") ?: return@withContext null
+        StreamSlots.fromAccounts(accounts, stats)
     }
 
     /**

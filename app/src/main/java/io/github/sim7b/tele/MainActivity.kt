@@ -233,14 +233,26 @@ class MainActivity : ComponentActivity() {
                     playerManager.stopPreview()
                     return
                 }
+                // Last free connection of the provider kept for the channel the user opens
+                val slots = viewModel.streamSlots.value
+                if (configsById[channel.sourceId]?.type == SourceType.DISPATCHARR && slots != null &&
+                    !slots.allowsPreview(playerManager.isPreviewing)
+                ) {
+                    playerManager.stopPreview()
+                    return
+                }
                 previewJob = previewScope.launch {
                     val url = viewModel.automaticStreamUrls(channel).firstOrNull() ?: channel.activeStreamUrl
+                    // The stream choice can take a moment: a channel opened meanwhile must not be replaced
+                    if (currentScreen !is CurrentScreen.Home) return@launch
                     playerManager.preview(url, configsById[channel.sourceId]?.customUserAgent, streamAuths)
                 }
             }
-            // Settings and search: no preview behind them (the player takes it over, see playStream)
+            // Settings and search: no preview behind them (the player takes it over, see playStream); any other
+            // screen cancels a preview still choosing its stream, so it cannot replace the channel opened
             LaunchedEffect(currentScreen) {
                 if (currentScreen is CurrentScreen.Settings || currentScreen is CurrentScreen.Search) previewChannel(null)
+                else if (currentScreen !is CurrentScreen.Home) previewJob?.cancel()
             }
 
             // Hiding / favoriting a grouped channel applies to all its versions ("TF1 HD", "TF1 FHD")

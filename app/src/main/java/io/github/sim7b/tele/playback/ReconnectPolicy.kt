@@ -9,6 +9,8 @@ object ReconnectPolicy {
     const val START_ATTEMPTS = 3
     const val PLAYBACK_ATTEMPTS = 6
     private const val MAX_DELAY_MS = 8_000L
+    // Before the single new attempt of a stream refused for lack of a free connection
+    const val NO_FREE_CONNECTION_DELAY_MS = 4_000L
 
     fun maxAttempts(hasPlayed: Boolean) = if (hasPlayed) PLAYBACK_ATTEMPTS else START_ATTEMPTS
 

@@ -103,6 +103,8 @@ class TvPlayerManager(private val context: Context) {
     private var retryCount = 0
     // Muted home preview in progress (see preview)
     private var previewing = false
+    // The current stream got "no free connection" (HTTP 503) once already: the next one goes to the next stream
+    private var noFreeConnectionRetried = false
     // The current stream has played at least once: a drop gets more (and visible) reconnection attempts
     private var hasPlayed = false
     // HLS playlist served without the .m3u8 extension: detected when the progressive extractors reject it
@@ -244,8 +246,10 @@ class TvPlayerManager(private val context: Context) {
             return
         }
 
+        // A stream unreadable as a file may be an HLS playlist without its extension; never a Dispatcharr channel,
+        // always MPEG-TS: an empty answer there (no working provider stream) is a failed attempt like the others
         if (playbackError.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED && !forceHls &&
-            currentUrl?.let { isHlsUrl(it) } == false
+            currentUrl?.let { isHlsUrl(it) || isDispatcharrTs(it) } == false
         ) {
             forceHls = true
             prepareCurrent()
@@ -255,9 +259,22 @@ class TvPlayerManager(private val context: Context) {
         val httpCode = (playbackError.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
         // Definitive refusals from the provider: no point retrying
         val isDefinitive = httpCode in DEFINITIVE_HTTP_ERRORS
+        // No free connection at the start (Dispatcharr answers 503 when every provider connection is in use):
+        // a single attempt after a pause, the time for a connection that just ended (the home preview, the
+        // previous channel) to be closed on the server, then the next stream, else the limit message. Retrying
+        // every stream several times only kept the server busy for minutes.
+        val noFreeConnection = httpCode == HTTP_NO_FREE_CONNECTION && !hasPlayed
+        if (noFreeConnection && !noFreeConnectionRetried && currentUrl != null) {
+            noFreeConnectionRetried = true
+            _isLoading.value = true
+            _error.value = null
+            mainHandler.removeCallbacks(retryRunnable)
+            mainHandler.postDelayed(retryRunnable, ReconnectPolicy.NO_FREE_CONNECTION_DELAY_MS)
+            return
+        }
 
         val maxAttempts = ReconnectPolicy.maxAttempts(hasPlayed)
-        if (!isDefinitive && retryCount < maxAttempts && currentUrl != null) {
+        if (!isDefinitive && !noFreeConnection && retryCount < maxAttempts && currentUrl != null) {
             val delayMs = ReconnectPolicy.delayMs(retryCount)
             retryCount++
             _isLoading.value = true
@@ -269,6 +286,7 @@ class TvPlayerManager(private val context: Context) {
             // Next stream of the channel, with a fresh attempt budget
             currentUrl = fallbackUrls.removeFirst()
             retryCount = 0
+            noFreeConnectionRetried = false
             hasPlayed = false
             forceHls = false
             _reconnection.value = null
@@ -283,7 +301,7 @@ class TvPlayerManager(private val context: Context) {
     private fun describeError(playbackError: PlaybackException, httpCode: Int?): UiText = when {
         httpCode == 401 || httpCode == 403 -> UiText.Res(R.string.player_error_access_denied, httpCode)
         httpCode == 404 || httpCode == 410 -> UiText.Res(R.string.player_error_stream_not_found, httpCode)
-        httpCode == 429 || httpCode == 458 || httpCode == 509 ->
+        httpCode == 429 || httpCode == 458 || httpCode == 509 || httpCode == HTTP_NO_FREE_CONNECTION ->
             UiText.Res(R.string.player_error_connection_limit, httpCode)
         httpCode != null -> UiText.Res(R.string.player_error_http, httpCode)
         playbackError.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
@@ -417,6 +435,7 @@ class TvPlayerManager(private val context: Context) {
         currentUserAgent = customUserAgent
         currentAuths = auths
         retryCount = 0
+        noFreeConnectionRetried = false
         hasPlayed = false
         forceHls = false
         mainHandler.removeCallbacks(retryRunnable)
@@ -439,6 +458,9 @@ class TvPlayerManager(private val context: Context) {
             .setMaxVideoSize(PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT)
             .build()
     }
+
+    /** True while the muted home preview plays (it holds a provider connection). */
+    val isPreviewing: Boolean get() = previewing
 
     /** Stops the home preview (focus moved, home screen left); a channel played in full is not affected. */
     fun stopPreview() {
@@ -464,6 +486,7 @@ class TvPlayerManager(private val context: Context) {
     fun retry() {
         if (currentUrl == null) return
         retryCount = 0
+        noFreeConnectionRetried = false
         mainHandler.removeCallbacks(retryRunnable)
         _reconnection.value = null
         _isLoading.value = true
@@ -533,6 +556,8 @@ class TvPlayerManager(private val context: Context) {
     }
 
     private fun isHlsUrl(url: String) = url.contains(".m3u8", ignoreCase = true)
+
+    private fun isDispatcharrTs(url: String) = url.contains("/proxy/ts/")
 
     private fun readTracks(tracks: Tracks): PlaybackTracks {
         fun choices(type: Int) = tracks.groups.withIndex()
@@ -640,5 +665,7 @@ class TvPlayerManager(private val context: Context) {
         private const val PREVIEW_MAX_WIDTH = 1280
         private const val PREVIEW_MAX_HEIGHT = 720
         private val DEFINITIVE_HTTP_ERRORS = setOf(401, 403, 404, 410)
+        // Dispatcharr: every connection of the provider accounts is in use
+        private const val HTTP_NO_FREE_CONNECTION = 503
     }
 }
