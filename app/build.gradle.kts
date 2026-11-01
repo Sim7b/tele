@@ -146,4 +146,3 @@ configurations.configureEach {
         resolutionStrategy.activateDependencyLocking()
     }
 }
-
