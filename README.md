@@ -17,16 +17,19 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 - **Player** (Media3 / ExoPlayer, hardware decoding):
   - channel switching with ↑ / ↓ and CH+ / CH−, or by typing the channel number with the remote digits (also from the home screen);
   - info banner: current and next program, resolution, codecs;
-  - **channel panel** (← key) with the guide, over the live stream;
+  - **channel panel** (← key) with the guide, over the live stream: after a moment on a channel, the details of its program (synopsis, time left, picture) show on the right; → browses its programs (replays above, coming ones below), ← goes back then up to the category selector, where favorites and recent channels come first and the neighbor categories show; CH+ / CH− skip a page, the digits go to a channel number, a long press on OK opens the menu of the channel (favorite, hiding, stream);
   - **playback options** (→ or Menu key): stream, audio track (preferred language remembered), subtitles, picture format (fit, zoom, stretch);
   - automatic reconnection when a stream drops (also when the network comes back), explicit error messages, OK to retry.
-- **Stream picker** (long press on a channel, or OK during playback): Dispatcharr streams with provider and quality, or TS / HLS variants with Xtream. The choice is saved per channel.
+- **Stream picker** (long press on a channel, or OK during playback): Dispatcharr streams with provider and quality, or TS / HLS variants with Xtream; for a channel grouped from several versions ("TF1" and "TF1 UHD"), each version is listed with the provider streams behind it, so one of them can be chosen. The choice is saved per channel.
 - **Stream quality** setting (best, Full HD max, HD max or server order): with Dispatcharr, automatic mode plays the preferred quality first (resolution measured by Dispatcharr, else read from the stream name) and moves to the next stream if it fails.
 - **Free provider connections** (Dispatcharr, with the API key of an admin user, needed to read the live stats of the server): the header shows the connections left on the limited provider profiles. The home preview never takes the last one, and a channel refused for lack of a free connection (HTTP 503) is tried once more after a few seconds, then the next stream, then the limit is shown.
 - **Movies and series** (off by default, **Settings → Movies and series**): a library like Plex built from the movies and series of every source (Xtream, M3U, Dispatcharr VOD), whatever their playlist groups. Titles are grouped across sources (TMDB id, else title and year); the home shows the focused title and rows (continue watching, my list, latest, genres, best rated); a sheet shows the quality, audio and subtitles of each file as the provider describes them, and the seasons and episodes of a series. Metadata comes from the providers and TVmaze (series) without any key, completed by TMDB with an optional free API key stored encrypted on the TV. With a TMDB key, the home also shows TMDB rankings (trending this week, popular, best rated, in theaters, coming soon) limited to the titles of the library, and a background index gives the country and studio of every title for the filters of the Movies and Series tabs (countries, studio, genre, decade, sort). Audio and subtitle languages are estimated from the playlist groups and names ("FR | VOSTFR", "MULTI", "ENGLISH MOVIES"; for Dispatcharr, its categories are read after the catalog) for the audio and subtitles filters and the sheets whose provider gives none. Search finds titles and, through TMDB, the movies and series of an actor or director; named collections and "my list" are filled from a sheet or by holding OK on a poster (also: remove from continue watching, mark watched). **Settings → Movies and series** chooses the rows of the home, the poster size, whether theater recordings (CAM, TS) are shown, and the default filters (several countries, audio, subtitles, sort). The player works like Plex: ← / → seek 10 s back and 30 s forward (faster when held), OK shows the title, the end time, the progress and the buttons (jumps, play / pause, next episode, audio and subtitles, options with the speed and picture format); paused, the picture dims under the summary; in the credits, the next episode starts after a countdown, with the audio and subtitle languages chosen for the series.
 - **EPG guide**:
   - Dispatcharr: server grid, program artwork and categories;
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
+  - **guide grid** (Guide button of the home screen): the channels in rows and the next 30 hours in columns, by category (favorites, all, each category); ← / → go from program to program, ↑ / ↓ change channel at the same time, the focused program is detailed at the top, OK watches the channel and Back returns to now, then closes the grid. CH+ / CH− skip a page and the digits go to a channel number;
+  - **reminders**: OK on a coming program (grid or channel panel) sets a reminder; a minute before it starts, a message offers to switch to the channel;
+  - **replay** (Xtream accounts with catch-up): the programs of the past day kept by the provider are marked REPLAY in the grid and the channel panel, and OK plays them again with the movie player (seek, pause).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → System**.
 - **Copy to another TV**: the whole configuration (sources, favorites, categories, settings) is sent over the local network, encrypted with an 8-digit code shown on the sending TV.
@@ -39,11 +42,15 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 - **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → System** after the system confirmation.
 - **Credentials encrypted** on the device with a key kept in the Android Keystore.
 
+![Guide grid](docs/screenshots/guide.png)
+
+| Channel panel | Stream picker |
+|---|---|
+| ![Channel panel](docs/screenshots/channel-panel.png) | ![Stream picker](docs/screenshots/stream-picker.png) |
+
 | Search | Channel number |
 |---|---|
 | ![Search](docs/screenshots/search.png) | ![Channel number](docs/screenshots/channel-number.jpg) |
-
-![Stream picker](docs/screenshots/stream-picker.png)
 
 ## Supported sources
 
@@ -113,6 +120,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | Home | Long press on a category | Hide the category |
 | Player | ↑ / ↓, CH+ / CH− | Previous / next channel |
 | Player | ← | Channel and guide panel |
+| Channel panel | → / ← | Coming programs of the channel / back, then categories |
+| Guide grid | ← / → / ↑ / ↓ | Programs / channels (↑ from the first row: categories) |
+| Guide grid | Back | Back to now, then close |
 | Player | OK, → or Info | Info banner |
 | Player | Long press on OK, or Menu | Stream picker |
 | Player | Play / Pause | Pause |

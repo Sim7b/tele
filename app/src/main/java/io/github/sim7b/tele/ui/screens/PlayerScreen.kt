@@ -47,12 +47,14 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.playback.StreamInfo
 import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.ChannelListPanel
+import io.github.sim7b.tele.ui.components.GuideActions
 import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
 import io.github.sim7b.tele.ui.components.ChannelNumberBadge
 import io.github.sim7b.tele.ui.components.rememberChannelNumberEntry
@@ -92,6 +94,12 @@ fun PlayerScreen(
     pictureFormat: PictureFormat = PictureFormat.FIT,
     onPictureFormatChange: (PictureFormat) -> Unit = {},
     onAudioLanguageChange: (String?) -> Unit = {},
+    // Programs of a channel sorted by start time, for the coming programs of the channel panel
+    programsOf: (Channel) -> List<GuideProgram> = { emptyList() },
+    // Favorites and recent channels (first categories of the channel panel), reminders, replays and channel menu
+    favorites: List<Channel> = emptyList(),
+    recents: List<Channel> = emptyList(),
+    guideActions: GuideActions = GuideActions(),
     modifier: Modifier = Modifier
 ) {
     val isLoading by playerManager.isLoading.collectAsState()
@@ -394,6 +402,10 @@ fun PlayerScreen(
                 channels = channels,
                 categoryOrder = categoryOrder,
                 playingChannelId = channel.id,
+                programsOf = programsOf,
+                favorites = favorites,
+                recents = recents,
+                actions = guideActions,
                 onSelectChannel = { selected ->
                     showChannelPanel = false
                     refocusToken++

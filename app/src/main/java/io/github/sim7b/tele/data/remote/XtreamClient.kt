@@ -3,6 +3,7 @@ package io.github.sim7b.tele.data.remote
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.UserFacingException
+import io.github.sim7b.tele.data.epg.Catchup
 import io.github.sim7b.tele.data.failure
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -27,7 +28,9 @@ data class XtreamAccount(
     val expiresAtMillis: Long?,
     val maxConnections: Int?,
     val activeConnections: Int?,
-    val outputFormats: List<String>
+    val outputFormats: List<String>,
+    // Time zone of the server: the start of a replay is written in it
+    val timeZone: String? = null
 )
 
 /**
@@ -56,7 +59,8 @@ object XtreamClient {
                     expiresAtMillis = user.optStringOrNull("exp_date")?.toLongOrNull()?.takeIf { it > 0 }?.times(1000),
                     maxConnections = user.optStringOrNull("max_connections")?.toIntOrNull(),
                     activeConnections = user.optStringOrNull("active_cons")?.toIntOrNull(),
-                    outputFormats = formats
+                    outputFormats = formats,
+                    timeZone = root.optJSONObject("server_info")?.optStringOrNull("timezone")
                 )
             )
         } catch (e: Exception) {
@@ -110,7 +114,9 @@ object XtreamClient {
                             streamUrl = streamUrl(config, streamId, preferred),
                             tvgId = item.optStringOrNull("epg_channel_id"),
                             availableStreams = if (variants.size > 1) variants else emptyList(),
-                            number = item.optStringOrNull("num")?.toIntOrNull()
+                            number = item.optStringOrNull("num")?.toIntOrNull(),
+                            catchupDays = catchupDays(item),
+                            catchupZone = account.timeZone
                         )
                     )
                 }
@@ -131,6 +137,13 @@ object XtreamClient {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /** Days of replay of a live stream ("tv_archive": 1, "tv_archive_duration": "7"), 0 without replay. */
+    internal fun catchupDays(item: JSONObject): Int {
+        if (item.optStringOrNull("tv_archive")?.trim() != "1") return 0
+        val days = item.optStringOrNull("tv_archive_duration")?.trim()?.toIntOrNull() ?: return 0
+        return if (days in 1..Catchup.MAX_DAYS) days else 0
     }
 
     internal fun base(config: SourceConfig): HttpUrl =

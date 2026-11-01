@@ -71,6 +71,8 @@ object GuideLoader {
         channels: List<Channel>,
         userAgent: String,
         previous: CachedGuide? = null,
+        // Past programs kept: longer for the sources with replay (see Catchup)
+        pastWindowMs: Long = PAST_WINDOW_MS,
         now: Long = System.currentTimeMillis()
     ): ChannelGuide = withContext(Dispatchers.IO) {
         if (urls.isEmpty()) return@withContext ChannelGuide(emptyMap())
@@ -88,7 +90,7 @@ object GuideLoader {
             ensureActive()
             try {
                 val result = download(url, userAgent, validator) { input ->
-                    XmltvParser.parse(input, now - PAST_WINDOW_MS, now + FUTURE_WINDOW_MS) { id, names ->
+                    XmltvParser.parse(input, now - pastWindowMs, now + FUTURE_WINDOW_MS) { id, names ->
                         id.lowercase() in wantedIds ||
                             EpgResolver.normalizeName(id) in wantedNames ||
                             names.any { EpgResolver.normalizeName(it) in wantedNames }

@@ -10,6 +10,7 @@ import io.github.sim7b.tele.data.bouquet.Bouquet
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.bouquet.ChannelGrouping
 import io.github.sim7b.tele.data.bouquet.ChannelNames
+import io.github.sim7b.tele.data.epg.Catchup
 import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.failure
 import io.github.sim7b.tele.data.model.CategoryMode
@@ -31,6 +32,7 @@ import io.github.sim7b.tele.data.remote.HttpClients
 import io.github.sim7b.tele.data.remote.M3uClient
 import io.github.sim7b.tele.data.remote.XtreamClient
 import io.github.sim7b.tele.data.storage.SettingsRepository
+import io.github.sim7b.tele.data.storage.GuideStore
 import io.github.sim7b.tele.data.subtitles.SubtitleCache
 import io.github.sim7b.tele.data.subtitles.SubtitleRepository
 import io.github.sim7b.tele.data.vod.VodRepository
@@ -73,6 +75,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val vod = VodRepository(configRepository, viewModelScope)
     // Subtitles from OpenSubtitles, on request, kept on the device by movie or episode
     val subtitles = SubtitleRepository(configRepository, SubtitleCache(java.io.File(application.filesDir, "subtitles")))
+    // Reminders of programs and recent channels of the guide
+    val guideStore = GuideStore(application)
     // Connection test from a source form (each loaded Dispatcharr source has its own client)
     private val testClient = DispatcharrClient()
 
@@ -160,9 +164,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile
     private var displayMemo: DisplayMemo? = null
 
-    // EPG programs of every source by channel id (ids are unique across sources), to move the current program
-    @Volatile
-    private var programsByChannelId: Map<String, List<GuideProgram>> = emptyMap()
+    // EPG programs of every source by channel id (ids are unique across sources), sorted by start time:
+    // moves the current program forward, and shows the coming ones in the channel panel and the guide grid
+    private val _schedules = MutableStateFlow<Map<String, List<GuideProgram>>>(emptyMap())
+    val schedules: StateFlow<Map<String, List<GuideProgram>>> = _schedules.asStateFlow()
     // Only the latest publication is applied (several sources may finish at the same time)
     private var publishGeneration = 0
 
@@ -292,8 +297,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Streams available for a channel (loaded on demand, when the menu opens). */
     suspend fun loadStreams(channel: Channel): Result<List<StreamSource>> {
-        // Grouped channel: its versions ("TF1 HD", "TF1 FHD"...), by quality preference
-        if (channel.memberIds.size > 1) return Result.success(configRepository.qualityPreference.value.sort(channel.availableStreams))
+        // Grouped channel: its versions ("TF1 HD", "TF1 FHD"...), by quality preference, each with its own streams
+        if (channel.memberIds.size > 1) {
+            return Result.success(withVersionStreams(configRepository.qualityPreference.value.sort(channel.availableStreams)))
+        }
         // Xtream: TS / HLS variants already known
         if (channel.availableStreams.isNotEmpty()) return Result.success(channel.availableStreams)
         // M3U: a single stream per playlist entry
@@ -307,6 +314,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun streamsKey(channel: Channel, serverId: String) = "${channel.sourceId}/$serverId"
+
+    /**
+     * Versions of a grouped channel, each followed by the provider streams behind it when it is a
+     * Dispatcharr channel ("TF1" then its 12 streams): a single stream can be chosen, not only the version.
+     * A version whose streams cannot be read stays alone.
+     */
+    private suspend fun withVersionStreams(versions: List<StreamSource>): List<StreamSource> = coroutineScope {
+        val channels = _channels.value
+        val preference = configRepository.qualityPreference.value
+        val subStreams = versions.map { version ->
+            async {
+                val versionId = ChannelGrouping.versionIdOf(version) ?: return@async emptyList()
+                val member = channels.firstOrNull { it.id == versionId } ?: return@async emptyList()
+                val client = sourceOf(member)?.dispatcharr ?: return@async emptyList()
+                val serverId = member.serverId ?: return@async emptyList()
+                val key = streamsKey(member, serverId)
+                val cached = streamsCache[key]?.takeIf { SystemClock.elapsedRealtime() - it.first < STREAMS_CACHE_MS }?.second
+                val streams = cached ?: withTimeoutOrNull(STREAMS_TIMEOUT_MS) { client.getChannelStreams(serverId).getOrNull() }
+                    ?.also { streamsCache[key] = SystemClock.elapsedRealtime() to it }
+                ChannelGrouping.subStreams(version, preference.sort(streams.orEmpty()))
+            }
+        }.awaitAll()
+        versions.zip(subStreams).flatMap { (version, streams) -> listOf(version) + streams }
+    }
 
     /**
      * URLs to play for [channel] in automatic mode, by quality preference: its streams through the Dispatcharr
@@ -408,7 +439,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshStreamSlots()
 
         if (next.isEmpty()) {
-            programsByChannelId = emptyMap()
+            _schedules.value = emptyMap()
             _channels.value = emptyList()
             _isLoading.value = false
             _loadError.value = null
@@ -474,7 +505,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun cachedGuide(configId: String): CachedGuide? =
-        configRepository.getCachedGuide(configId, System.currentTimeMillis() - GuideLoader.PAST_WINDOW_MS)
+        // The longest past window: the programs kept for the replay of a source are read back too
+        configRepository.getCachedGuide(configId, System.currentTimeMillis() - Catchup.GUIDE_PAST_WINDOW_MS)
 
     /**
      * XMLTV guide of an Xtream / M3U [source], downloaded again only when it changed since the cached one.
@@ -483,7 +515,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadGuide(source: LoadedSource): ChannelGuide {
         val id = source.config.id
         val previous = source.guideCache ?: withContext(Dispatchers.IO) { cachedGuide(id) }
-        val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent(source.config), previous)
+        val pastWindow = if (source.channels.any { it.catchupDays > 0 }) Catchup.GUIDE_PAST_WINDOW_MS else GuideLoader.PAST_WINDOW_MS
+        val guide = GuideLoader.load(source.guideUrls, source.channels, userAgent(source.config), previous, pastWindow)
         if (guide.programs.isNotEmpty() || guide.error == null) source.programs = guide.programs
         guide.cache?.let { cache ->
             source.guideCache = cache
@@ -647,7 +680,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         if (generation != publishGeneration) return
-        programsByChannelId = programs
+        _schedules.value = programs
         configRepository.applyLegacyFavoriteOrder(published.map { it.id })
         _channels.value = published
         _loadError.value = snapshot.firstNotNullOfOrNull { source ->
@@ -720,7 +753,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Moves the progress bars forward and switches to the next program when the current one ends.
      */
     private suspend fun refreshCurrentPrograms() {
-        val programsMap = programsByChannelId
+        val programsMap = _schedules.value
         // Off the main thread (every channel, every 30 s); atomic update against a concurrent stream selection
         withContext(Dispatchers.Default) {
             val now = System.currentTimeMillis()

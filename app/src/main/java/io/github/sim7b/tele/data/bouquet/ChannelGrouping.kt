@@ -124,6 +124,27 @@ class ChannelGrouping(private val bouquet: Bouquet?, private val names: ChannelN
 
     companion object {
         const val MERGED_PREFIX = "merged:"
+        private const val SUB_STREAM_SEPARATOR = "#stream:"
+
+        /** Id of the channel behind a version of a grouped channel (not an Xtream variant, nor one of its streams). */
+        fun versionIdOf(version: StreamSource): String? =
+            version.id?.takeIf { it.startsWith(MERGED_PREFIX) && !version.subStream && SUB_STREAM_SEPARATOR !in it }
+                ?.removePrefix(MERGED_PREFIX)
+
+        /**
+         * Provider streams behind a [version] of a grouped channel, shown under it: their own name, the
+         * version's source, an id kept with the selection. None when the version has a single stream.
+         */
+        fun subStreams(version: StreamSource, streams: List<StreamSource>): List<StreamSource> {
+            if (streams.size < 2 || version.id == null) return emptyList()
+            return streams.mapIndexed { index, stream ->
+                stream.copy(
+                    id = "${version.id}$SUB_STREAM_SEPARATOR${stream.id ?: index}",
+                    provider = stream.provider ?: version.provider,
+                    subStream = true
+                )
+            }
+        }
 
         /** What the grouping depends on: the channels without their current program. */
         fun structureOf(channels: List<Channel>): List<Channel> =
