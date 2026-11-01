@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.11](https://github.com/Sim7b/tele/compare/v0.3.10...v0.3.11) (2026-11-01)
+
+### Features
+
+* **vod:** Plex-like player, playlist languages and OpenSubtitles ([9f5724e](https://github.com/Sim7b/tele/commit/9f5724ee5b5641af1bed3ed3adda49fe31ae53ef))
+
+### Bug Fixes
+
+* **manifest:** let the TV launcher open the app again ([1b4e2bb](https://github.com/Sim7b/tele/commit/1b4e2bb2158ef4a9a036b3df6b9492d332afdce2))
+* **player:** open the chosen channel and handle full provider connections ([12f2681](https://github.com/Sim7b/tele/commit/12f268118f70b5c9837521d26d1eef2bc0bf63f0))
+* **security:** add gradle.lockfile for app/build.gradle.kts ([80f09fe](https://github.com/Sim7b/tele/commit/80f09fe2dbf941045fff33126c92697d6dde5245))
+* **security:** autofix Android components with exported attribute active ([191e9b0](https://github.com/Sim7b/tele/commit/191e9b003000c6880b4da32368d9d8818e165fd4))
+* **ui:** keep the remote focus when a screen replaces another ([22e11df](https://github.com/Sim7b/tele/commit/22e11df74ed716c82be3768fa3a32a5b6849d0f6))
+
 ## [0.3.10](https://github.com/Sim7b/tele/compare/v0.3.9...v0.3.10) (2026-10-28)
 
 ### Features
