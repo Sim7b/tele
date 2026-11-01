@@ -2,6 +2,7 @@ package io.github.sim7b.tele.data.bouquet
 
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.EpgProgram
+import io.github.sim7b.tele.data.model.StreamSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -116,5 +117,24 @@ class ChannelGroupingTest {
         val updated = ChannelGrouping.withPrograms(display, next)
         assertEquals("Météo", updated.first { it.name == "TF1" }.currentProgram?.title)
         assertTrue(updated.first { it.name == "Arte" } === display.first { it.name == "Arte" })
+    }
+
+    @Test
+    fun `the streams of a version are listed under it, with their own id`() {
+        val version = StreamSource(name = "TF1 UHD", url = "u", id = "${ChannelGrouping.MERGED_PREFIX}tf1-uhd", provider = "Box")
+        assertEquals("tf1-uhd", ChannelGrouping.versionIdOf(version))
+
+        val streams = listOf(
+            StreamSource(name = "FR | TF1 4K", url = "a", id = "12"),
+            StreamSource(name = "TF1 UHD", url = "b", id = null, provider = "Other")
+        )
+        val sub = ChannelGrouping.subStreams(version, streams)
+        assertEquals(listOf("merged:tf1-uhd#stream:12", "merged:tf1-uhd#stream:1"), sub.map { it.id })
+        assertEquals(listOf("Box", "Other"), sub.map { it.provider })
+        assertTrue(sub.all { it.subStream })
+        // A stream of a version is not a version, an Xtream variant has no channel of its own
+        assertNull(ChannelGrouping.versionIdOf(sub.first()))
+        // A single stream: the version is enough
+        assertTrue(ChannelGrouping.subStreams(version, streams.take(1)).isEmpty())
     }
 }

@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.storage
 
+import io.github.sim7b.tele.data.epg.Catchup
 import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.EpgProgram
@@ -92,6 +93,10 @@ class ChannelCache(private val file: File, private val secrets: SecretBox? = nul
         put("isFavorite", channel.isFavorite)
         put("serverId", channel.serverId)
         channel.number?.let { put("number", it) }
+        if (channel.catchupDays > 0) {
+            put("catchupDays", channel.catchupDays)
+            put("catchupZone", channel.catchupZone)
+        }
         if (channel.availableStreams.isNotEmpty()) {
             put("streams", JSONArray().apply { channel.availableStreams.forEach { put(streamToJson(it)) } })
         }
@@ -111,7 +116,9 @@ class ChannelCache(private val file: File, private val secrets: SecretBox? = nul
             (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::streamFromJson) }
         }.orEmpty(),
         serverId = obj.optStringOrNull("serverId"),
-        number = obj.optInt("number", -1).takeIf { it > 0 }
+        number = obj.optInt("number", -1).takeIf { it > 0 },
+        catchupDays = obj.optInt("catchupDays", 0).coerceIn(0, Catchup.MAX_DAYS),
+        catchupZone = obj.optStringOrNull("catchupZone")
     )
 
     private fun streamToJson(stream: StreamSource) = JSONObject().apply {

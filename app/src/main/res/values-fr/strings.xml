@@ -201,9 +201,33 @@
     <!-- Channel panel in the player -->
     <string name="panel_all_channels">Toutes les chaînes</string>
     <string name="panel_title">Chaînes</string>
-    <string name="panel_keys_hint">"◀ ▶  Catégorie      OK  Regarder      Retour  Fermer"</string>
+    <string name="panel_keys_hint">"◀  Catégories      ▶  Programmes      OK  Regarder      Retour  Fermer"</string>
+    <string name="panel_header_keys_hint">"◀ ▶  Catégorie      ▼  Chaînes      Retour  Fermer"</string>
+    <string name="panel_schedule_keys_hint">"◀ ou Retour  Chaînes      OK  Regarder · Revoir · Me rappeler"</string>
+    <string name="panel_recent_channels">Récentes</string>
     <string name="panel_no_information">Aucune information</string>
     <string name="panel_next_program">"Puis %1$s  ·  %2$s"</string>
+    <string name="epg_today">Aujourd\'hui</string>
+    <string name="epg_tomorrow">Demain</string>
+    <string name="epg_yesterday">Hier</string>
+    <string name="epg_time_left">encore %1$s</string>
+    <string name="epg_starts_in">dans %1$s</string>
+    <!-- Guide grid -->
+    <string name="home_open_guide">Guide</string>
+    <string name="guide_title">Guide TV</string>
+    <string name="guide_keys_hint">"OK  Regarder      ▲  Catégorie      Retour  Maintenant, puis fermer"</string>
+    <string name="guide_header_keys_hint">"◀ ▶  Catégorie      ▼  Grille      Retour  Fermer"</string>
+    <string name="guide_no_channels">Aucune chaîne dans cette catégorie</string>
+    <string name="program_replay_tag">REPLAY</string>
+    <string name="program_reminder_tag">RAPPEL</string>
+    <string name="program_replay">Revoir ce programme</string>
+    <string name="program_remind">Me rappeler à %1$s</string>
+    <string name="program_cancel_reminder">Annuler le rappel</string>
+    <string name="program_watch_live">Regarder la chaîne en direct</string>
+    <string name="reminder_title">Ça commence</string>
+    <string name="reminder_message">%1$s à %2$s sur %3$s</string>
+    <string name="reminder_watch">Regarder</string>
+    <string name="reminder_dismiss">Ignorer</string>
 
     <!-- Channel cards and stream picker -->
     <!-- Channel cards and context menus -->

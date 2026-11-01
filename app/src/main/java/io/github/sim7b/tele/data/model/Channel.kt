@@ -11,7 +11,9 @@ data class StreamSource(
     val qualityTags: List<String> = emptyList(),
     val details: String? = null,
     // Video height measured by Dispatcharr the last time the stream went through its proxy
-    val measuredHeight: Int? = null
+    val measuredHeight: Int? = null,
+    // One of the provider streams of a version of a grouped channel, listed under that version
+    val subStream: Boolean = false
 )
 
 data class EpgProgram(
@@ -47,7 +49,10 @@ data class Channel(
     // Id of the source (SourceConfig) the channel comes from, when several sources are enabled
     val sourceId: String = "",
     // Ids of the provider channels grouped into this one ("TF1 HD" + "TF1 FHD"); empty for a single channel
-    val memberIds: List<String> = emptyList()
+    val memberIds: List<String> = emptyList(),
+    // Replay (Xtream catch-up): days of past programs the provider keeps, and the time zone of its server
+    val catchupDays: Int = 0,
+    val catchupZone: String? = null
 ) {
     /** Ids of every version of the channel (favorites, hidden channels may refer to any of them). */
     val allIds: List<String>

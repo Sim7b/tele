@@ -28,6 +28,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,6 +64,9 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.StreamSource
+import io.github.sim7b.tele.data.epg.EpgResolver
+import io.github.sim7b.tele.data.model.GuideProgram
+import io.github.sim7b.tele.data.storage.Reminder
 import io.github.sim7b.tele.data.remote.ProgramPosterRepository
 import io.github.sim7b.tele.ui.theme.*
 
@@ -686,7 +693,10 @@ private fun StreamList(
                                 }
                             }
                         },
-                        modifier = if (isSelected) Modifier.focusRequester(selectedFocus) else Modifier
+                        modifier = Modifier
+                            // The streams of a version of a grouped channel, under that version
+                            .padding(start = if (stream.subStream) 28.dp else 0.dp)
+                            .then(if (isSelected) Modifier.focusRequester(selectedFocus) else Modifier)
                     )
                 }
             }
@@ -814,6 +824,130 @@ fun CategoryActionDialog(
                 }
             )
             MenuRow(label = stringResource(R.string.common_cancel), onClick = onDismiss)
+        }
+    }
+}
+
+/**
+ * Menu of a coming (or past) program of the guide: reminder at its start, replay when the provider
+ * keeps it, or the channel live.
+ */
+@Composable
+fun ProgramActionDialog(
+    channel: Channel,
+    program: GuideProgram,
+    now: Long,
+    hasReminder: Boolean,
+    canReplay: Boolean,
+    onWatchLive: () -> Unit,
+    onToggleReminder: () -> Unit,
+    onReplay: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val firstItemFocus = remember { FocusRequester() }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        LaunchedEffect(Unit) { firstItemFocus.requestFocusWithRetry() }
+        DialogPanel(width = 520.dp) {
+            DialogHeader(channel = channel, subtitle = null)
+            Spacer(modifier = Modifier.height(14.dp))
+            ProgramDetails(
+                program = program,
+                now = now,
+                primary = TextPrimary,
+                secondary = TextSecondary,
+                descriptionLines = 3,
+                showPoster = false,
+                titleSize = 16
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            val rows = buildList<@Composable (Modifier) -> Unit> {
+                if (canReplay) add { modifier ->
+                    MenuRow(
+                        label = stringResource(R.string.program_replay),
+                        icon = Icons.Filled.PlayArrow,
+                        onClick = {
+                            onDismiss()
+                            onReplay()
+                        },
+                        modifier = modifier
+                    )
+                }
+                if (program.startMillis > now) add { modifier ->
+                    MenuRow(
+                        label = if (hasReminder) stringResource(R.string.program_cancel_reminder)
+                        else stringResource(R.string.program_remind, EpgResolver.formatClock(program.startMillis)),
+                        icon = Icons.Filled.Notifications,
+                        onClick = {
+                            onToggleReminder()
+                            onDismiss()
+                        },
+                        modifier = modifier
+                    )
+                }
+                add { modifier ->
+                    MenuRow(
+                        label = stringResource(R.string.program_watch_live),
+                        icon = Icons.Filled.KeyboardArrowRight,
+                        onClick = {
+                            onDismiss()
+                            onWatchLive()
+                        },
+                        modifier = modifier
+                    )
+                }
+            }
+            rows.forEachIndexed { index, row -> row(if (index == 0) Modifier.focusRequester(firstItemFocus) else Modifier) }
+        }
+    }
+}
+
+/** A program with a reminder starts: watch its channel, or dismiss. */
+@Composable
+fun ReminderDialog(
+    reminder: Reminder,
+    channel: Channel?,
+    onWatch: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val firstItemFocus = remember { FocusRequester() }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        LaunchedEffect(Unit) { firstItemFocus.requestFocusWithRetry() }
+        DialogPanel(width = 480.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(imageVector = Icons.Filled.Notifications, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(text = stringResource(R.string.reminder_title), fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.reminder_message, reminder.title, EpgResolver.formatClock(reminder.startMillis), channel?.name ?: reminder.channelName),
+                fontSize = 14.sp,
+                color = TextSecondary
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            if (channel != null) {
+                MenuRow(
+                    label = stringResource(R.string.reminder_watch),
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = {
+                        onDismiss()
+                        onWatch()
+                    },
+                    modifier = Modifier.focusRequester(firstItemFocus)
+                )
+            }
+            MenuRow(
+                label = stringResource(R.string.reminder_dismiss),
+                icon = Icons.Filled.Close,
+                onClick = onDismiss,
+                modifier = if (channel == null) Modifier.focusRequester(firstItemFocus) else Modifier
+            )
         }
     }
 }

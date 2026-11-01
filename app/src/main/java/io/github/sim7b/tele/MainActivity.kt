@@ -26,6 +26,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import coil.imageLoader
 import coil.request.ImageRequest
+import io.github.sim7b.tele.data.epg.Catchup
+import io.github.sim7b.tele.data.epg.GuideTimeline
+import io.github.sim7b.tele.data.storage.Reminder
+import io.github.sim7b.tele.data.storage.Reminders
+import io.github.sim7b.tele.ui.components.GuideActions
+import io.github.sim7b.tele.ui.components.ReminderDialog
 import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.remote.ProgramPosterRepository
@@ -34,6 +40,7 @@ import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.playback.TvPlayerManager
 import io.github.sim7b.tele.ui.components.DISPATCHARR_AUTOMATIC
 import io.github.sim7b.tele.ui.components.PreviewVideo
+import io.github.sim7b.tele.ui.screens.GuideScreen
 import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.PlayerScreen
 import io.github.sim7b.tele.ui.screens.QuickGuide
@@ -66,7 +73,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Displayed screen (simple navigation, without a navigation library). */
@@ -74,6 +83,9 @@ sealed class CurrentScreen {
     object Home : CurrentScreen()
     object Settings : CurrentScreen()
     data class Search(val startWithVoice: Boolean) : CurrentScreen()
+
+    /** Guide grid of the channels, opened from the home screen. */
+    object Guide : CurrentScreen()
 
     /** Playback; Back returns to [returnTo] (the home screen, or the search the channel was opened from). */
     data class Player(val channel: Channel, val returnTo: CurrentScreen = Home) : CurrentScreen()
@@ -89,6 +101,9 @@ sealed class CurrentScreen {
 private const val WELCOME_MIN_MS = 1_800L
 private const val WELCOME_MAX_MS = 15_000L
 private const val VOD_RELEASE_DELAY_MS = 5 * 60 * 1000L
+// Replays of TV programs go through the movie player, with this prefix on their key
+private const val REPLAY_KEY_PREFIX = "replay:"
+private const val REMINDER_CHECK_MS = 15_000L
 
 /**
  * The app's single activity: hosts the Compose UI (home, player, settings),
@@ -130,9 +145,14 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(audioLanguage) { playerManager.setPreferredAudioLanguage(audioLanguage) }
 
             val userName by viewModel.userName.collectAsState()
+            // The guide grid is offered once a guide is loaded (only this flag: the programs are read in its screen)
+            val hasGuide by remember { viewModel.schedules.map { schedules -> schedules.values.any { it.isNotEmpty() } }.distinctUntilChanged() }
+                .collectAsState(initial = false)
             val context = LocalContext.current
 
             var currentScreen by remember { mutableStateOf<CurrentScreen>(CurrentScreen.Home) }
+            // Last channel watched: the guide grid opens on it
+            var lastWatchedId by rememberSaveable { mutableStateOf<String?>(null) }
             // Filters of the Movies and Series tabs, kept while browsing sheets; the defaults of the settings first
             val vodDisplay by configRepository.vodDisplay.collectAsState()
             var vodFilters by remember(vodDisplay.defaults) { mutableStateOf(vodDisplay.defaults) }
@@ -248,10 +268,10 @@ class MainActivity : ComponentActivity() {
                     playerManager.preview(url, configsById[channel.sourceId]?.customUserAgent, streamAuths)
                 }
             }
-            // Settings and search: no preview behind them (the player takes it over, see playStream); any other
+            // Settings, search and guide: no preview behind them (the player takes it over, see playStream); any other
             // screen cancels a preview still choosing its stream, so it cannot replace the channel opened
             LaunchedEffect(currentScreen) {
-                if (currentScreen is CurrentScreen.Settings || currentScreen is CurrentScreen.Search) previewChannel(null)
+                if (currentScreen is CurrentScreen.Settings || currentScreen is CurrentScreen.Search || currentScreen is CurrentScreen.Guide) previewChannel(null)
                 else if (currentScreen !is CurrentScreen.Home) previewJob?.cancel()
             }
 
@@ -276,6 +296,60 @@ class MainActivity : ComponentActivity() {
             val visibleChannels = homeLists.visible
             val favoriteChannels = homeLists.favorites
             val categoryCounts = homeLists.categoryCounts
+
+            // Guide: recent channels (last watched first), reminders, replays and the menu of a channel
+            val recentIds by viewModel.guideStore.recentChannels.collectAsState()
+            val recentChannels = remember(recentIds, visibleChannels) {
+                val byId = visibleChannels.associateBy { it.id }
+                recentIds.mapNotNull { byId[it] }
+            }
+            val reminders by viewModel.guideStore.reminders.collectAsState()
+            fun guideActions(returnTo: CurrentScreen) = GuideActions(
+                reminders = reminders,
+                toggleReminder = { channel, program ->
+                    viewModel.guideStore.toggleReminder(Reminder(channel.id, channel.name, program.title, program.startMillis, program.endMillis))
+                },
+                replay = { channel, program ->
+                    // Xtream timeshift of the program, played like a movie (seek, pause)
+                    Catchup.xtreamReplayUrl(channel.streamUrl, program.startMillis, program.endMillis, channel.catchupZone)?.let { url ->
+                        currentScreen = CurrentScreen.VodPlayer(
+                            VodPlayRequest(
+                                titleKey = "$REPLAY_KEY_PREFIX${channel.id}:${program.startMillis}",
+                                episodeKey = null,
+                                label = program.title,
+                                sourceId = channel.sourceId,
+                                url = url,
+                                fallbacks = emptyList(),
+                                startMs = 0L,
+                                plot = program.description,
+                                posterUrl = program.posterUrl,
+                                imageUrl = program.posterUrl
+                            ),
+                            returnTo = returnTo
+                        )
+                    }
+                },
+                isFavorite = { channel -> channel.allIds.any { it in favoriteIds } },
+                toggleFavorite = { channel -> toggleFavorite(channel.id) },
+                hideChannel = { channel -> hideChannel(channel.id) },
+                loadStreams = { channel -> viewModel.loadStreams(channel) },
+                selectStream = { channel, stream -> viewModel.selectStream(channel, stream) },
+                automaticStreamDescription = automaticStreamDescription
+            )
+            // A program with a reminder starts: shown once, on any screen (after the welcome)
+            var dueReminder by remember { mutableStateOf<Reminder?>(null) }
+            LaunchedEffect(reminders, showWelcome) {
+                if (showWelcome) return@LaunchedEffect
+                while (dueReminder == null) {
+                    val due = Reminders.due(reminders, System.currentTimeMillis())
+                    if (due != null) {
+                        dueReminder = due
+                        viewModel.guideStore.dismiss(due)
+                        break
+                    }
+                    delay(REMINDER_CHECK_MS)
+                }
+            }
 
             // Zapping by id (not by object equality, which changes on every EPG update)
             fun zap(from: Channel, step: Int, returnTo: CurrentScreen) {
@@ -355,6 +429,7 @@ class MainActivity : ComponentActivity() {
                                         viewModel.refresh()
                                     },
                                     onOpenVod = if (vodEnabled) ({ currentScreen = CurrentScreen.Vod }) else null,
+                                    onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
                                     previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
                                     previewSurface = { PreviewVideo(playerManager) }
@@ -391,6 +466,26 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onBack = {
                                         saveableStateHolder.removeState("search")
+                                        currentScreen = CurrentScreen.Home
+                                    }
+                                )
+                            }
+                        }
+                        is CurrentScreen.Guide -> {
+                            val schedules by viewModel.schedules.collectAsState()
+                            // Position kept (category, channel, hours) when coming back from the player
+                            saveableStateHolder.SaveableStateProvider("guide") {
+                                GuideScreen(
+                                    channels = visibleChannels,
+                                    favorites = favoriteChannels,
+                                    schedules = schedules,
+                                    playingChannelId = lastWatchedId ?: recentIds.firstOrNull(),
+                                    categoryOrder = categoryOrder,
+                                    recents = recentChannels,
+                                    actions = guideActions(returnTo = CurrentScreen.Guide),
+                                    onWatch = { channel -> currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Guide) },
+                                    onBack = {
+                                        saveableStateHolder.removeState("guide")
                                         currentScreen = CurrentScreen.Home
                                     }
                                 )
@@ -502,6 +597,8 @@ class MainActivity : ComponentActivity() {
                         }
                         is CurrentScreen.VodPlayer -> {
                             val request = screen.request
+                            // Replay of a TV program: no position, track choice nor subtitles kept for it
+                            val isReplay = request.titleKey.startsWith(REPLAY_KEY_PREFIX)
                             val vodTrackPrefs by configRepository.vodStore.trackPrefs.collectAsState()
                             // Next episode from the sheet's details (with the positions known when it starts)
                             val next = remember(request) {
@@ -513,6 +610,7 @@ class MainActivity : ComponentActivity() {
                                 streamAuths = streamAuths,
                                 userAgent = configsById[request.sourceId]?.customUserAgent,
                                 onProgress = { played, position, duration ->
+                                    if (isReplay) return@VodPlayerScreen
                                     lifecycleScope.launch(Dispatchers.IO) {
                                         configRepository.vodStore.saveProgress(
                                             key = VodRows.progressKey(played.titleKey, played.episodeKey),
@@ -525,16 +623,21 @@ class MainActivity : ComponentActivity() {
                                 onBack = { currentScreen = screen.returnTo },
                                 next = next,
                                 onPlayNext = { upcoming -> currentScreen = CurrentScreen.VodPlayer(upcoming, screen.returnTo) },
-                                trackPrefs = vodTrackPrefs[request.titleKey],
-                                onTrackPrefsChange = { prefs -> vodStore { saveTrackPrefs(request.titleKey, prefs) } },
+                                trackPrefs = if (isReplay) null else vodTrackPrefs[request.titleKey],
+                                onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs) } },
                                 pictureFormat = pictureFormat,
                                 onPictureFormatChange = { configRepository.setPictureFormat(it) },
-                                subtitles = vodSubtitles
+                                subtitles = vodSubtitles.takeIf { !isReplay }
                             )
                         }
                         is CurrentScreen.Player -> {
                             // Up-to-date version of the channel (current EPG program, chosen stream)
                             val liveChannel = displayedChannels.firstOrNull { it.id == screen.channel.id } ?: screen.channel
+                            val schedules by viewModel.schedules.collectAsState()
+                            LaunchedEffect(liveChannel.id) {
+                                lastWatchedId = liveChannel.id
+                                viewModel.guideStore.addRecent(liveChannel.id)
+                            }
                             val channelConfig = configsById[liveChannel.sourceId]
                             PlayerScreen(
                                 channel = liveChannel,
@@ -555,9 +658,28 @@ class MainActivity : ComponentActivity() {
                                 onPreviousChannel = { zap(liveChannel, -1, screen.returnTo) },
                                 pictureFormat = pictureFormat,
                                 onPictureFormatChange = { configRepository.setPictureFormat(it) },
-                                onAudioLanguageChange = { configRepository.setAudioLanguage(it) }
+                                onAudioLanguageChange = { configRepository.setAudioLanguage(it) },
+                                programsOf = { ch -> GuideTimeline.programsOf(ch, schedules) },
+                                favorites = favoriteChannels,
+                                recents = recentChannels,
+                                guideActions = guideActions(returnTo = screen)
                             )
                         }
+                    }
+
+                    dueReminder?.let { reminder ->
+                        val channel = unhiddenChannels.firstOrNull { it.id == reminder.channelId }
+                        ReminderDialog(
+                            reminder = reminder,
+                            channel = channel,
+                            onWatch = {
+                                if (channel != null) {
+                                    val returnTo = (currentScreen as? CurrentScreen.Player)?.returnTo ?: CurrentScreen.Home
+                                    currentScreen = CurrentScreen.Player(channel, returnTo)
+                                }
+                            },
+                            onDismiss = { dueReminder = null }
+                        )
                     }
 
                     if (showGuide) {

@@ -106,6 +106,8 @@ fun HomeScreen(
     onRefresh: () -> Unit,
     // Movies and series module, when enabled in the settings
     onOpenVod: (() -> Unit)? = null,
+    // Guide grid of the channels (with a guide only)
+    onOpenGuide: (() -> Unit)? = null,
     // Muted preview of the focused card: focus time before it starts (null: no preview), start / stop (null), video surface
     previewDelayMs: Long? = null,
     onPreviewChannel: (Channel?) -> Unit = {},
@@ -322,6 +324,11 @@ fun HomeScreen(
                 streamSlots?.let { slots ->
                     StreamSlotsBadge(slots)
                     Spacer(modifier = Modifier.width(14.dp))
+                }
+
+                onOpenGuide?.takeIf { hasContent }?.let { openGuide ->
+                    VodChip(label = stringResource(R.string.home_open_guide), selected = false, onClick = openGuide)
+                    Spacer(modifier = Modifier.width(10.dp))
                 }
 
                 onOpenVod?.let { openVod ->
