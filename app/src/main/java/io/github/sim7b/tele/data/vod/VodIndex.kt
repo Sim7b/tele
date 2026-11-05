@@ -109,6 +109,9 @@ class VodIndex(private val file: File) {
             file.parentFile?.mkdirs()
             // Appended: the facts already on the device are kept
             val out: BufferedWriter = java.io.FileWriter(file, true).buffered()
+            // Every new version rebuilds the rows and filters of the whole library: not more than every
+            // [VERSION_INTERVAL_MS] while indexing, then once at the end
+            var versionAt = System.currentTimeMillis()
             try {
                 pending.chunked(PUBLISH_EVERY).forEach { batch ->
                     val results = coroutineScope {
@@ -127,11 +130,15 @@ class VodIndex(private val file: File) {
                     }
                     indexed += batch.size
                     _progress.value = VodIndexProgress(indexed, total, running = true)
-                    _version.value++
+                    if (System.currentTimeMillis() - versionAt >= VERSION_INTERVAL_MS) {
+                        versionAt = System.currentTimeMillis()
+                        _version.value++
+                    }
                 }
             } finally {
                 out.close()
                 _progress.value = _progress.value.copy(running = false)
+                _version.value++
             }
         }
 
@@ -232,6 +239,7 @@ class VodIndex(private val file: File) {
         const val TAG = "VodIndex"
         const val PARALLEL = 6
         const val PUBLISH_EVERY = 120
+        private const val VERSION_INTERVAL_MS = 30_000L
         const val MAX_STUDIOS = 4
         const val RETRY_MS = 30L * 24 * 60 * 60 * 1000
     }

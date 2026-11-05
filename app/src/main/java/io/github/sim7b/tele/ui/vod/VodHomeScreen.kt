@@ -136,7 +136,13 @@ fun VodHomeScreen(
     modifier: Modifier = Modifier,
     findPoster: (suspend (VodTitle) -> String?)? = null,
     hiddenRows: Set<VodRow.Kind> = emptySet(),
-    actions: VodTitleActions? = null
+    actions: VodTitleActions? = null,
+    // Rows last built (shown at once), the TMDB rankings matching kept between openings, and the rows built
+    initialRows: List<VodRow> = emptyList(),
+    matcherFor: (List<VodTitle>, Map<Ranking, List<RankedItem>>) -> VodRankings.Matcher? = { titles, ranked ->
+        if (ranked.isEmpty()) null else VodRankings.Matcher(titles, facts())
+    },
+    onRows: (List<VodRow>) -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
     val screen = LocalScreen.current
@@ -159,11 +165,12 @@ fun VodHomeScreen(
     val filter = kind?.let { filters[it] } ?: VodFilter()
 
     // Built off the main thread: libraries hold tens of thousands of titles
-    val rows by produceState(emptyList<VodRow>(), library.titles, progress, myList, collections, rankings, indexVersion, hiddenRows) {
+    // The rows last built first (the home opens with them), then the ones of the current state
+    val rows by produceState(initialRows, library.titles, progress, myList, collections, rankings, indexVersion, hiddenRows) {
         value = withContext(Dispatchers.Default) {
-            val matcher = if (rankings.isEmpty()) null else VodRankings.Matcher(library.titles, facts())
-            VodRows.build(library.titles, progress, myList, collections, rankings, matcher, hiddenRows)
+            VodRows.build(library.titles, progress, myList, collections, rankings, matcherFor(library.titles, rankings), hiddenRows)
         }
+        onRows(value)
     }
     val listed by produceState(emptyList<VodTitle>(), library.titles, kind, filter, indexVersion) {
         value = if (kind == null) emptyList() else withContext(Dispatchers.Default) { VodBrowse.filter(library.titles, kind, filter, facts()) }
@@ -746,7 +753,7 @@ private fun EmptyLibrary() {
 /** Tab of the movies and series home: filled when focused, marked when selected. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-internal fun VodChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun VodChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, maxLines: Int = Int.MAX_VALUE) {
     val shape = RoundedCornerShape(50)
     Surface(
         onClick = onClick,
@@ -764,6 +771,8 @@ internal fun VodChip(label: String, selected: Boolean, onClick: () -> Unit, modi
             text = label,
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
         )
     }

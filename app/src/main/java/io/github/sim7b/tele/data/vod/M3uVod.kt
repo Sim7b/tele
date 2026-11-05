@@ -14,9 +14,19 @@ import kotlinx.coroutines.withContext
  */
 object M3uVod {
 
-    suspend fun loadCatalog(config: SourceConfig): List<VodEntry> = withContext(Dispatchers.IO) {
-        toEntries(config.id, M3uClient.download(config, vod = true).entries)
+    /** Movies and series of the playlist groups of [selection] (the whole playlist is read either way). */
+    suspend fun loadCatalog(config: SourceConfig, selection: VodSelection = VodSelection.ALL): List<VodEntry> = withContext(Dispatchers.IO) {
+        toEntries(config.id, M3uClient.download(config, vod = true).entries).filter { selection.includes(categoryOf(it)) }
     }
+
+    /** Playlist groups holding movies or series, to choose what to load. */
+    suspend fun categoriesOf(config: SourceConfig): List<VodCategory> = withContext(Dispatchers.IO) {
+        toEntries(config.id, M3uClient.download(config, vod = true).entries).mapTo(LinkedHashSet()) { categoryOf(it) }.toList()
+    }
+
+    /** Category of an entry: its playlist group, for movies or for series. */
+    internal fun categoryOf(entry: VodEntry): VodCategory =
+        VodCategory(entry.kind, entry.category.orEmpty(), entry.category.orEmpty())
 
     internal fun toEntries(sourceId: String, entries: List<M3uEntry>): List<VodEntry> = entries.map { entry ->
         val parsed = VodNames.parse(entry.name)

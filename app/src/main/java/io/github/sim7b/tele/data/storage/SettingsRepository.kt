@@ -12,9 +12,11 @@ import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.PreviewDelay
+import io.github.sim7b.tele.data.vod.VodCategories
 import io.github.sim7b.tele.data.vod.VodDisplay
 import io.github.sim7b.tele.data.vod.VodEntry
 import io.github.sim7b.tele.data.vod.VodIndex
+import io.github.sim7b.tele.data.vod.VodSelection
 import io.github.sim7b.tele.data.model.QualityPreference
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.StreamSource
@@ -162,6 +164,10 @@ class SettingsRepository(context: Context) {
     val tmdbKey: StateFlow<String> = _tmdbKey.asStateFlow()
     private val _vodDisplay = MutableStateFlow(VodDisplay())
     val vodDisplay: StateFlow<VodDisplay> = _vodDisplay.asStateFlow()
+
+    // Categories of movies and series loaded, by source (none yet: chosen at the first opening)
+    private val _vodSelections = MutableStateFlow<Map<String, VodSelection>>(emptyMap())
+    val vodSelections: StateFlow<Map<String, VodSelection>> = _vodSelections.asStateFlow()
     // OpenSubtitles API key (subtitles searched on request) and the languages searched, in order
     private val _openSubtitlesKey = MutableStateFlow("")
     val openSubtitlesKey: StateFlow<String> = _openSubtitlesKey.asStateFlow()
@@ -219,6 +225,7 @@ class SettingsRepository(context: Context) {
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
         _vodEnabled.value = prefs.getBoolean(KEY_VOD_ENABLED, false)
+        _vodSelections.value = VodCategories.fromJson(prefs.getString(KEY_VOD_SELECTIONS, null))
         _vodDisplay.value = prefs.getString(KEY_VOD_DISPLAY, null)?.let { saved ->
             try {
                 VodDisplay.fromJson(JSONObject(saved))
@@ -243,7 +250,8 @@ class SettingsRepository(context: Context) {
             }
         }.orEmpty()
         prefs.getString(KEY_SUBTITLE_LANGUAGES, null)?.let { saved ->
-            _subtitleLanguages.value = languageList(saved).ifEmpty { defaultSubtitleLanguages() }
+            // Saved empty: every language (the TV language and English only before any choice)
+            _subtitleLanguages.value = languageList(saved)
         }
         // Previous versions: preview on (after 2 s) or off
         _previewDelay.value = PreviewDelay.fromName(prefs.getString(KEY_PREVIEW_DELAY, null))
@@ -377,6 +385,13 @@ class SettingsRepository(context: Context) {
         _previewDelay.value = delay
     }
 
+    /** Categories of movies and series to load from source [configId]. */
+    fun setVodSelection(configId: String, selection: VodSelection) {
+        val updated = _vodSelections.value + (configId to selection)
+        prefs.edit().putString(KEY_VOD_SELECTIONS, VodCategories.toJson(updated)).apply()
+        _vodSelections.value = updated
+    }
+
     fun setVodDisplay(display: VodDisplay) {
         prefs.edit().putString(KEY_VOD_DISPLAY, display.toJson().toString()).apply()
         _vodDisplay.value = display
@@ -405,9 +420,9 @@ class SettingsRepository(context: Context) {
         _openSubtitlesKey.value = trimmed
     }
 
-    /** Languages searched on OpenSubtitles, in order of preference (ISO 639-1 codes; empty: the defaults). */
+    /** Languages searched on OpenSubtitles, in order of preference (ISO 639-1 codes; empty: every language). */
     fun setSubtitleLanguages(languages: List<String>) {
-        val kept = languageList(languages.joinToString(",")).ifEmpty { defaultSubtitleLanguages() }
+        val kept = languageList(languages.joinToString(","))
         prefs.edit().putString(KEY_SUBTITLE_LANGUAGES, kept.joinToString(",")).apply()
         _subtitleLanguages.value = kept
     }
@@ -472,6 +487,13 @@ class SettingsRepository(context: Context) {
         current.removeAt(fromIndex)
         current.add(target, channelId)
         persistFavorites(current)
+    }
+
+    /** Hides (or shows) several categories at once: a single write. */
+    fun setGroupsHidden(groups: Collection<String>, hidden: Boolean) {
+        val current = if (hidden) _hiddenGroups.value + groups else _hiddenGroups.value - groups.toSet()
+        prefs.edit().putStringSet(KEY_HIDDEN_GROUPS, current).apply()
+        _hiddenGroups.value = current
     }
 
     fun setGroupHidden(group: String, hidden: Boolean) {
@@ -543,6 +565,9 @@ class SettingsRepository(context: Context) {
         }
 
     /** Saves the movies and series of source [configId] (to call off the main thread). */
+    /** Forgets the movies and series catalog of [configId] (its categories changed; off the main thread). */
+    fun clearVodCatalog(configId: String) = vodCatalogCache(configId).clear()
+
     fun saveVodCatalog(configId: String, savedAt: Long, entries: List<VodEntry>) {
         try {
             vodCatalogCache(configId).save(configId, savedAt, entries)
@@ -719,7 +744,8 @@ class SettingsRepository(context: Context) {
         json.optJSONObject("vodDisplay")?.let { setVodDisplay(VodDisplay.fromJson(it)) }
         json.optStringOrNull("tmdbKey")?.let { setTmdbKey(it) }
         json.optStringOrNull("openSubtitlesKey")?.let { setOpenSubtitlesKey(it) }
-        json.optStringOrNull("subtitleLanguages")?.let { setSubtitleLanguages(it.split(',')) }
+        // Empty: every language, sent as such
+        if (json.has("subtitleLanguages")) setSubtitleLanguages(json.optString("subtitleLanguages").split(','))
         json.optJSONObject("selectedStreams")?.let { streams ->
             streams.keys().forEach { channelId ->
                 val stream = streams.optJSONObject(channelId) ?: return@forEach
@@ -738,6 +764,11 @@ class SettingsRepository(context: Context) {
      */
     private fun forgetSourceData(configId: String) {
         prefs.edit().remove(KEY_USER_NAME_PREFIX + configId).apply()
+        if (configId in _vodSelections.value) {
+            val kept = _vodSelections.value - configId
+            prefs.edit().putString(KEY_VOD_SELECTIONS, VodCategories.toJson(kept)).apply()
+            _vodSelections.value = kept
+        }
         val prefixes = listOf("xt-${configId.take(8)}-", "m3u-${configId.take(8)}-")
         fun ownedBySource(channelId: String) = prefixes.any { channelId.startsWith(it) }
 
@@ -772,6 +803,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_PREVIEW_DELAY = "home_preview_delay"
         private const val KEY_VOD_ENABLED = "vod_enabled"
         private const val KEY_VOD_DISPLAY = "vod_display"
+        private const val KEY_VOD_SELECTIONS = "vod_selections"
         private const val VOD_STATE_FILE = "vod_state.json"
         private const val VOD_INDEX_FILE = "vod_tmdb_index.jsonl"
         private const val KEY_TMDB_KEY = "vod_tmdb_key"

@@ -563,7 +563,9 @@
     <string name="settings_opensubtitles_dialog_title">Clé API OpenSubtitles</string>
     <string name="settings_opensubtitles_dialog_hint">Clé API (consumer)</string>
     <string name="settings_subtitle_languages_title">Langues des sous-titres</string>
-    <string name="settings_subtitle_languages_description">Cherchées sur OpenSubtitles, dans l\'ordre choisi</string>
+    <string name="settings_subtitle_languages_description">Cherchées sur OpenSubtitles, dans l\'ordre choisi ; aucune cochée : toutes les langues</string>
+    <string name="settings_select_all">Tout sélectionner</string>
+    <string name="settings_select_none">Tout désélectionner</string>
     <string name="api_key_step_create">1. Créer une clé %1$s</string>
     <string name="api_key_step_paste">2. La coller depuis le téléphone</string>
     <string name="api_key_same_network">Le téléphone doit être sur le même réseau que la TV.</string>
@@ -632,6 +634,30 @@
     <string name="vod_menu_mark_unwatched">Marquer comme non vu</string>
     <string name="vod_menu_remove_from">Retirer de « %1$s »</string>
     <string name="vod_menu_hint">Maintenez OK sur un titre pour plus d\'actions</string>
+    <!-- Choice of the movies and series to load -->
+    <string name="vod_categories_title">Choisir les films et séries à charger</string>
+    <string name="vod_categories_description">Seules les catégories cochées sont chargées : moins de titres, une bibliothèque plus rapide. Pays et langues cochent les catégories correspondantes, d\'après leur nom. Modifiable dans Paramètres → Films et séries.</string>
+    <string name="vod_categories_loading">Lecture des catégories…</string>
+    <string name="vod_categories_error">Impossible de lire les catégories de cette source</string>
+    <string name="vod_categories_retry">Réessayer</string>
+    <string name="vod_categories_cancel">Annuler</string>
+    <string name="vod_categories_skip">Ne rien charger de cette source</string>
+    <string name="vod_categories_countries">Pays</string>
+    <plurals name="vod_categories_load">
+        <item quantity="one">Charger %d catégorie</item>
+        <item quantity="many">Charger %d catégories</item>
+        <item quantity="other">Charger %d catégories</item>
+    </plurals>
+    <string name="settings_vod_categories_title">Contenu chargé</string>
+    <string name="settings_vod_categories_description">Catégories de films et séries chargées depuis chaque source</string>
+    <string name="settings_vod_categories_all">toutes les catégories</string>
+    <plurals name="settings_vod_categories_count">
+        <item quantity="one">%d catégorie</item>
+        <item quantity="many">%d catégories</item>
+        <item quantity="other">%d catégories</item>
+    </plurals>
+    <string name="settings_vod_categories_none">pas encore choisi</string>
+    <string name="settings_vod_categories_skipped">rien de chargé</string>
     <string name="settings_vod_rows_title">Rangées de l\'accueil</string>
     <string name="settings_vod_rows_description">Rangées affichées sur l\'accueil des films et séries (une rangée vide n\'est jamais affichée)</string>
     <string name="settings_vod_collections_row">Collections</string>

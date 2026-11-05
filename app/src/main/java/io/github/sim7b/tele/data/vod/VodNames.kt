@@ -19,9 +19,9 @@ data class ParsedVodName(
  */
 object VodNames {
 
-    // "FR | ", "|FR| ", "FR: ", "[FR] ", "FR - ", "VOD FR - " at the start of a name: uppercase codes only,
+    // "FR | ", "|FR| ", "FR: ", "[FR] ", "FR - ", "VOD FR - ", "BE-FR - " at the start of a name: uppercase codes only,
     // titles such as "It: Chapter Two" or "Ma vie - ..." keep their first word
-    private val PREFIX = Regex("""^\s*(?:\[[A-Z]{2,4}]|\|?\s*[A-Z]{2,3}(?:\s+[A-Z]{2,3})?\s*(?:\||:|\s[-–]))\s*""")
+    private val PREFIX = Regex("""^\s*(?:\[[A-Z]{2,4}]|\|?\s*[A-Z]{2,3}(?:[\s/-]+[A-Z]{2,3})?\s*(?:\||:|\s[-–]))\s*""")
     private val EPISODE = Regex("""(?i)\bS(\d{1,2})\s*[ ._-]?\s*E(\d{1,3})\b""")
     private val YEAR = Regex("""(?<![\d])(19[2-9]\d|20[0-4]\d)(?![\d])""")
     private val BRACKETS = Regex("""[(\[{]([^)\]}]*)[)\]}]""")
@@ -100,21 +100,38 @@ object VodNames {
     }
 
     /** Comparison key of a title: lowercase letters and digits, without accents nor articles' punctuation. */
-    fun key(title: String): String =
-        Normalizer.normalize(title, Normalizer.Form.NFD)
+    fun key(title: String): String {
+        // Most titles are plain ASCII: the same key without the (slow on the TV) Unicode normalization
+        if (title.all { it.code < 128 }) {
+            val key = StringBuilder(title.length)
+            for (c in title) {
+                when (c) {
+                    in 'a'..'z', in '0'..'9' -> key.append(c)
+                    in 'A'..'Z' -> key.append(c + ('a' - 'A'))
+                    '&' -> key.append("and")
+                }
+            }
+            return key.toString()
+        }
+        return Normalizer.normalize(title, Normalizer.Form.NFD)
             .replace(DIACRITICS, "")
             .lowercase(Locale.ROOT)
             .replace("&", " and ")
             .filter { it.isLetterOrDigit() }
+    }
 
     /**
      * Grouping key of a title: its TMDB id when known, else its title, and its year for a movie (remakes
      * share their title; episode files of a series seldom carry its year).
      */
-    fun groupKey(kind: VodKind, title: String, year: Int?, tmdbId: String?): String {
+    fun groupKey(kind: VodKind, title: String, year: Int?, tmdbId: String?): String =
+        groupKeyOf(kind, { key(title) }, year, tmdbId)
+
+    /** [groupKey] from the [key] of the title, computed only when needed (no TMDB id). */
+    inline fun groupKeyOf(kind: VodKind, titleKey: () -> String, year: Int?, tmdbId: String?): String {
         val prefix = if (kind == VodKind.MOVIE) "m" else "s"
         return tmdbId?.takeIf { it.isNotBlank() && it != "0" }?.let { "$prefix:tmdb:$it" }
-            ?: if (kind == VodKind.MOVIE) "$prefix:${key(title)}:${year ?: ""}" else "$prefix:${key(title)}:"
+            ?: if (kind == VodKind.MOVIE) "$prefix:${titleKey()}:${year ?: ""}" else "$prefix:${titleKey()}:"
     }
 
     /** Year at the start of a date ("2024-03-01", "2024"). */
