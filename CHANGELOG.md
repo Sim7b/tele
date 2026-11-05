@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.14](https://github.com/Sim7b/tele/compare/v0.3.13...v0.3.14) (2026-11-05)
+
+### Features
+
+* **vod:** choose the categories to load, faster library, select all buttons ([491b48c](https://github.com/Sim7b/tele/commit/491b48c635c4cc8233d56223c323d1d1499c4eb8))
+
 ## [0.3.13](https://github.com/Sim7b/tele/compare/v0.3.12...v0.3.13) (2026-11-01)
 
 ### Features
