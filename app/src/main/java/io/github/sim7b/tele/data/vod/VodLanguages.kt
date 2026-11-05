@@ -22,9 +22,6 @@ object VodLanguageGuess {
 
     private val TOKENS = Regex("""[^\p{L}\p{N}]+""")
     private val DIACRITICS = Regex("""\p{Mn}+""")
-    // Prefix of a name: up to three uppercase codes before "|", ":", "-" ("FR | ", "|EN| ", "VOD FR - "),
-    // separated by spaces (no nested repetition: uppercase titles must not make it backtrack)
-    private val NAME_PREFIX = Regex("""^\s*\|?\s*([A-Z]{2,4}(?:\s[A-Z]{2,4}){0,2})\s*(?:\||:|[-–]\s)""")
 
     // French versions: dubbed, or subtitled with the original audio
     private val FRENCH_AUDIO = setOf("VF", "VFF", "VFQ", "VFI", "VF2", "FRENCH", "TRUEFRENCH", "FRANCAIS", "QUEBEC")
@@ -58,14 +55,66 @@ object VodLanguageGuess {
      */
     class Estimator {
         private val groups = HashMap<String, Reading>()
+        // Name prefixes ("FR", "EN"), tags and their combinations take a few dozen values: read once each
+        private val prefixes = HashMap<String, Reading>()
+        private val tagReadings = HashMap<List<String>, Reading>()
+        private val combined = HashMap<Reading, VodLanguages>()
 
         fun estimate(name: String, tags: List<String>, group: String?): VodLanguages {
             val fromGroup = group?.let { groups.getOrPut(it) { read(it, codes = uppercaseWords(it)) } } ?: NOTHING
-            val prefix = NAME_PREFIX.find(name)?.groupValues?.get(1)
-            val fromName = if (prefix == null) NOTHING else read(prefix, codes = uppercaseWords(prefix))
-            val reading = fromGroup + fromName + fromTags(tags)
-            return if (reading == NOTHING) EMPTY else combine(reading)
+            val prefix = if (mayHavePrefix(name)) namePrefix(name) else null
+            val fromName = if (prefix == null) NOTHING else prefixes.getOrPut(prefix) { read(prefix, codes = uppercaseWords(prefix)) }
+            val fromTags = if (tags.isEmpty()) NOTHING else tagReadings.getOrPut(tags) { fromTags(tags) }
+            val reading = fromGroup + fromName + fromTags
+            return if (reading == NOTHING) EMPTY else combined.getOrPut(reading) { combine(reading) }
         }
+
+        /** A prefix starts with an uppercase letter or "|" (after spaces): most names are skipped without the regex. */
+        private fun mayHavePrefix(name: String): Boolean {
+            val first = name.firstOrNull { !it.isWhitespace() } ?: return false
+            return first == '|' || first in 'A'..'Z'
+        }
+    }
+
+    /**
+     * Prefix of a name: up to three uppercase codes of 2 to 4 letters, joined by a space, "-" or "/", before
+     * "|", ":" or "- " ("FR | ", "|EN| ", "VOD FR - ", "BE-FR - "); the longest one. Read by hand: a regex
+     * on every name of a library of tens of thousands costs seconds on a TV.
+     */
+    internal fun namePrefix(name: String): String? {
+        var i = 0
+        while (i < name.length && name[i].isWhitespace()) i++
+        if (i < name.length && name[i] == '|') {
+            i++
+            while (i < name.length && name[i].isWhitespace()) i++
+        }
+        val start = i
+        // Ends of the codes read, in order
+        val ends = IntArray(3)
+        var count = 0
+        var position = start
+        while (count < 3) {
+            var p = position
+            if (count > 0) {
+                if (p >= name.length || (name[p] != ' ' && name[p] != '-' && name[p] != '/')) break
+                p++
+            }
+            val wordStart = p
+            while (p < name.length && name[p] in 'A'..'Z' && p - wordStart < 5) p++
+            if (p - wordStart !in 2..4 || (p < name.length && name[p] in 'A'..'Z')) break
+            ends[count++] = p
+            position = p
+        }
+        for (k in count - 1 downTo 0) {
+            var p = ends[k]
+            while (p < name.length && name[p].isWhitespace()) p++
+            if (p >= name.length) continue
+            val c = name[p]
+            if (c == '|' || c == ':' || ((c == '-' || c == '–') && p + 1 < name.length && name[p + 1].isWhitespace())) {
+                return name.substring(start, ends[k])
+            }
+        }
+        return null
     }
 
     private val NOTHING = Reading()
@@ -88,7 +137,7 @@ object VodLanguageGuess {
         val subtitles: Set<String> = emptySet(),
         val multi: Boolean = false
     ) {
-        operator fun plus(other: Reading) = if (other == Reading()) this else if (this == Reading()) other else Reading(
+        operator fun plus(other: Reading) = if (other == NOTHING) this else if (this == NOTHING) other else Reading(
             explicitAudio + other.explicitAudio,
             countryAudio + other.countryAudio,
             subtitles + other.subtitles,

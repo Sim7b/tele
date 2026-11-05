@@ -1,5 +1,6 @@
 package io.github.sim7b.tele
 
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.os.Bundle
 import android.os.SystemClock
@@ -60,6 +61,7 @@ import io.github.sim7b.tele.ui.theme.TeleTheme
 import io.github.sim7b.tele.ui.vod.VodDetailScreen
 import io.github.sim7b.tele.ui.vod.VodHomeScreen
 import io.github.sim7b.tele.ui.vod.VodPlayRequest
+import io.github.sim7b.tele.ui.vod.VodCategoryPicker
 import io.github.sim7b.tele.ui.vod.VodPlayerScreen
 import io.github.sim7b.tele.ui.vod.nextPlayRequest
 import io.github.sim7b.tele.ui.vod.VodSearchScreen
@@ -104,12 +106,15 @@ sealed class CurrentScreen {
     object VodSearch : CurrentScreen()
     /** Sheet of a title; Back returns to [returnTo] (the library, or the search it was opened from). */
     data class VodDetail(val titleKey: String, val returnTo: CurrentScreen = Vod) : CurrentScreen()
+    /** Choice of the categories of movies and series loaded from a source (from the settings). */
+    data class VodCategories(val configId: String) : CurrentScreen()
     data class VodPlayer(val request: VodPlayRequest, val returnTo: CurrentScreen) : CurrentScreen()
 }
 
 private const val WELCOME_MIN_MS = 1_800L
 private const val WELCOME_MAX_MS = 15_000L
-private const val VOD_RELEASE_DELAY_MS = 5 * 60 * 1000L
+// After the live TV is loaded: the movies and series library is prepared without slowing the startup
+private const val VOD_PRELOAD_DELAY_MS = 15_000L
 // Replays of TV programs go through the movie player, with this prefix on their key
 private const val REPLAY_KEY_PREFIX = "replay:"
 private const val REMINDER_CHECK_MS = 15_000L
@@ -125,6 +130,8 @@ class MainActivity : ComponentActivity() {
     private val updateViewModel: UpdateViewModel by viewModels()
     // Phone / tablet: a player is shown (system bars hidden)
     private var playerShown = false
+    // A movies and series screen is displayed: its library must not be freed
+    private var vodShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -198,16 +205,18 @@ class MainActivity : ComponentActivity() {
                     setWatched = { title, watched -> vodStore { if (watched) markWatched(title.key, title.key) else clearProgress(title.key) } }
                 )
             }
-            // The movies and series library is freed after a while on the live TV screens
+            // The movies and series library is prepared in the background once the live TV is loaded, so that
+            // it opens at once; it stays in memory (freed only when the system lacks memory, see onTrimMemory)
+            LaunchedEffect(vodEnabled) {
+                if (!vodEnabled) return@LaunchedEffect
+                viewModel.initialSyncDone.first { it }
+                delay(VOD_PRELOAD_DELAY_MS)
+                viewModel.vod.open()
+            }
             val inVod = currentScreen.let {
                 it is CurrentScreen.Vod || it is CurrentScreen.VodSearch || it is CurrentScreen.VodDetail || it is CurrentScreen.VodPlayer
             }
-            LaunchedEffect(inVod) {
-                if (!inVod) {
-                    delay(VOD_RELEASE_DELAY_MS)
-                    viewModel.vod.release()
-                }
-            }
+            SideEffect { vodShown = inVod }
             // Back on the home screen: refresh the slots right away (leaving the player frees one)
             LaunchedEffect(currentScreen is CurrentScreen.Home) {
                 if (currentScreen is CurrentScreen.Home) viewModel.refreshStreamSlots()
@@ -470,6 +479,7 @@ class MainActivity : ComponentActivity() {
                                 onRefreshPlaylist = { viewModel.refresh() },
                                 onRefreshEpg = { viewModel.refresh() },
                                 onShowGuide = { showGuide = true },
+                                onChooseVodCategories = { config -> currentScreen = CurrentScreen.VodCategories(config.id) },
                                 installedVersion = updateViewModel.installedVersion,
                                 updatesSupported = updateViewModel.isSupported,
                                 updateState = updateState,
@@ -526,7 +536,17 @@ class MainActivity : ComponentActivity() {
                             val indexVersion by viewModel.vod.index.version.collectAsState()
                             val indexProgress by viewModel.vod.index.progress.collectAsState()
                             val tmdbKey by configRepository.tmdbKey.collectAsState()
-                            saveableStateHolder.SaveableStateProvider("vod") {
+                            // First opening of a source: its categories are chosen before anything is loaded
+                            val toChoose = vodLibrary.toChoose.firstOrNull()
+                            if (toChoose != null) {
+                                VodCategoryPicker(
+                                    source = toChoose,
+                                    current = null,
+                                    loadCategories = { viewModel.vod.categories(toChoose) },
+                                    onChoose = { selection -> viewModel.vod.choose(toChoose, selection) },
+                                    onBack = { currentScreen = CurrentScreen.Home }
+                                )
+                            } else saveableStateHolder.SaveableStateProvider("vod") {
                                 CompositionLocalProvider(LocalPosterWidth provides vodDisplay.posterSize.widthDp.dp) {
                                 VodHomeScreen(
                                     library = vodLibrary,
@@ -549,9 +569,30 @@ class MainActivity : ComponentActivity() {
                                     onBack = { currentScreen = CurrentScreen.Home },
                                     findPoster = { title -> viewModel.vod.posterFor(title) },
                                     hiddenRows = vodDisplay.hiddenRows,
-                                    actions = vodActions
+                                    actions = vodActions,
+                                    initialRows = viewModel.vod.lastRows,
+                                    matcherFor = { titles, ranked -> viewModel.vod.matcher(titles, ranked) },
+                                    onRows = { built -> viewModel.vod.lastRows = built }
                                 )
                                 }
+                            }
+                        }
+                        is CurrentScreen.VodCategories -> {
+                            val config = enabledConfigs.firstOrNull { it.id == screen.configId }
+                            val selections by configRepository.vodSelections.collectAsState()
+                            if (config == null) {
+                                LaunchedEffect(Unit) { currentScreen = CurrentScreen.Settings }
+                            } else {
+                                VodCategoryPicker(
+                                    source = config,
+                                    current = selections[config.id],
+                                    loadCategories = { viewModel.vod.categories(config) },
+                                    onChoose = { selection ->
+                                        viewModel.vod.choose(config, selection)
+                                        currentScreen = CurrentScreen.Settings
+                                    },
+                                    onBack = { currentScreen = CurrentScreen.Settings }
+                                )
                             }
                         }
                         is CurrentScreen.VodSearch -> {
@@ -756,6 +797,14 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         // App in the background (Home key, standby): no preview left playing on the home screen
         playerManager.stopPreview()
+    }
+
+    // The system lacks memory: the movies and series library (tens of MB) goes first, read again from the
+    // device at the next opening; never while it is on screen
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && !vodShown) viewModel.vod.release()
     }
 
     override fun onDestroy() {

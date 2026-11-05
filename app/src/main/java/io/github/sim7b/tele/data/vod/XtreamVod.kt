@@ -5,7 +5,10 @@ import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.remote.XtreamClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -15,7 +18,20 @@ import org.json.JSONObject
  */
 object XtreamVod {
 
-    suspend fun loadCatalog(config: SourceConfig, maxItems: Int = MAX_ITEMS): List<VodEntry> = withContext(Dispatchers.IO) {
+    /** Categories of movies and series of the account, to choose what to load. */
+    suspend fun categoriesOf(config: SourceConfig): List<VodCategory> = withContext(Dispatchers.IO) {
+        XtreamClient.authenticate(config).getOrThrow()
+        val (movies, series) = coroutineScope {
+            val movies = async { categories(config, "get_vod_categories") }
+            val series = async { categories(config, "get_series_categories") }
+            movies.await() to series.await()
+        }
+        movies.map { (id, name) -> VodCategory(VodKind.MOVIE, id, name) } +
+            series.map { (id, name) -> VodCategory(VodKind.SERIES, id, name) }
+    }
+
+    /** Movies and series of the categories of [selection]: the whole lists when all are chosen, else category by category. */
+    suspend fun loadCatalog(config: SourceConfig, selection: VodSelection = VodSelection.ALL, maxItems: Int = MAX_ITEMS): List<VodEntry> = withContext(Dispatchers.IO) {
         XtreamClient.authenticate(config).getOrThrow()
         // Categories first (a few hundred): each entry is built once, with its category
         val (movieNames, seriesNames) = coroutineScope {
@@ -24,14 +40,40 @@ object XtreamVod {
             movies.await() to series.await()
         }
         val entries = ArrayList<VodEntry>()
-        XtreamClient.forEachObject(XtreamClient.apiUrl(config, "get_vod_streams"), config) { item ->
-            if (entries.size < maxItems) movie(config, item, movieNames)?.let(entries::add)
-        }
-        XtreamClient.forEachObject(XtreamClient.apiUrl(config, "get_series"), config) { item ->
-            if (entries.size < maxItems) series(config, item, seriesNames)?.let(entries::add)
+        if (selection.all) {
+            XtreamClient.forEachObject(XtreamClient.apiUrl(config, "get_vod_streams"), config) { item ->
+                if (entries.size < maxItems) movie(config, item, movieNames)?.let(entries::add)
+            }
+            XtreamClient.forEachObject(XtreamClient.apiUrl(config, "get_series"), config) { item ->
+                if (entries.size < maxItems) series(config, item, seriesNames)?.let(entries::add)
+            }
+        } else {
+            val gate = Semaphore(CATEGORY_PARALLEL)
+            val seen = HashSet<String>()
+            fun add(entry: VodEntry?) {
+                if (entry == null) return
+                synchronized(entries) {
+                    // A title listed in several chosen categories: once
+                    if (entries.size < maxItems && seen.add("${entry.kind}:${entry.providerId}")) entries.add(entry)
+                }
+            }
+            coroutineScope {
+                val movies = movieNames.keys.filter { VodCategory(VodKind.MOVIE, it, "").key in selection.keys }.map { id ->
+                    async { gate.withPermit { forEachInCategory(config, "get_vod_streams", id) { add(movie(config, it, movieNames)) } } }
+                }
+                val series = seriesNames.keys.filter { VodCategory(VodKind.SERIES, it, "").key in selection.keys }.map { id ->
+                    async { gate.withPermit { forEachInCategory(config, "get_series", id) { add(series(config, it, seriesNames)) } } }
+                }
+                (movies + series).awaitAll()
+            }
         }
         entries.trimToSize()
         entries
+    }
+
+    private suspend fun forEachInCategory(config: SourceConfig, action: String, categoryId: String, each: (JSONObject) -> Unit) {
+        val url = XtreamClient.apiUrl(config, action).newBuilder().addQueryParameter("category_id", categoryId).build()
+        XtreamClient.forEachObject(url, config, each)
     }
 
     private suspend fun categories(config: SourceConfig, action: String): Map<String, String> {
@@ -194,6 +236,8 @@ object XtreamVod {
     fun episodeKey(season: Int, number: Int) = "S${season}E$number"
 
     private const val MAX_ITEMS = 300_000
+    // Chosen categories loaded a few at a time
+    private const val CATEGORY_PARALLEL = 4
     private const val MAX_CAST = 12
 }
 

@@ -556,7 +556,9 @@
     <string name="settings_opensubtitles_dialog_title">OpenSubtitles API key</string>
     <string name="settings_opensubtitles_dialog_hint">API key (consumer)</string>
     <string name="settings_subtitle_languages_title">Subtitle languages</string>
-    <string name="settings_subtitle_languages_description">Searched on OpenSubtitles, in the order chosen</string>
+    <string name="settings_subtitle_languages_description">Searched on OpenSubtitles, in the order chosen; none checked: every language</string>
+    <string name="settings_select_all">Select all</string>
+    <string name="settings_select_none">Deselect all</string>
     <string name="api_key_step_create">1. Create a %1$s key</string>
     <string name="api_key_step_paste">2. Paste it from your phone</string>
     <string name="api_key_same_network">The phone must be on the same network as the TV.</string>
@@ -623,6 +625,28 @@
     <string name="vod_menu_mark_unwatched">Mark as unwatched</string>
     <string name="vod_menu_remove_from">Remove from “%1$s”</string>
     <string name="vod_menu_hint">Hold OK on a title for more actions</string>
+    <!-- Choice of the movies and series to load -->
+    <string name="vod_categories_title">Choose the movies and series to load</string>
+    <string name="vod_categories_description">Only the categories checked are loaded: fewer titles, a faster library. Countries and languages check the matching categories, read from their names. You can change this in Settings → Movies and series.</string>
+    <string name="vod_categories_loading">Reading the categories…</string>
+    <string name="vod_categories_error">The categories of this source could not be read</string>
+    <string name="vod_categories_retry">Retry</string>
+    <string name="vod_categories_cancel">Cancel</string>
+    <string name="vod_categories_skip">Load nothing from this source</string>
+    <string name="vod_categories_countries">Countries</string>
+    <plurals name="vod_categories_load">
+        <item quantity="one">Load %d category</item>
+        <item quantity="other">Load %d categories</item>
+    </plurals>
+    <string name="settings_vod_categories_title">Content loaded</string>
+    <string name="settings_vod_categories_description">Categories of movies and series loaded from each source</string>
+    <string name="settings_vod_categories_all">all categories</string>
+    <plurals name="settings_vod_categories_count">
+        <item quantity="one">%d category</item>
+        <item quantity="other">%d categories</item>
+    </plurals>
+    <string name="settings_vod_categories_none">not chosen yet</string>
+    <string name="settings_vod_categories_skipped">nothing loaded</string>
     <string name="settings_vod_rows_title">Rows of the home</string>
     <string name="settings_vod_rows_description">Rows shown on the movies and series home (empty rows are never shown)</string>
     <string name="settings_vod_collections_row">Collections</string>

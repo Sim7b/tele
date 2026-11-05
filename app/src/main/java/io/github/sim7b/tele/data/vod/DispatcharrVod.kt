@@ -12,11 +12,14 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.time.OffsetDateTime
 
 /**
@@ -86,8 +89,8 @@ object DispatcharrVod {
      * Group of the movies and series whose group tells a language ("FR | VOSTFR", "ENGLISH MOVIES"):
      * the categories are listed, then the titles of each of those, by "type:id".
      */
-    private suspend fun groups(client: DispatcharrClient): Map<String, String> = coroutineScope {
-        val startedAt = SystemClock.elapsedRealtime()
+    /** Categories of movies and series of the server ("type", "name"), in the order of the server. */
+    private suspend fun listCategories(client: DispatcharrClient): Set<Pair<String, String>> {
         val categories = LinkedHashSet<Pair<String, String>>()
         var page = 1
         while (page <= MAX_CATEGORY_PAGES) {
@@ -103,6 +106,81 @@ object DispatcharrVod {
             if (!fetched || added == 0 || count < CATEGORY_PAGE_SIZE) break
             page++
         }
+        return categories
+    }
+
+    /** Categories of movies and series of the server, to choose what to load. */
+    suspend fun categoriesOf(client: DispatcharrClient): List<VodCategory> =
+        listCategories(client).mapNotNull { (type, name) ->
+            val kind = when (type) {
+                "movie" -> VodKind.MOVIE
+                "series" -> VodKind.SERIES
+                else -> return@mapNotNull null
+            }
+            VodCategory(kind, "$name|$type", name)
+        }
+
+    /**
+     * Movies and series of the chosen categories only, a few categories at a time, each with its category
+     * as group: no second pass for the groups. [onProgress] receives what is already there after each one.
+     */
+    suspend fun loadCategories(
+        config: SourceConfig,
+        client: DispatcharrClient,
+        selection: VodSelection,
+        maxItems: Int = MAX_ITEMS,
+        onProgress: suspend (List<VodEntry>) -> Unit = {}
+    ): List<VodEntry> = coroutineScope {
+        val chosen = categoriesOf(client).filter { selection.includes(it) }
+        val entries = ArrayList<VodEntry>()
+        val seen = HashSet<String>()
+        val progressLock = Mutex()
+        // Last list given to [onProgress]: returned as is when complete, so that it is not built again
+        var lastSnapshot: List<VodEntry>? = null
+        // Largest page served so far: the page size the server really uses
+        val largestPage = AtomicInteger(0)
+        val pages = AtomicInteger(0)
+        val startedAt = SystemClock.elapsedRealtime()
+        val gate = Semaphore(LOAD_PARALLEL)
+        chosen.map { category ->
+            async {
+                gate.withPermit {
+                    val list = if (category.kind == VodKind.MOVIE) "movies" else "series"
+                    val filter = URLEncoder.encode(category.id, "UTF-8")
+                    var page = 1
+                    while (page <= MAX_ITEMS / LOAD_PAGE_SIZE) {
+                        var count = 0
+                        val fetched = client.forEachVodObject("$list/?category=$filter&page_size=$LOAD_PAGE_SIZE&page=$page") { item ->
+                            count++
+                            val entry = entry(config, client, category.kind, item)?.copy(category = category.name) ?: return@forEachVodObject
+                            synchronized(entries) {
+                                // A title listed in several chosen categories: once, with the first one
+                                if (entries.size < maxItems && seen.add(groupKey(entry))) entries.add(entry)
+                            }
+                        }
+                        // The server may serve smaller pages than asked: only a page fuller than none of the
+                        // pages seen yet can be followed by another one (a last page is the only partial one)
+                        pages.incrementAndGet()
+                        val fullest = largestPage.updateAndGet { maxOf(it, count) }
+                        if (!fetched || count == 0 || count < fullest) break
+                        page++
+                    }
+                }
+                // One at a time: the library is built again from it
+                progressLock.withLock {
+                    val snapshot = synchronized(entries) { ArrayList(entries) }
+                    lastSnapshot = snapshot
+                    onProgress(snapshot)
+                }
+            }
+        }.awaitAll()
+        Log.i(TAG, "${chosen.size} categories in ${pages.get()} pages of up to ${largestPage.get()} in ${SystemClock.elapsedRealtime() - startedAt} ms")
+        lastSnapshot?.takeIf { it.size == entries.size } ?: synchronized(entries) { ArrayList(entries) }
+    }
+
+    private suspend fun groups(client: DispatcharrClient): Map<String, String> = coroutineScope {
+        val startedAt = SystemClock.elapsedRealtime()
+        val categories = listCategories(client)
         val telling = categories.filter { (type, name) ->
             (type == "movie" || type == "series") && !VodLanguageGuess.estimate("", emptyList(), name).isEmpty
         }
@@ -257,5 +335,8 @@ object DispatcharrVod {
     private const val MAX_CATEGORY_PAGES = 20
     private const val CATEGORY_PARALLEL = 4
     private const val GROUP_PAGE_SIZE = 100
+    // Loading the chosen categories: big pages (the server serves 500), a few categories at a time
+    private const val LOAD_PAGE_SIZE = 500
+    private const val LOAD_PARALLEL = 6
     private const val PROGRESS_INTERVAL_MS = 4_000L
 }

@@ -8,16 +8,23 @@ package io.github.sim7b.tele.data.vod
 object VodLibrary {
 
     fun build(entries: List<VodEntry>): List<VodTitle> {
+        // Normalized titles, computed once (the costliest part of the grouping), shared by identical titles
+        val titleKeys = HashMap<String, String>()
+        fun titleKey(entry: VodEntry) = titleKeys.getOrPut(entry.title) { VodNames.key(entry.title) }
+
         // Title and year -> TMDB group key, from the entries that know their TMDB id
         val tmdbByTitle = HashMap<String, String>()
         entries.forEach { entry ->
             val tmdb = entry.tmdbId?.takeIf { it.isNotBlank() && it != "0" } ?: return@forEach
-            tmdbByTitle.putIfAbsent(VodNames.groupKey(entry.kind, entry.title, entry.year, null), VodNames.groupKey(entry.kind, entry.title, entry.year, tmdb))
+            tmdbByTitle.putIfAbsent(
+                VodNames.groupKeyOf(entry.kind, { titleKey(entry) }, entry.year, null),
+                VodNames.groupKeyOf(entry.kind, { titleKey(entry) }, entry.year, tmdb)
+            )
         }
 
         val groups = LinkedHashMap<String, MutableList<VodEntry>>()
         entries.forEach { entry ->
-            val own = VodNames.groupKey(entry.kind, entry.title, entry.year, entry.tmdbId)
+            val own = VodNames.groupKeyOf(entry.kind, { titleKey(entry) }, entry.year, entry.tmdbId)
             val key = if (entry.tmdbId.isNullOrBlank() || entry.tmdbId == "0") {
                 tmdbByTitle[own] ?: own
             } else {
@@ -30,14 +37,14 @@ object VodLibrary {
         groups.forEach { (key, group) ->
             val first = group.first()
             if (first.kind == VodKind.MOVIE && group.any { it.year != null }) {
-                byTitle.getOrPut(VodNames.key(first.title)) { ArrayList(1) }.add(key)
+                byTitle.getOrPut(titleKey(first)) { ArrayList(1) }.add(key)
             }
         }
         groups.keys.toList().forEach { key ->
             val group = groups[key] ?: return@forEach
             val first = group.first()
             if (first.kind != VodKind.MOVIE || group.any { it.year != null }) return@forEach
-            val target = byTitle[VodNames.key(first.title)]?.singleOrNull() ?: return@forEach
+            val target = byTitle[titleKey(first)]?.singleOrNull() ?: return@forEach
             groups.remove(key)
             groups[target]?.addAll(group)
         }

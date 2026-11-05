@@ -144,6 +144,8 @@ fun SettingsScreen(
     onRefreshPlaylist: () -> Unit = {},
     onRefreshEpg: () -> Unit = {},
     onShowGuide: () -> Unit = {},
+    // Choice of the categories of movies and series loaded from a source
+    onChooseVodCategories: (SourceConfig) -> Unit = {},
     installedVersion: String = "",
     updatesSupported: Boolean = false,
     updateState: UpdateState = UpdateState.Idle,
@@ -163,6 +165,7 @@ fun SettingsScreen(
     val vodEnabled by repository.vodEnabled.collectAsState()
     val tmdbKey by repository.tmdbKey.collectAsState()
     val vodDisplay by repository.vodDisplay.collectAsState()
+    val vodSelections by repository.vodSelections.collectAsState()
     var editingKey by remember { mutableStateOf<ApiKeyService?>(null) }
     val openSubtitlesKey by repository.openSubtitlesKey.collectAsState()
     val subtitleLanguages by repository.subtitleLanguages.collectAsState()
@@ -449,6 +452,10 @@ fun SettingsScreen(
                                                 }
                                                 Spacer(modifier = Modifier.height(14.dp))
                                             }
+                                            SelectAllButtons(
+                                                onSelectAll = { repository.setGroupsHidden(categories.map { it.first }, hidden = false) },
+                                                onSelectNone = { repository.setGroupsHidden(categories.map { it.first }, hidden = true) }
+                                            )
                                             OptionGrid(categories, columns = 3) { (group, count), cellModifier ->
                                                 CategoryToggle(
                                                     label = groupLabel(group),
@@ -590,6 +597,31 @@ fun SettingsScreen(
                                         }
                                     }
                                 }
+                                // Categories loaded from each source (chosen at the first opening)
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_vod_categories_title),
+                                        description = stringResource(R.string.settings_vod_categories_description)
+                                    ) {
+                                        @OptIn(ExperimentalLayoutApi::class)
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            enabledConfigs.forEach { config ->
+                                                val selection = vodSelections[config.id]
+                                                val state = when {
+                                                    selection == null -> stringResource(R.string.settings_vod_categories_none)
+                                                    selection.all -> stringResource(R.string.settings_vod_categories_all)
+                                                    selection.keys.isEmpty() -> stringResource(R.string.settings_vod_categories_skipped)
+                                                    else -> pluralStringResource(R.plurals.settings_vod_categories_count, selection.keys.size, selection.keys.size)
+                                                }
+                                                ActionButton(
+                                                    label = "${config.name} · $state",
+                                                    icon = Icons.Filled.Edit,
+                                                    onClick = { onChooseVodCategories(config) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 item {
                                     SettingsSection(
                                         title = stringResource(R.string.settings_tmdb_title),
@@ -655,6 +687,11 @@ fun SettingsScreen(
                                         val offered = remember(subtitleLanguages) {
                                             (subtitleLanguages + listOf(java.util.Locale.getDefault().language) + DEFAULT_LANGUAGES).filter { it.length == 2 }.distinct()
                                         }
+                                        // None: every language
+                                        SelectAllButtons(
+                                            onSelectAll = { repository.setSubtitleLanguages(subtitleLanguages + offered.filter { it !in subtitleLanguages }) },
+                                            onSelectNone = { repository.setSubtitleLanguages(emptyList()) }
+                                        )
                                         // Toggled in place: the order of the choice is the order of the search
                                         OptionGrid(offered, columns = 4) { language, cellModifier ->
                                             val index = subtitleLanguages.indexOf(language)
@@ -677,6 +714,10 @@ fun SettingsScreen(
                                         title = stringResource(R.string.settings_vod_rows_title),
                                         description = stringResource(R.string.settings_vod_rows_description)
                                     ) {
+                                        SelectAllButtons(
+                                            onSelectAll = { repository.setVodDisplay(vodDisplay.copy(hiddenRows = emptySet())) },
+                                            onSelectNone = { repository.setVodDisplay(vodDisplay.copy(hiddenRows = VodRow.Kind.entries.toSet())) }
+                                        )
                                         OptionGrid(VodRow.Kind.entries, columns = 3) { kind, cellModifier ->
                                             OptionButton(
                                                 label = vodRowLabel(kind),
@@ -747,7 +788,11 @@ fun SettingsScreen(
                                                 color = TextSecondary,
                                                 modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
                                             )
-                                            // Several countries: each one toggled, "any" clears them
+                                            // Several countries: each one toggled, "any" (or none) clears them
+                                            SelectAllButtons(
+                                                onSelectAll = { update(current.copy(countries = countries.filterNotNull().toSet())) },
+                                                onSelectNone = { update(current.copy(countries = emptySet())) }
+                                            )
                                             OptionGrid(countries, columns = 5) { country, cellModifier ->
                                                 OptionButton(
                                                     label = country?.let { countryName(it) } ?: stringResource(R.string.vod_filter_any),
@@ -1372,6 +1417,18 @@ private fun ActionButton(
             }
             Text(text = label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = contentColor)
         }
+    }
+}
+
+/** "Select all" and "Deselect all" above a multiple choice. */
+@Composable
+private fun SelectAllButtons(onSelectAll: () -> Unit, onSelectNone: () -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(bottom = 10.dp)
+    ) {
+        ActionButton(label = stringResource(R.string.settings_select_all), icon = Icons.Filled.Check, onClick = onSelectAll)
+        ActionButton(label = stringResource(R.string.settings_select_none), icon = Icons.Filled.Close, onClick = onSelectNone)
     }
 }
 
