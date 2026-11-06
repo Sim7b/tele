@@ -492,6 +492,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         is CurrentScreen.Search -> {
+                            val searchSchedules by viewModel.schedules.collectAsState()
+                            val searchLibrary by viewModel.vod.library.collectAsState()
                             // State kept (query, focused result) when coming back from the player
                             saveableStateHolder.SaveableStateProvider("search") {
                                 SearchScreen(
@@ -503,7 +505,14 @@ class MainActivity : ComponentActivity() {
                                     onBack = {
                                         saveableStateHolder.removeState("search")
                                         currentScreen = CurrentScreen.Home
-                                    }
+                                    },
+                                    schedules = searchSchedules,
+                                    actions = guideActions(returnTo = CurrentScreen.Search(startWithVoice = false)),
+                                    vodTitles = if (vodEnabled) searchLibrary.titles else emptyList(),
+                                    onTitleSelected = { title ->
+                                        currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Search(startWithVoice = false))
+                                    },
+                                    findPoster = { title -> viewModel.vod.posterFor(title) }
                                 )
                             }
                         }

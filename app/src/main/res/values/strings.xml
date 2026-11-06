@@ -283,6 +283,8 @@
     <string name="search_no_results">No results for “%1$s”</string>
     <string name="search_voice">Voice search</string>
     <string name="search_voice_prompt">Say a channel or a program</string>
+    <string name="search_programs">Programs</string>
+    <string name="search_vod">Movies and series</string>
     <plurals name="search_results">
         <item quantity="one">%1$d result</item>
         <item quantity="other">%1$d results</item>

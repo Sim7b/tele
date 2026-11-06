@@ -11,12 +11,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -44,7 +47,18 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.search.ChannelSearch
+import io.github.sim7b.tele.data.search.ProgramSearch
+import io.github.sim7b.tele.data.vod.VodBrowse
+import io.github.sim7b.tele.data.vod.VodTitle
+import io.github.sim7b.tele.ui.components.GuideActions
+import io.github.sim7b.tele.ui.components.MenuRow
+import io.github.sim7b.tele.ui.components.programBadges
+import io.github.sim7b.tele.ui.components.programHours
+import io.github.sim7b.tele.ui.components.programWhen
+import io.github.sim7b.tele.ui.components.rememberNow
+import io.github.sim7b.tele.ui.vod.PosterCard
 import io.github.sim7b.tele.ui.components.CompactChannelCard
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.RoundIconButton
@@ -59,6 +73,11 @@ import kotlinx.coroutines.withContext
 private const val SEARCH_COLUMNS = 4
 private const val COMPACT_SEARCH_COLUMNS = 2
 private const val SEARCH_DEBOUNCE_MS = 150L
+private const val PROGRAM_INDEX_MS = 5 * 60_000L
+private const val MAX_VOD_RESULTS = 40
+
+private fun programKey(hit: ProgramSearch.Hit) = "p:${hit.channel.id}:${hit.program.startMillis}"
+private fun titleKey(title: VodTitle) = "v:${title.key}"
 
 // Material "Mic" icon (material-icons-core does not include it, the extended set is very large)
 internal val MicIcon: ImageVector by lazy {
@@ -92,7 +111,14 @@ fun SearchScreen(
     startWithVoice: Boolean,
     onChannelSelected: (Channel) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Programs of the guide (OK: the channel when on air, a reminder when to come)
+    schedules: Map<String, List<GuideProgram>> = emptyMap(),
+    actions: GuideActions = GuideActions(),
+    // Movies and series of the library
+    vodTitles: List<VodTitle> = emptyList(),
+    onTitleSelected: (VodTitle) -> Unit = {},
+    findPoster: (suspend (VodTitle) -> String?)? = null
 ) {
     val context = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -135,10 +161,31 @@ fun SearchScreen(
         delay(SEARCH_DEBOUNCE_MS)
         value = withContext(Dispatchers.Default) { ChannelSearch.searchIndex(index, query) }
     }
+    // Programs of the guide on air or to come (indexed again every few minutes: the ones over go)
+    val now = rememberNow(PROGRAM_INDEX_MS)
+    val programIndex by produceState(initialValue = emptyList<ProgramSearch.Entry>(), channels, schedules, now) {
+        value = withContext(Dispatchers.Default) { ProgramSearch.index(channels, schedules, now) }
+    }
+    val programs by produceState(initialValue = emptyList<ProgramSearch.Hit>(), programIndex, query) {
+        delay(SEARCH_DEBOUNCE_MS)
+        value = withContext(Dispatchers.Default) { ProgramSearch.search(programIndex, query, System.currentTimeMillis()) }
+    }
+    // Movies and series of the library (when loaded)
+    val vodIndex by produceState(initialValue = emptyList<Pair<String, VodTitle>>(), vodTitles) {
+        value = withContext(Dispatchers.Default) { VodBrowse.index(vodTitles) }
+    }
+    val titles by produceState(initialValue = emptyList<VodTitle>(), vodIndex, query) {
+        delay(SEARCH_DEBOUNCE_MS)
+        value = withContext(Dispatchers.Default) { VodBrowse.search(vodIndex, query, emptyMap(), limit = MAX_VOD_RESULTS) }
+    }
     // Phone: two results per row
     val columns = if (LocalScreen.current.compact) COMPACT_SEARCH_COLUMNS else SEARCH_COLUMNS
     val rows = remember(results, columns) { results.chunked(columns) }
-    val focusTargetId = lastFocusedId?.takeIf { id -> results.any { it.id == id } } ?: results.firstOrNull()?.id
+    // Keys of every result, in the order shown: the focus goes back to the one opened, else the first
+    val resultKeys = remember(results, programs, titles) {
+        results.map { it.id } + programs.map { programKey(it) } + titles.map { titleKey(it) }
+    }
+    val focusTargetId = lastFocusedId?.takeIf { it in resultKeys } ?: resultKeys.firstOrNull()
 
     // Back from the player: focus returns to the channel that was opened, once the results are recomputed
     var restoreResultFocus by remember { mutableStateOf(lastFocusedId != null) }
@@ -196,17 +243,19 @@ fun SearchScreen(
 
         when {
             query.isBlank() -> SearchHint(stringResource(R.string.search_hint))
-            results.isEmpty() && index.isNotEmpty() -> SearchHint(stringResource(R.string.search_no_results, query.trim()))
+            resultKeys.isEmpty() && index.isNotEmpty() -> SearchHint(stringResource(R.string.search_no_results, query.trim()))
             else -> {
-                SectionLabel(
-                    text = pluralStringResource(R.plurals.search_results, results.size, results.size),
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
+                fun Modifier.result(key: String) = this
+                    .then(if (key == focusTargetId) Modifier.focusRequester(resultFocus) else Modifier)
+                    .onFocusChanged { if (it.isFocused) lastFocusedId = key }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    if (results.isNotEmpty()) item(key = "channels") {
+                        SectionLabel(text = pluralStringResource(R.plurals.search_results, results.size, results.size))
+                    }
                     items(rows, key = { row -> "row:${row.first().id}" }) { rowChannels ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -217,14 +266,53 @@ fun SearchScreen(
                                     CompactChannelCard(
                                         channel = channel,
                                         onClick = { onChannelSelected(channel) },
-                                        modifier = Modifier
-                                            .then(if (channel.id == focusTargetId) Modifier.focusRequester(resultFocus) else Modifier)
-                                            .onFocusChanged { if (it.isFocused) lastFocusedId = channel.id }
+                                        modifier = Modifier.result(channel.id)
                                     )
                                 }
                             }
                             repeat(columns - rowChannels.size) {
                                 Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    if (programs.isNotEmpty()) item(key = "programs") {
+                        SectionLabel(
+                            text = stringResource(R.string.search_programs),
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    items(programs, key = { programKey(it) }) { hit ->
+                        val program = hit.program
+                        val onAir = program.startMillis <= now
+                        val reminder = actions.hasReminder(hit.channel, program)
+                        val details = listOfNotNull(
+                            hit.channel.name,
+                            programHours(program, now, withDay = true),
+                            programWhen(program, now).takeIf { onAir }
+                        ) + programBadges(replay = false, reminder = reminder)
+                        MenuRow(
+                            label = program.title,
+                            subtitle = details.joinToString("  ·  "),
+                            icon = if (onAir) Icons.Filled.PlayArrow else Icons.Filled.Notifications,
+                            onClick = { if (onAir) onChannelSelected(hit.channel) else actions.toggleReminder(hit.channel, program) },
+                            modifier = Modifier.result(programKey(hit))
+                        )
+                    }
+                    if (titles.isNotEmpty()) item(key = "titles") {
+                        Column {
+                            SectionLabel(
+                                text = stringResource(R.string.search_vod),
+                                modifier = Modifier.padding(top = 8.dp, bottom = 10.dp)
+                            )
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                items(titles, key = { titleKey(it) }) { title ->
+                                    PosterCard(
+                                        title = title,
+                                        onClick = { onTitleSelected(title) },
+                                        findPoster = findPoster,
+                                        modifier = Modifier.result(titleKey(title))
+                                    )
+                                }
                             }
                         }
                     }
