@@ -141,6 +141,17 @@ object DispatcharrVod {
         val largestPage = AtomicInteger(0)
         val pages = AtomicInteger(0)
         val startedAt = SystemClock.elapsedRealtime()
+        // Time of the last list given to [onProgress]: given after a page at most every [PAGE_PROGRESS_MS],
+        // so that the first titles show after a few pages rather than after whole categories
+        var progressAt = 0L
+        suspend fun progress() = progressLock.withLock {
+            val now = SystemClock.elapsedRealtime()
+            if (now - progressAt < PAGE_PROGRESS_MS) return@withLock
+            val snapshot = synchronized(entries) { if (lastSnapshot?.size == entries.size) null else ArrayList(entries) } ?: return@withLock
+            progressAt = now
+            lastSnapshot = snapshot
+            onProgress(snapshot)
+        }
         val gate = Semaphore(LOAD_PARALLEL)
         chosen.map { category ->
             async {
@@ -163,19 +174,84 @@ object DispatcharrVod {
                         pages.incrementAndGet()
                         val fullest = largestPage.updateAndGet { maxOf(it, count) }
                         if (!fetched || count == 0 || count < fullest) break
+                        progress()
                         page++
                     }
                 }
-                // One at a time: the library is built again from it
-                progressLock.withLock {
-                    val snapshot = synchronized(entries) { ArrayList(entries) }
-                    lastSnapshot = snapshot
-                    onProgress(snapshot)
-                }
+                progress()
             }
         }.awaitAll()
         Log.i(TAG, "${chosen.size} categories in ${pages.get()} pages of up to ${largestPage.get()} in ${SystemClock.elapsedRealtime() - startedAt} ms")
         lastSnapshot?.takeIf { it.size == entries.size } ?: synchronized(entries) { ArrayList(entries) }
+    }
+
+    /**
+     * Movies and series added to the server since [since], for the categories of [selection]: each list
+     * is read newest first, until a title older than [since]. A daily update then costs a page per list
+     * instead of the whole catalog. Null when it cannot tell (no dates, a list unavailable, too many new
+     * titles): a full load is needed.
+     */
+    suspend fun loadAdded(
+        config: SourceConfig,
+        client: DispatcharrClient,
+        selection: VodSelection,
+        since: Long
+    ): List<VodEntry>? = coroutineScope {
+        val lists: List<Pair<VodKind, VodCategory?>> = if (selection.all) {
+            listOf(VodKind.MOVIE to null, VodKind.SERIES to null)
+        } else {
+            categoriesOf(client).filter { selection.includes(it) }.map { it.kind to it }
+        }
+        val entries = ArrayList<VodEntry>()
+        val seen = HashSet<String>()
+        val gate = Semaphore(LOAD_PARALLEL)
+        val startedAt = SystemClock.elapsedRealtime()
+        val complete = lists.map { (kind, category) ->
+            async {
+                gate.withPermit {
+                    val list = if (kind == VodKind.MOVIE) "movies" else "series"
+                    val filter = category?.let { "category=" + URLEncoder.encode(it.id, "UTF-8") + "&" }.orEmpty()
+                    var page = 1
+                    while (page <= MAX_ADDED_PAGES) {
+                        var count = 0
+                        var undated = false
+                        var older = false
+                        val fetched = client.forEachVodObject("$list/?${filter}ordering=-created_at,name&page_size=$ADDED_PAGE_SIZE&page=$page") { item ->
+                            count++
+                            if (older) return@forEachVodObject
+                            val entry = entry(config, client, kind, item) ?: return@forEachVodObject
+                            val addedAt = entry.addedAt
+                            when {
+                                addedAt == null -> undated = true
+                                addedAt < since -> older = true
+                                else -> synchronized(entries) {
+                                    if (seen.add(groupKey(entry))) entries.add(category?.let { entry.copy(category = it.name) } ?: entry)
+                                }
+                            }
+                        }
+                        // Past the last page (a list of exactly full pages) the server answers 404
+                        if (!fetched) return@withPermit page > 1
+                        if (undated) return@withPermit false
+                        if (older || count < ADDED_PAGE_SIZE) return@withPermit true
+                        page++
+                    }
+                    // More new titles than a few pages: a full load
+                    false
+                }
+            }
+        }.awaitAll().all { it }
+        Log.i(TAG, "${entries.size} titles added in ${lists.size} lists (complete: $complete) in ${SystemClock.elapsedRealtime() - startedAt} ms")
+        if (complete) entries else null
+    }
+
+    /** [cached] completed with the titles of [added] (which replace the same titles). */
+    fun merge(cached: List<VodEntry>, added: List<VodEntry>): List<VodEntry> {
+        if (added.isEmpty()) return cached
+        val keys = added.mapTo(HashSet()) { groupKey(it) }
+        return ArrayList<VodEntry>(cached.size + added.size).apply {
+            cached.filterTo(this) { groupKey(it) !in keys }
+            addAll(added)
+        }
     }
 
     private suspend fun groups(client: DispatcharrClient): Map<String, String> = coroutineScope {
@@ -339,4 +415,8 @@ object DispatcharrVod {
     private const val LOAD_PAGE_SIZE = 500
     private const val LOAD_PARALLEL = 6
     private const val PROGRESS_INTERVAL_MS = 4_000L
+    private const val PAGE_PROGRESS_MS = 1_000L
+    // Titles added since the last load: newest first, pages of the largest size the server serves
+    private const val ADDED_PAGE_SIZE = 100
+    private const val MAX_ADDED_PAGES = 10
 }

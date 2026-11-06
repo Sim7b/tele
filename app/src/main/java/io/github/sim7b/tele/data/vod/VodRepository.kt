@@ -36,7 +36,9 @@ data class VodLibraryState(
     val error: UiText? = null,
     val loaded: Boolean = false,
     // Sources whose categories are not chosen yet: nothing is loaded from them until then
-    val toChoose: List<SourceConfig> = emptyList()
+    val toChoose: List<SourceConfig> = emptyList(),
+    // Categories added to the sources since they were chosen, that look like the chosen ones (by source id)
+    val newCategories: Map<String, List<VodCategory>> = emptyMap()
 )
 
 /**
@@ -67,6 +69,7 @@ class VodRepository(
     private var loadedFor: List<SourceConfig> = emptyList()
     private var loadedSelections: Map<String, VodSelection> = emptyMap()
     private var toChoose: List<SourceConfig> = emptyList()
+    private var newCategories: Map<String, List<VodCategory>> = emptyMap()
     // Duration of the last build: partial libraries of a first load are built again accordingly
     @Volatile
     private var lastBuildMs = 0L
@@ -84,7 +87,7 @@ class VodRepository(
     fun open() {
         val configs = settings.enabledConfigs.value
         val selections = settings.vodSelections.value
-        if (configs == loadedFor && selections == loadedSelections && (_library.value.loaded || loadJob?.isActive == true)) return
+        if (configs == loadedFor && selections.loaded() == loadedSelections.loaded() && (_library.value.loaded || loadJob?.isActive == true)) return
         load(configs, force = false)
     }
 
@@ -98,6 +101,7 @@ class VodRepository(
     /** Categories of [config] chosen: its catalog is loaded again with them only. */
     fun choose(config: SourceConfig, selection: VodSelection) {
         settings.setVodSelection(config.id, selection)
+        newCategories = newCategories - config.id
         // The catalog of the device was loaded for another choice
         scope.launch(Dispatchers.IO) { settings.clearVodCatalog(config.id) }
         catalogs.remove(config.id)
@@ -167,10 +171,58 @@ class VodRepository(
                     Log.i(TAG, "Library of ${catalogs.values.sumOf { it.size }} entries in ${SystemClock.elapsedRealtime() - startedAt} ms")
                     startTmdbWork()
                     prepareHome()
+                    checkNewCategories(chosen)
                 }
             }
         }
     }
+
+    /**
+     * Categories added to [sources] since they were chosen, that look like the chosen ones: suggested
+     * until chosen or dismissed. A choice made before the categories were recorded records them now.
+     */
+    private fun checkNewCategories(sources: List<SourceConfig>) {
+        scope.launch {
+            val found = HashMap<String, List<VodCategory>>()
+            sources.forEach { config ->
+                val selection = settings.vodSelections.value[config.id] ?: return@forEach
+                // Every category loaded, or M3U (its categories are read from the whole playlist)
+                if (selection.all || selection.keys.isEmpty() || config.type == SourceType.M3U) return@forEach
+                val categories = try {
+                    categories(config)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    return@forEach
+                }
+                if (selection.known.isEmpty()) {
+                    remember(config.id, selection.copy(known = categories.mapTo(LinkedHashSet()) { it.key }))
+                    return@forEach
+                }
+                val suggested = withContext(Dispatchers.Default) { VodCategories.suggestions(categories, selection) }
+                if (suggested.isNotEmpty()) found[config.id] = suggested
+            }
+            newCategories = found
+            _library.value = _library.value.copy(newCategories = found)
+        }
+    }
+
+    /** The new categories suggested for [configId] are not suggested again. */
+    fun dismissNewCategories(configId: String) {
+        val suggested = newCategories[configId] ?: return
+        val selection = settings.vodSelections.value[configId] ?: return
+        remember(configId, selection.copy(known = selection.known + suggested.map { it.key }))
+        newCategories = newCategories - configId
+        _library.value = _library.value.copy(newCategories = newCategories)
+    }
+
+    /** Saves [selection], which changes nothing to load (the categories known only). */
+    private fun remember(configId: String, selection: VodSelection) {
+        settings.setVodSelection(configId, selection)
+        loadedSelections = loadedSelections + (configId to selection)
+    }
+
+    // Selections as far as loading goes (the categories known do not change what is loaded)
+    private fun Map<String, VodSelection>.loaded() = mapValues { it.value.copy(known = emptySet()) }
 
     /** With a TMDB key: rankings (when stale) and the indexing of the titles not known yet. */
     private fun startTmdbWork() {
@@ -202,6 +254,20 @@ class VodRepository(
         val fresh = cached != null && System.currentTimeMillis() - cached.savedAt in 0..MAX_AGE_MS
         if (fresh && !force) return
         try {
+            // Dispatcharr, loaded fully less than a week ago: only the titles added since (a page per list);
+            // a full load now and then drops the titles removed from the server
+            val now = System.currentTimeMillis()
+            if (!force && cached != null && config.type == SourceType.DISPATCHARR && now - cached.fullAt in 0..FULL_LOAD_MAX_AGE_MS) {
+                val added = DispatcharrVod.loadAdded(config, dispatcharr(config), selection, cached.savedAt - ADDED_MARGIN_MS)
+                if (added != null) {
+                    val merged = DispatcharrVod.merge(cached.entries, added)
+                    catalogs[config.id] = merged
+                    errors.remove(config.id)
+                    if (added.isNotEmpty()) publish(loading = true)
+                    withContext(Dispatchers.IO) { settings.saveVodCatalog(config.id, now, merged, fullAt = cached.fullAt) }
+                    return
+                }
+            }
             // Built again at most every few seconds: rebuilding tens of thousands of titles for every page
             // of a first load would cost far more than the load itself
             var lastPartialPublish = 0L
@@ -218,7 +284,7 @@ class VodRepository(
                 }
             }
             val entries = when (config.type) {
-                SourceType.XTREAM -> XtreamVod.loadCatalog(config, selection)
+                SourceType.XTREAM -> XtreamVod.loadCatalog(config, selection) { progress(it) }
                 SourceType.M3U -> M3uVod.loadCatalog(config, selection)
                 SourceType.DISPATCHARR -> if (selection.all) {
                     DispatcharrVod.loadCatalog(config, dispatcharr(config)) { progress(it) }.let { DispatcharrVod.keepGroups(it, cached?.entries) }
@@ -283,7 +349,8 @@ class VodRepository(
             loading = loading,
             error = order.firstNotNullOfOrNull { errors[it] },
             loaded = !loading || titles.isNotEmpty(),
-            toChoose = toChoose
+            toChoose = toChoose,
+            newCategories = newCategories
         )
     }
 
@@ -416,6 +483,9 @@ class VodRepository(
         // A catalog loaded again from the server once a day (a few minutes of server work), or on request
         private const val MAX_AGE_MS = 24 * 60 * 60 * 1000L
         private const val PARTIAL_PUBLISH_MS = 3_000L
+        private const val FULL_LOAD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L
+        // Titles added a little before the last load are asked again: the clocks of the TV and the server differ
+        private const val ADDED_MARGIN_MS = 60 * 60 * 1000L
         private const val DETAILS_TIMEOUT_MS = 15_000L
         private const val MAX_DETAILS = 40
         private const val MAX_POSTERS = 3_000

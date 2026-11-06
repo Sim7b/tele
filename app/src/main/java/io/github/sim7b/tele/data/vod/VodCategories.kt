@@ -14,10 +14,11 @@ data class VodCategory(val kind: VodKind, val id: String, val name: String) {
 data class VodCategoryHint(val country: String?, val languages: VodLanguages)
 
 /**
- * Categories of a source to load: [all] (new ones included), or the ones of [keys] only.
- * Without a selection, nothing is loaded: the user chooses first.
+ * Categories of a source to load: [all] (new ones included), or the ones of [keys] only. [known]: the
+ * categories the source had when they were chosen (or the suggestions dismissed), so that the ones added
+ * since can be suggested. Without a selection, nothing is loaded: the user chooses first.
  */
-data class VodSelection(val all: Boolean, val keys: Set<String> = emptySet()) {
+data class VodSelection(val all: Boolean, val keys: Set<String> = emptySet(), val known: Set<String> = emptySet()) {
     fun includes(category: VodCategory): Boolean = all || category.key in keys
 
     companion object {
@@ -94,11 +95,32 @@ object VodCategories {
             (subtitles.isEmpty() || hint?.languages?.subtitles.orEmpty().any { it in subtitles })
     }.mapTo(LinkedHashSet()) { it.key }
 
+    /**
+     * Categories of [categories] added since [selection] was made that look like the chosen ones: same
+     * country or same audio language (any new one when the chosen ones tell neither). None when every
+     * category is loaded, or when the categories known then were not recorded.
+     */
+    fun suggestions(categories: List<VodCategory>, selection: VodSelection): List<VodCategory> {
+        if (selection.all || selection.known.isEmpty() || selection.keys.isEmpty()) return emptyList()
+        val added = categories.filter { it.key !in selection.known && it.key !in selection.keys }
+        if (added.isEmpty()) return emptyList()
+        val estimator = VodLanguageGuess.Estimator()
+        val chosen = categories.filter { it.key in selection.keys }.map { hint(it.name, estimator) }
+        val countries = chosen.mapNotNullTo(HashSet()) { it.country }
+        val audio = chosen.flatMapTo(HashSet()) { it.languages.audio }
+        if (countries.isEmpty() && audio.isEmpty()) return added
+        return added.filter { category ->
+            val hint = hint(category.name, estimator)
+            hint.country in countries || hint.languages.audio.any { it in audio }
+        }
+    }
+
     fun toJson(selections: Map<String, VodSelection>): String = JSONObject().apply {
         selections.forEach { (sourceId, selection) ->
             put(sourceId, JSONObject().apply {
                 put("all", selection.all)
                 put("keys", JSONArray(selection.keys.toList()))
+                if (selection.known.isNotEmpty()) put("known", JSONArray(selection.known.toList()))
             })
         }
     }.toString()
@@ -110,8 +132,10 @@ object VodCategories {
             val root = JSONObject(json)
             root.keys().asSequence().mapNotNull { sourceId ->
                 val item = root.optJSONObject(sourceId) ?: return@mapNotNull null
-                val keys = item.optJSONArray("keys")?.let { array -> (0 until array.length()).mapNotNull { array.optString(it).takeIf { key -> key.isNotEmpty() } } }.orEmpty()
-                sourceId to VodSelection(item.optBoolean("all", false), keys.toSet())
+                fun keys(name: String) = item.optJSONArray(name)?.let { array ->
+                    (0 until array.length()).mapNotNullTo(LinkedHashSet()) { array.optString(it).takeIf { key -> key.isNotEmpty() } }
+                }.orEmpty()
+                sourceId to VodSelection(item.optBoolean("all", false), keys("keys"), keys("known"))
             }.toMap()
         } catch (e: Exception) {
             emptyMap()

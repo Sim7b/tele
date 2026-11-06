@@ -638,6 +638,13 @@
         <item quantity="one">Load %d category</item>
         <item quantity="other">Load %d categories</item>
     </plurals>
+    <string name="vod_categories_new">New</string>
+    <plurals name="vod_new_categories">
+        <item quantity="one">%1$d new category in %2$s</item>
+        <item quantity="other">%1$d new categories in %2$s</item>
+    </plurals>
+    <string name="vod_new_categories_choose">See</string>
+    <string name="vod_new_categories_dismiss">Ignore</string>
     <string name="settings_vod_categories_title">Content loaded</string>
     <string name="settings_vod_categories_description">Categories of movies and series loaded from each source</string>
     <string name="settings_vod_categories_all">all categories</string>

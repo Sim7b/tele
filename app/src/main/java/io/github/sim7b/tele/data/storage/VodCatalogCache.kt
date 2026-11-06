@@ -9,8 +9,11 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
 
-/** Catalog of a source as last loaded, with the time it was loaded. */
-class CachedVodCatalog(val savedAt: Long, val entries: List<VodEntry>)
+/**
+ * Catalog of a source as last loaded, with the time it was loaded ([savedAt], completed with the titles
+ * added since) and the time of its last full load ([fullAt]: titles removed from the source go then).
+ */
+class CachedVodCatalog(val savedAt: Long, val entries: List<VodEntry>, val fullAt: Long = savedAt)
 
 /**
  * Movies and series of a source, for a library shown at once and reloaded in the background. A compact
@@ -19,13 +22,14 @@ class CachedVodCatalog(val savedAt: Long, val entries: List<VodEntry>)
  */
 class VodCatalogCache(private val file: File, private val secrets: SecretBox) {
 
-    fun save(configId: String, savedAt: Long, entries: List<VodEntry>) {
+    fun save(configId: String, savedAt: Long, entries: List<VodEntry>, fullAt: Long = savedAt) {
         val temp = File(file.parentFile, file.name + ".tmp")
         try {
             DataOutputStream(BufferedOutputStream(secrets.encryptingStream(temp.outputStream()), BUFFER)).use { out ->
                 out.writeInt(FORMAT)
                 out.writeUTF(configId)
                 out.writeLong(savedAt)
+                out.writeLong(fullAt)
                 out.writeInt(entries.size)
                 entries.forEach { write(out, it) }
             }
@@ -46,14 +50,17 @@ class VodCatalogCache(private val file: File, private val secrets: SecretBox) {
             return null
         }
         DataInputStream(BufferedInputStream(secrets.decryptingStream(input, magic), BUFFER)).use { data ->
-            if (data.readInt() != FORMAT) return null
+            val format = data.readInt()
+            // Format 2 had no time of full load: the time it was saved
+            if (format != FORMAT && format != FORMAT_WITHOUT_FULL_LOAD) return null
             if (data.readUTF() != configId) return null
             val savedAt = data.readLong()
+            val fullAt = if (format == FORMAT) data.readLong() else savedAt
             val count = data.readInt()
             if (count !in 0..MAX_ENTRIES) return null
             val entries = ArrayList<VodEntry>(count)
             repeat(count) { read(data)?.let(entries::add) }
-            return CachedVodCatalog(savedAt, entries)
+            return CachedVodCatalog(savedAt, entries, fullAt)
         }
     }
 
@@ -136,7 +143,8 @@ class VodCatalogCache(private val file: File, private val secrets: SecretBox) {
     }
 
     private companion object {
-        const val FORMAT = 2
+        const val FORMAT = 3
+        private const val FORMAT_WITHOUT_FULL_LOAD = 2
         const val BUFFER = 64 * 1024
         const val MAX_ENTRIES = 1_000_000
         const val MAX_TEXT = 16_000

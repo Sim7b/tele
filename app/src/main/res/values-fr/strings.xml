@@ -648,6 +648,14 @@
         <item quantity="many">Charger %d catégories</item>
         <item quantity="other">Charger %d catégories</item>
     </plurals>
+    <string name="vod_categories_new">Nouveau</string>
+    <plurals name="vod_new_categories">
+        <item quantity="one">%1$d nouvelle catégorie dans %2$s</item>
+        <item quantity="many">%1$d nouvelles catégories dans %2$s</item>
+        <item quantity="other">%1$d nouvelles catégories dans %2$s</item>
+    </plurals>
+    <string name="vod_new_categories_choose">Voir</string>
+    <string name="vod_new_categories_dismiss">Ignorer</string>
     <string name="settings_vod_categories_title">Contenu chargé</string>
     <string name="settings_vod_categories_description">Catégories de films et séries chargées depuis chaque source</string>
     <string name="settings_vod_categories_all">toutes les catégories</string>

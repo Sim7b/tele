@@ -7,7 +7,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -30,8 +32,16 @@ object XtreamVod {
             series.map { (id, name) -> VodCategory(VodKind.SERIES, id, name) }
     }
 
-    /** Movies and series of the categories of [selection]: the whole lists when all are chosen, else category by category. */
-    suspend fun loadCatalog(config: SourceConfig, selection: VodSelection = VodSelection.ALL, maxItems: Int = MAX_ITEMS): List<VodEntry> = withContext(Dispatchers.IO) {
+    /**
+     * Movies and series of the categories of [selection]: the whole lists when all are chosen, else
+     * category by category, [onProgress] receiving what is already there after each one.
+     */
+    suspend fun loadCatalog(
+        config: SourceConfig,
+        selection: VodSelection = VodSelection.ALL,
+        maxItems: Int = MAX_ITEMS,
+        onProgress: suspend (List<VodEntry>) -> Unit = {}
+    ): List<VodEntry> = withContext(Dispatchers.IO) {
         XtreamClient.authenticate(config).getOrThrow()
         // Categories first (a few hundred): each entry is built once, with its category
         val (movieNames, seriesNames) = coroutineScope {
@@ -57,12 +67,27 @@ object XtreamVod {
                     if (entries.size < maxItems && seen.add("${entry.kind}:${entry.providerId}")) entries.add(entry)
                 }
             }
+            // One list at a time, at most every [PROGRESS_MS]: the library is built again from it
+            val progressLock = Mutex()
+            var progressAt = 0L
+            suspend fun progress() = progressLock.withLock {
+                val now = System.currentTimeMillis()
+                if (now - progressAt < PROGRESS_MS) return@withLock
+                progressAt = now
+                onProgress(synchronized(entries) { ArrayList(entries) })
+            }
             coroutineScope {
                 val movies = movieNames.keys.filter { VodCategory(VodKind.MOVIE, it, "").key in selection.keys }.map { id ->
-                    async { gate.withPermit { forEachInCategory(config, "get_vod_streams", id) { add(movie(config, it, movieNames)) } } }
+                    async {
+                        gate.withPermit { forEachInCategory(config, "get_vod_streams", id) { add(movie(config, it, movieNames)) } }
+                        progress()
+                    }
                 }
                 val series = seriesNames.keys.filter { VodCategory(VodKind.SERIES, it, "").key in selection.keys }.map { id ->
-                    async { gate.withPermit { forEachInCategory(config, "get_series", id) { add(series(config, it, seriesNames)) } } }
+                    async {
+                        gate.withPermit { forEachInCategory(config, "get_series", id) { add(series(config, it, seriesNames)) } }
+                        progress()
+                    }
                 }
                 (movies + series).awaitAll()
             }
@@ -238,6 +263,7 @@ object XtreamVod {
     private const val MAX_ITEMS = 300_000
     // Chosen categories loaded a few at a time
     private const val CATEGORY_PARALLEL = 4
+    private const val PROGRESS_MS = 1_000L
     private const val MAX_CAST = 12
 }
 

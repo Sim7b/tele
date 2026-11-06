@@ -56,6 +56,8 @@ private const val MAX_CHOICES = 16
 fun VodCategoryPicker(
     source: SourceConfig,
     current: VodSelection?,
+    // New categories suggested: checked, first and marked
+    suggested: Set<String> = emptySet(),
     loadCategories: suspend () -> List<VodCategory>,
     onChoose: (VodSelection) -> Unit,
     onBack: () -> Unit,
@@ -94,7 +96,7 @@ fun VodCategoryPicker(
         val all = loaded.categories.map { it.key }
         checked = when {
             current?.all == true -> all.toSet()
-            current != null -> current.keys.intersect(all.toSet())
+            current != null -> (current.keys + suggested).intersect(all.toSet())
             else -> {
                 val language = Locale.getDefault().language
                 if (language in loaded.audio) {
@@ -105,7 +107,7 @@ fun VodCategoryPicker(
                 }
             }
         }
-        order = loaded.categories.sortedBy { it.key !in checked }
+        order = loaded.categories.sortedWith(compareBy({ it.key !in suggested }, { it.key !in checked }))
     }
     fun applyFilters() {
         val loaded = data ?: return
@@ -173,14 +175,15 @@ fun VodCategoryPicker(
                     selected = true,
                     onClick = {
                         if (checked.isNotEmpty()) {
-                            onChoose(if (checked.size == all) VodSelection.ALL else VodSelection(all = false, keys = checked))
+                            val known = loaded.categories.mapTo(LinkedHashSet()) { it.key }
+                            onChoose(if (checked.size == all) VodSelection.ALL else VodSelection(all = false, keys = checked, known = known))
                         }
                     },
                     modifier = Modifier.focusRequester(loadFocus)
                 )
                 VodChip(label = stringResource(R.string.settings_select_all), selected = false, onClick = { checked = loaded.categories.mapTo(LinkedHashSet()) { it.key } })
                 VodChip(label = stringResource(R.string.settings_select_none), selected = false, onClick = { checked = emptySet() })
-                VodChip(label = stringResource(R.string.vod_categories_skip), selected = false, onClick = { onChoose(VodSelection.NONE) })
+                VodChip(label = stringResource(R.string.vod_categories_skip), selected = false, onClick = { onChoose(VodSelection.NONE.copy(known = loaded.categories.mapTo(LinkedHashSet()) { it.key })) })
                 if (current != null) VodChip(label = stringResource(R.string.vod_categories_cancel), selected = false, onClick = onBack)
             }
         }
@@ -222,11 +225,13 @@ fun VodCategoryPicker(
                 )
             }
             items(ofKind.chunked(COLUMNS)) { row ->
+                val newLabel = stringResource(R.string.vod_categories_new)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     row.forEach { category ->
                         val isChecked = category.key in checked
                         VodChip(
-                            label = (if (isChecked) "✓  " else "") + category.name.ifBlank { stringResource(R.string.group_other) },
+                            label = (if (isChecked) "✓  " else "") + (if (category.key in suggested) newLabel + " · " else "") +
+                                category.name.ifBlank { stringResource(R.string.group_other) },
                             selected = isChecked,
                             onClick = { checked = if (isChecked) checked - category.key else checked + category.key },
                             modifier = Modifier.weight(1f),

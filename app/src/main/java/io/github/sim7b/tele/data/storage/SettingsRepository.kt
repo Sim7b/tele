@@ -564,13 +564,13 @@ class SettingsRepository(context: Context) {
             null
         }
 
-    /** Saves the movies and series of source [configId] (to call off the main thread). */
     /** Forgets the movies and series catalog of [configId] (its categories changed; off the main thread). */
     fun clearVodCatalog(configId: String) = vodCatalogCache(configId).clear()
 
-    fun saveVodCatalog(configId: String, savedAt: Long, entries: List<VodEntry>) {
+    /** Saves the movies and series of source [configId] (to call off the main thread). */
+    fun saveVodCatalog(configId: String, savedAt: Long, entries: List<VodEntry>, fullAt: Long = savedAt) {
         try {
-            vodCatalogCache(configId).save(configId, savedAt, entries)
+            vodCatalogCache(configId).save(configId, savedAt, entries, fullAt)
         } catch (e: Exception) {
             Log.w(TAG, "Unable to save the movies and series catalog: ${e.javaClass.simpleName}")
         }

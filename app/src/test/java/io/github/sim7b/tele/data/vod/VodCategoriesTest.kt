@@ -55,4 +55,23 @@ class VodCategoriesTest {
         assertFalse(chosen.includes(VodCategory(VodKind.SERIES, "1", "FR")))
         assertTrue(VodSelection.ALL.includes(VodCategory(VodKind.SERIES, "9", "Any")))
     }
+
+    @Test
+    fun `new categories like the chosen ones are suggested`() {
+        val categories = listOf(
+            VodCategory(VodKind.MOVIE, "1", "FR | FILMS"),
+            VodCategory(VodKind.MOVIE, "2", "EN | MOVIES"),
+            VodCategory(VodKind.MOVIE, "3", "FR | NOUVEAUTES"),
+            VodCategory(VodKind.MOVIE, "4", "DE | FILME")
+        )
+        val chosen = VodSelection(all = false, keys = setOf("MOVIE:1"), known = setOf("MOVIE:1", "MOVIE:2"))
+        assertEquals(listOf("3"), VodCategories.suggestions(categories, chosen).map { it.id })
+        // Nothing recorded, everything loaded or nothing chosen: no suggestion
+        assertTrue(VodCategories.suggestions(categories, chosen.copy(known = emptySet())).isEmpty())
+        assertTrue(VodCategories.suggestions(categories, VodSelection.ALL).isEmpty())
+        assertTrue(VodCategories.suggestions(categories, VodSelection.NONE.copy(known = setOf("MOVIE:1"))).isEmpty())
+
+        val saved = VodCategories.toJson(mapOf("a" to chosen))
+        assertEquals(chosen, VodCategories.fromJson(saved)["a"])
+    }
 }

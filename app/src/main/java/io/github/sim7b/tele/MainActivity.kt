@@ -107,7 +107,7 @@ sealed class CurrentScreen {
     /** Sheet of a title; Back returns to [returnTo] (the library, or the search it was opened from). */
     data class VodDetail(val titleKey: String, val returnTo: CurrentScreen = Vod) : CurrentScreen()
     /** Choice of the categories of movies and series loaded from a source (from the settings). */
-    data class VodCategories(val configId: String) : CurrentScreen()
+    data class VodCategories(val configId: String, val returnTo: CurrentScreen = Settings) : CurrentScreen()
     data class VodPlayer(val request: VodPlayRequest, val returnTo: CurrentScreen) : CurrentScreen()
 }
 
@@ -572,7 +572,16 @@ class MainActivity : ComponentActivity() {
                                     actions = vodActions,
                                     initialRows = viewModel.vod.lastRows,
                                     matcherFor = { titles, ranked -> viewModel.vod.matcher(titles, ranked) },
-                                    onRows = { built -> viewModel.vod.lastRows = built }
+                                    onRows = { built -> viewModel.vod.lastRows = built },
+                                    newCategories = vodLibrary.newCategories.entries.firstOrNull()?.let { (id, added) ->
+                                        enabledConfigs.firstOrNull { it.id == id }?.let { it.name to added.size }
+                                    },
+                                    onChooseNewCategories = {
+                                        vodLibrary.newCategories.keys.firstOrNull()?.let { currentScreen = CurrentScreen.VodCategories(it, returnTo = CurrentScreen.Vod) }
+                                    },
+                                    onDismissNewCategories = {
+                                        vodLibrary.newCategories.keys.firstOrNull()?.let { viewModel.vod.dismissNewCategories(it) }
+                                    }
                                 )
                                 }
                             }
@@ -580,18 +589,20 @@ class MainActivity : ComponentActivity() {
                         is CurrentScreen.VodCategories -> {
                             val config = enabledConfigs.firstOrNull { it.id == screen.configId }
                             val selections by configRepository.vodSelections.collectAsState()
+                            val newCategories by viewModel.vod.library.collectAsState()
                             if (config == null) {
-                                LaunchedEffect(Unit) { currentScreen = CurrentScreen.Settings }
+                                LaunchedEffect(Unit) { currentScreen = screen.returnTo }
                             } else {
                                 VodCategoryPicker(
                                     source = config,
                                     current = selections[config.id],
+                                    suggested = newCategories.newCategories[config.id].orEmpty().mapTo(HashSet()) { it.key },
                                     loadCategories = { viewModel.vod.categories(config) },
                                     onChoose = { selection ->
                                         viewModel.vod.choose(config, selection)
-                                        currentScreen = CurrentScreen.Settings
+                                        currentScreen = screen.returnTo
                                     },
-                                    onBack = { currentScreen = CurrentScreen.Settings }
+                                    onBack = { currentScreen = screen.returnTo }
                                 )
                             }
                         }
