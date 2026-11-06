@@ -68,6 +68,9 @@ import io.github.sim7b.tele.ui.vod.VodSearchScreen
 import io.github.sim7b.tele.ui.vod.VodTitleActions
 import io.github.sim7b.tele.ui.vod.VodSubtitles
 import io.github.sim7b.tele.ui.vod.LocalPosterWidth
+import io.github.sim7b.tele.ui.vod.LocalRatingOf
+import io.github.sim7b.tele.data.vod.VodBrowse
+import io.github.sim7b.tele.data.vod.VodTitle
 import androidx.compose.ui.unit.dp
 import io.github.sim7b.tele.data.storage.VodStore
 import io.github.sim7b.tele.data.storage.VodTrackPrefs
@@ -78,7 +81,10 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import io.github.sim7b.tele.update.UpdateState
+import io.github.sim7b.tele.update.release
 import io.github.sim7b.tele.update.UpdateViewModel
+import io.github.sim7b.tele.data.update.UpdateFiles
+import io.github.sim7b.tele.ui.components.UpdateReadyDialog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -93,7 +99,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** Displayed screen (simple navigation, without a navigation library). */
 sealed class CurrentScreen {
     object Home : CurrentScreen()
-    object Settings : CurrentScreen()
+    /** Settings; [vod]: opened from the movies and series, on their section (Back returns to [returnTo]). */
+    data class Settings(val vod: Boolean = false, val returnTo: CurrentScreen = Home) : CurrentScreen()
     data class Search(val startWithVoice: Boolean) : CurrentScreen()
 
     /** Guide grid of the channels, opened from the home screen. */
@@ -108,7 +115,7 @@ sealed class CurrentScreen {
     /** Sheet of a title; Back returns to [returnTo] (the library, or the search it was opened from). */
     data class VodDetail(val titleKey: String, val returnTo: CurrentScreen = Vod) : CurrentScreen()
     /** Choice of the categories of movies and series loaded from a source (from the settings). */
-    data class VodCategories(val configId: String, val returnTo: CurrentScreen = Settings) : CurrentScreen()
+    data class VodCategories(val configId: String, val returnTo: CurrentScreen = Settings()) : CurrentScreen()
     data class VodPlayer(val request: VodPlayRequest, val returnTo: CurrentScreen) : CurrentScreen()
 }
 
@@ -407,6 +414,8 @@ class MainActivity : ComponentActivity() {
                 accentColor = accentColor,
                 uiDensity = uiDensity
             ) {
+                // Rating on the posters: TMDB vote when known, else the provider one
+                CompositionLocalProvider(LocalRatingOf provides remember { { title: VodTitle -> VodBrowse.rating(title, viewModel.vod.index.facts(title.key)) } }) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -441,7 +450,7 @@ class MainActivity : ComponentActivity() {
                                     isLoading = isLoadingChannels,
                                     loadError = loadError,
                                     streamSlots = streamSlots,
-                                    updateAvailable = updateState is UpdateState.Available,
+                                    updateAvailable = updateState.release != null && updateState !is UpdateState.Failed,
                                     onChannelSelected = { channel ->
                                         currentScreen = CurrentScreen.Player(channel)
                                     },
@@ -469,7 +478,7 @@ class MainActivity : ComponentActivity() {
                                     isCategoryRenamed = { category -> viewModel.isCategoryRenamed(category) },
                                     onRenameCategory = { category, name -> viewModel.renameCategory(category, name) },
                                     onOpenSettings = {
-                                        currentScreen = CurrentScreen.Settings
+                                        currentScreen = CurrentScreen.Settings()
                                     },
                                     onOpenSearch = { voice ->
                                         currentScreen = CurrentScreen.Search(startWithVoice = voice)
@@ -496,14 +505,16 @@ class MainActivity : ComponentActivity() {
                                 onRefreshPlaylist = { viewModel.refresh() },
                                 onRefreshEpg = { viewModel.refresh() },
                                 onShowGuide = { showGuide = true },
-                                onChooseVodCategories = { config -> currentScreen = CurrentScreen.VodCategories(config.id) },
+                                onChooseVodCategories = { config -> currentScreen = CurrentScreen.VodCategories(config.id, returnTo = screen) },
+                                startOnVod = screen.vod,
                                 installedVersion = updateViewModel.installedVersion,
                                 updatesSupported = updateViewModel.isSupported,
                                 updateState = updateState,
                                 onCheckUpdate = { updateViewModel.check() },
                                 onInstallUpdate = { release -> updateViewModel.install(release) },
                                 onBack = {
-                                    currentScreen = CurrentScreen.Home
+                                    // Movies and series turned off there: the live TV home
+                                    currentScreen = if (screen.returnTo == CurrentScreen.Vod && !vodEnabled) CurrentScreen.Home else screen.returnTo
                                 }
                             )
                         }
@@ -592,6 +603,7 @@ class MainActivity : ComponentActivity() {
                                     onRenameCollection = { id, name -> vodStore { renameCollection(id, name) } },
                                     onDeleteCollection = { id -> vodStore { deleteCollection(id) } },
                                     onRefresh = { viewModel.vod.refresh() },
+                                    onOpenSettings = { currentScreen = CurrentScreen.Settings(vod = true, returnTo = CurrentScreen.Vod) },
                                     onBack = { currentScreen = CurrentScreen.Home },
                                     findPoster = { title -> viewModel.vod.posterFor(title) },
                                     hiddenRows = vodDisplay.hiddenRows,
@@ -788,6 +800,28 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    // Newer version downloaded in the background: offered on the home screen (never over
+                    // playback, the welcome or the quick guide), once per start unless ignored for good
+                    val ignoredVersion by updateViewModel.ignoredVersion.collectAsState()
+                    var updatePromptClosed by rememberSaveable { mutableStateOf(false) }
+                    val readyRelease = (updateState as? UpdateState.Ready)?.release
+                    if (readyRelease != null && UpdateFiles.shouldPrompt(readyRelease.version, ignoredVersion) && !updatePromptClosed &&
+                        currentScreen == CurrentScreen.Home && !showWelcome && !showGuide
+                    ) {
+                        UpdateReadyDialog(
+                            release = readyRelease,
+                            onInstall = {
+                                updatePromptClosed = true
+                                updateViewModel.install(readyRelease)
+                            },
+                            onIgnore = {
+                                updatePromptClosed = true
+                                updateViewModel.ignore(readyRelease)
+                            },
+                            onDismiss = { updatePromptClosed = true }
+                        )
+                    }
+
                     if (showGuide) {
                         QuickGuide(onClose = {
                             showGuide = false
@@ -804,6 +838,7 @@ class MainActivity : ComponentActivity() {
                         WelcomeScreen(name = userName, modifier = Modifier.touchTap { showWelcome = false })
                     }
                 }
+            }
             }
         }
     }

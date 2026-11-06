@@ -12,6 +12,7 @@ import io.github.sim7b.tele.data.transfer.KeyEntryPage
 import io.github.sim7b.tele.data.transfer.ConfigTransfer
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.List
@@ -25,6 +26,7 @@ import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodRow
 import io.github.sim7b.tele.data.vod.VodSort
 import io.github.sim7b.tele.ui.vod.NameDialog
+import io.github.sim7b.tele.ui.vod.countriesLabel
 import io.github.sim7b.tele.ui.vod.countryName
 import io.github.sim7b.tele.ui.vod.languageName
 import io.github.sim7b.tele.ui.vod.sortLabel
@@ -118,6 +120,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.ui.platform.LocalUriHandler
 import io.github.sim7b.tele.ui.theme.*
 import io.github.sim7b.tele.update.UpdateState
+import io.github.sim7b.tele.update.release as offeredRelease
 import io.github.sim7b.tele.data.update.AppRelease
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -148,6 +151,8 @@ fun SettingsScreen(
     onShowGuide: () -> Unit = {},
     // Choice of the categories of movies and series loaded from a source
     onChooseVodCategories: (SourceConfig) -> Unit = {},
+    // Opened from the movies and series: on their section, on its first setting
+    startOnVod: Boolean = false,
     installedVersion: String = "",
     updatesSupported: Boolean = false,
     updateState: UpdateState = UpdateState.Idle,
@@ -179,7 +184,13 @@ fun SettingsScreen(
 
     // An available update opens the settings on its section
     var page by rememberSaveable {
-        mutableStateOf(if (updateState is UpdateState.Available) SettingsPage.SYSTEM else SettingsPage.SOURCES)
+        mutableStateOf(
+            when {
+                startOnVod -> SettingsPage.VOD
+                updateState is UpdateState.Available || updateState is UpdateState.Ready -> SettingsPage.SYSTEM
+                else -> SettingsPage.SOURCES
+            }
+        )
     }
     val pageFocus = remember { SettingsPage.entries.associateWith { FocusRequester() } }
     // After a source is deleted, focus returns to "Add a source" (not to the menu)
@@ -199,7 +210,7 @@ fun SettingsScreen(
 
     // Phone: the menu, then the section opened from it (Back returns to the menu)
     val compact = LocalScreen.current.compact
-    var pageOpen by rememberSaveable { mutableStateOf(false) }
+    var pageOpen by rememberSaveable { mutableStateOf(startOnVod) }
     val showMenu = !compact || !pageOpen
     val showPage = !compact || pageOpen
 
@@ -207,12 +218,51 @@ fun SettingsScreen(
     BackHandler {
         onBack()
     }
-    BackHandler(enabled = compact && pageOpen) {
+    // Opened from the movies and series: Back goes back to them
+    BackHandler(enabled = compact && pageOpen && !startOnVod) {
         pageOpen = false
     }
 
+
+    // Choices of the setting opened (a panel on the right side), and the row the focus comes back to
+    var panel by remember { mutableStateOf<SettingsPanel?>(null) }
+    val rowFocus = remember { HashMap<String, FocusRequester>() }
+    // First row of the open section: → from the menu lands on it (then on the row last focused there)
+    val contentStart = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        pageFocus.getValue(page).requestFocusWithRetry()
+        if (!startOnVod || !contentStart.requestFocusWithRetry()) pageFocus.getValue(page).requestFocusWithRetry()
+    }
+    fun focusOf(key: Any): FocusRequester = rowFocus.getOrPut(key.toString()) { FocusRequester() }
+    var lastRow by remember { mutableStateOf<String?>(null) }
+    fun open(next: SettingsPanel) {
+        lastRow = next.toString()
+        panel = next
+    }
+    val nothingOpen = panel == null && editingKey == null && renamingList == null && !showUnmatched
+    LaunchedEffect(nothingOpen) {
+        val row = lastRow ?: return@LaunchedEffect
+        if (!nothingOpen) return@LaunchedEffect
+        // The row may be gone (a list deleted): back to the menu
+        if (rowFocus[row]?.requestFocusWithRetry() != true) pageFocus.getValue(page).requestFocusWithRetry()
+    }
+
+    // Key of a service: entered at once when there is none, else changed or removed
+    @Composable
+    fun KeyRow(service: ApiKeyService, key: String) {
+        val keyPanel = SettingsPanel.KeyActions(service)
+        SettingRow(
+            label = stringResource(service.rowRes),
+            value = stringResource(if (key.isBlank()) R.string.settings_tmdb_none else R.string.settings_tmdb_saved),
+            onClick = {
+                if (key.isBlank()) {
+                    lastRow = keyPanel.toString()
+                    editingKey = service
+                } else {
+                    open(keyPanel)
+                }
+            },
+            modifier = Modifier.focusRequester(focusOf(keyPanel))
+        )
     }
 
     val resources = LocalResources.current
@@ -275,7 +325,7 @@ fun SettingsScreen(
                             SettingsNavItem(
                                 page = entry,
                                 selected = entry == page,
-                                badge = entry == SettingsPage.SYSTEM && updateState is UpdateState.Available,
+                                badge = entry == SettingsPage.SYSTEM && (updateState is UpdateState.Available || updateState is UpdateState.Ready),
                                 onFocused = { page = entry },
                                 onOpen = {
                                     page = entry
@@ -289,35 +339,33 @@ fun SettingsScreen(
 
                 if (!compact) Spacer(modifier = Modifier.width(24.dp))
 
-                // Content of the open section, from its top
+                // Content of the open section, from its top: one row per setting, OK opens its choices
                 key(page) {
                     if (showPage) LazyColumn(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxHeight(),
+                            .fillMaxHeight()
+                            .focusRestorer(contentStart),
                         contentPadding = PaddingValues(bottom = 32.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         when (page) {
                             SettingsPage.SOURCES -> {
                                 item {
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        SectionLabel(text = stringResource(R.string.settings_sources_title), modifier = Modifier.weight(1f))
-                                        ActionButton(
-                                            label = stringResource(R.string.settings_add_source),
-                                            icon = Icons.Filled.Add,
-                                            onClick = {
-                                                editingConfig = SourceConfig(
-                                                    id = UUID.randomUUID().toString(),
-                                                    name = "",
-                                                    serverUrl = "",
-                                                    apiKey = ""
-                                                )
-                                                isAddingNew = true
-                                            },
-                                            modifier = Modifier.focusRequester(addSourceFocus)
-                                        )
-                                    }
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_add_source),
+                                        icon = Icons.Filled.Add,
+                                        onClick = {
+                                            editingConfig = SourceConfig(
+                                                id = UUID.randomUUID().toString(),
+                                                name = "",
+                                                serverUrl = "",
+                                                apiKey = ""
+                                            )
+                                            isAddingNew = true
+                                        },
+                                        modifier = Modifier.focusRequester(addSourceFocus).focusRequester(contentStart)
+                                    )
                                 }
                                 items(configs, key = { it.id }) { config ->
                                     ServerConfigCard(
@@ -338,557 +386,267 @@ fun SettingsScreen(
                                     )
                                 }
                                 item {
-                                    SettingsSection(
+                                    SettingGroup(
                                         title = stringResource(R.string.settings_sync_title),
-                                        description = stringResource(R.string.settings_sync_description)
-                                    ) {
-                                        AdaptiveButtonRow(wrap = compact) {
-                                            ActionButton(
-                                                label = stringResource(R.string.settings_refresh_channels),
-                                                icon = Icons.Filled.Refresh,
-                                                onClick = {
-                                                    onRefreshPlaylist()
-                                                    syncMessage = resources.getString(R.string.settings_refresh_channels_started)
-                                                }
-                                            )
-                                            ActionButton(
-                                                label = stringResource(R.string.settings_refresh_guide),
-                                                icon = Icons.Filled.DateRange,
-                                                onClick = {
-                                                    onRefreshEpg()
-                                                    syncMessage = resources.getString(R.string.settings_refresh_guide_started)
-                                                }
-                                            )
+                                        caption = syncMessage ?: stringResource(R.string.settings_sync_description)
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_refresh_channels),
+                                        icon = Icons.Filled.Refresh,
+                                        chevron = false,
+                                        onClick = {
+                                            onRefreshPlaylist()
+                                            syncMessage = resources.getString(R.string.settings_refresh_channels_started)
                                         }
-                                        syncMessage?.let {
-                                            Text(text = it, fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_refresh_guide),
+                                        icon = Icons.Filled.DateRange,
+                                        chevron = false,
+                                        onClick = {
+                                            onRefreshEpg()
+                                            syncMessage = resources.getString(R.string.settings_refresh_guide_started)
                                         }
-                                    }
+                                    )
                                 }
                                 // Another TV: send / receive the whole configuration on the local network
                                 item {
-                                    SettingsSection(
+                                    SettingGroup(
                                         title = stringResource(R.string.settings_transfer_title),
-                                        description = stringResource(R.string.settings_transfer_description)
-                                    ) {
-                                        AdaptiveButtonRow(wrap = compact) {
-                                            ActionButton(
-                                                label = stringResource(R.string.settings_transfer_send),
-                                                icon = Icons.Filled.Share,
-                                                onClick = { showSendConfig = true }
-                                            )
-                                            ActionButton(
-                                                label = stringResource(R.string.settings_transfer_receive),
-                                                icon = Icons.Filled.Add,
-                                                onClick = { showReceiveConfig = true }
-                                            )
-                                        }
-                                    }
+                                        caption = stringResource(R.string.settings_transfer_description)
+                                    )
+                                }
+                                item {
+                                    SettingRow(label = stringResource(R.string.settings_transfer_send), icon = Icons.Filled.Share, onClick = { showSendConfig = true })
+                                }
+                                item {
+                                    SettingRow(label = stringResource(R.string.settings_transfer_receive), icon = Icons.Filled.Add, onClick = { showReceiveConfig = true })
                                 }
                             }
 
                             SettingsPage.CHANNELS -> {
                                 // Reference bouquet: channel names, numbers, categories, grouped versions
                                 item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_bouquet_title),
-                                        description = stringResource(R.string.settings_bouquet_description)
-                                    ) {
-                                        OptionGrid(BouquetPreference.entries, columns = 3) { preference, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(preference.labelRes),
-                                                selected = preference == currentBouquet,
-                                                onClick = { repository.setBouquet(preference) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                        Text(
-                                            text = stringResource(currentBouquet.descriptionRes),
-                                            fontSize = 11.sp,
-                                            color = TextSecondary,
-                                            modifier = Modifier.padding(top = 8.dp)
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_bouquet_title),
+                                        value = stringResource(currentBouquet.labelRes),
+                                        description = if (currentBouquet != BouquetPreference.NONE && unmatchedChannels.isEmpty()) {
+                                            stringResource(R.string.settings_unmatched_all_recognized)
+                                        } else {
+                                            null
+                                        },
+                                        onClick = { open(SettingsPanel.Bouquet) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.Bouquet)).focusRequester(contentStart)
+                                    )
+                                }
+                                if (currentBouquet != BouquetPreference.NONE && unmatchedChannels.isNotEmpty()) {
+                                    item {
+                                        SettingRow(
+                                            label = pluralStringResource(R.plurals.settings_unmatched_button, unmatchedChannels.size, unmatchedChannels.size),
+                                            icon = Icons.Filled.Info,
+                                            onClick = {
+                                                lastRow = UNMATCHED_ROW
+                                                showUnmatched = true
+                                            },
+                                            modifier = Modifier.focusRequester(focusOf(UNMATCHED_ROW))
                                         )
-                                        if (currentBouquet != BouquetPreference.NONE) {
-                                            Spacer(modifier = Modifier.height(10.dp))
-                                            if (unmatchedChannels.isEmpty()) {
-                                                Text(
-                                                    text = stringResource(R.string.settings_unmatched_all_recognized),
-                                                    fontSize = 11.sp,
-                                                    color = TextSecondary
-                                                )
-                                            } else {
-                                                ActionButton(
-                                                    label = pluralStringResource(
-                                                        R.plurals.settings_unmatched_button,
-                                                        unmatchedChannels.size,
-                                                        unmatchedChannels.size
-                                                    ),
-                                                    icon = Icons.Filled.Info,
-                                                    onClick = { showUnmatched = true }
-                                                )
-                                            }
-                                        }
                                     }
                                 }
-                                // Lists of channels made from the menu of a channel: renamed or deleted here
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_channel_lists_title),
-                                        description = stringResource(R.string.settings_channel_lists_description)
-                                    ) {
-                                        channelLists.forEach { list ->
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                modifier = Modifier.padding(bottom = 8.dp)
-                                            ) {
-                                                Text(
-                                                    text = list.name + "  ·  " + pluralStringResource(R.plurals.channel_count, list.channelIds.size, list.channelIds.size),
-                                                    fontSize = 14.sp,
-                                                    color = TextPrimary,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                ActionButton(label = stringResource(R.string.settings_channel_list_rename), icon = Icons.Filled.Edit, onClick = { renamingList = list })
-                                                ActionButton(
-                                                    label = stringResource(R.string.settings_channel_list_delete),
-                                                    icon = Icons.Filled.Delete,
-                                                    destructive = true,
-                                                    onClick = { repository.deleteChannelList(list.id) }
-                                                )
-                                            }
-                                        }
+                                // Same category name in several enabled sources: one category, or one per source
+                                if (enabledConfigs.size > 1) {
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_category_mode),
+                                            value = stringResource(categoryMode.labelRes),
+                                            onClick = { open(SettingsPanel.CategoryModes) },
+                                            modifier = Modifier.focusRequester(focusOf(SettingsPanel.CategoryModes))
+                                        )
                                     }
                                 }
-                                // Displayed categories
                                 if (categories.isNotEmpty()) {
                                     item {
-                                        SettingsSection(
-                                            title = stringResource(R.string.settings_categories_title),
-                                            description = stringResource(R.string.settings_categories_description)
-                                        ) {
-                                            // Same category name in several enabled sources: one category, or one per source
-                                            if (enabledConfigs.size > 1) {
-                                                Text(
-                                                    text = stringResource(R.string.settings_category_mode),
-                                                    fontSize = 12.sp,
-                                                    color = TextSecondary,
-                                                    modifier = Modifier.padding(bottom = 6.dp)
-                                                )
-                                                OptionGrid(CategoryMode.entries, columns = 2) { mode, cellModifier ->
-                                                    OptionButton(
-                                                        label = stringResource(mode.labelRes),
-                                                        description = stringResource(mode.descriptionRes),
-                                                        selected = mode == categoryMode,
-                                                        onClick = { repository.setCategoryMode(mode) },
-                                                        modifier = cellModifier
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.height(14.dp))
-                                            }
-                                            SelectAllButtons(
-                                                onSelectAll = { repository.setGroupsHidden(categories.map { it.first }, hidden = false) },
-                                                onSelectNone = { repository.setGroupsHidden(categories.map { it.first }, hidden = true) }
-                                            )
-                                            OptionGrid(categories, columns = 3) { (group, count), cellModifier ->
-                                                CategoryToggle(
-                                                    label = groupLabel(group),
-                                                    channelCount = count,
-                                                    visible = group !in hiddenGroups,
-                                                    onClick = { repository.setGroupHidden(group, group !in hiddenGroups) },
-                                                    modifier = cellModifier
-                                                )
-                                            }
-                                        }
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_categories_title),
+                                            value = "${categories.count { it.first !in hiddenGroups }} / ${categories.size}",
+                                            onClick = { open(SettingsPanel.Categories) },
+                                            modifier = Modifier.focusRequester(focusOf(SettingsPanel.Categories))
+                                        )
                                     }
                                 }
                                 if (hiddenIds.isNotEmpty()) {
                                     item {
-                                        SettingsSection(
-                                            title = stringResource(R.string.settings_hidden_channels_title),
-                                            description = pluralStringResource(
-                                                R.plurals.settings_hidden_channels_description,
-                                                hiddenIds.size,
-                                                hiddenIds.size
-                                            )
-                                        ) {
-                                            ActionButton(
-                                                label = stringResource(R.string.settings_unhide_all),
-                                                icon = Icons.Filled.Refresh,
-                                                onClick = { repository.unhideAllChannels() }
-                                            )
-                                        }
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_hidden_channels_title),
+                                            value = pluralStringResource(R.plurals.channel_count, hiddenIds.size, hiddenIds.size),
+                                            onClick = { open(SettingsPanel.Hidden) },
+                                            modifier = Modifier.focusRequester(focusOf(SettingsPanel.Hidden))
+                                        )
                                     }
+                                }
+                                // Lists of channels made from the menu of a channel: renamed or deleted here
+                                item {
+                                    SettingGroup(
+                                        title = stringResource(R.string.settings_channel_lists_title),
+                                        caption = stringResource(R.string.settings_channel_lists_description)
+                                    )
+                                }
+                                items(channelLists, key = { "list:" + it.id }) { list ->
+                                    val listPanel = SettingsPanel.ListActions(list.id)
+                                    SettingRow(
+                                        label = list.name,
+                                        value = pluralStringResource(R.plurals.channel_count, list.channelIds.size, list.channelIds.size),
+                                        onClick = { open(listPanel) },
+                                        modifier = Modifier.focusRequester(focusOf(listPanel))
+                                    )
                                 }
                             }
 
                             SettingsPage.PLAYBACK -> {
-                                // Stream quality (Dispatcharr automatic choice)
                                 item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_quality_title),
-                                        description = stringResource(R.string.settings_quality_description)
-                                    ) {
-                                        OptionGrid(QualityPreference.entries, columns = 2) { preference, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(preference.labelRes),
-                                                description = stringResource(preference.descriptionRes),
-                                                selected = preference == currentQuality,
-                                                onClick = { repository.setQualityPreference(preference) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_quality_title),
+                                        value = stringResource(currentQuality.labelRes),
+                                        onClick = { open(SettingsPanel.Quality) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.Quality)).focusRequester(contentStart)
+                                    )
                                 }
-                                // Home preview: muted, after the chosen focus time on a channel
                                 item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_preview_title),
-                                        description = stringResource(R.string.settings_preview_description)
-                                    ) {
-                                        OptionGrid(PreviewDelay.entries, columns = 3) { delay, cellModifier ->
-                                            OptionButton(
-                                                label = previewDelayLabel(delay),
-                                                selected = delay == previewDelay,
-                                                onClick = { repository.setPreviewDelay(delay) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_preview_title),
+                                        value = previewDelayLabel(previewDelay),
+                                        onClick = { open(SettingsPanel.Preview) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.Preview))
+                                    )
                                 }
+                                item { SettingGroup(title = stringResource(R.string.vod_filter_subtitles)) }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_subtitle_languages_title),
+                                        value = if (subtitleLanguages.isEmpty()) {
+                                            stringResource(R.string.settings_subtitle_languages_any)
+                                        } else {
+                                            subtitleLanguages.joinToString(", ") { languageName(it) ?: it }
+                                        },
+                                        onClick = { open(SettingsPanel.SubtitleLanguages) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.SubtitleLanguages))
+                                    )
+                                }
+                                item { KeyRow(ApiKeyService.OPENSUBTITLES, openSubtitlesKey) }
                             }
 
                             SettingsPage.APPEARANCE -> {
                                 item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_appearance_title),
-                                        description = stringResource(R.string.settings_appearance_description)
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.settings_background),
-                                            fontSize = 12.sp,
-                                            color = TextSecondary,
-                                            modifier = Modifier.padding(bottom = 6.dp)
-                                        )
-                                        OptionGrid(AppThemeBackground.entries, columns = 3) { theme, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(theme.labelRes),
-                                                selected = theme == currentTheme,
-                                                swatch = Color(theme.backgroundColorHex),
-                                                onClick = { repository.setThemeBackground(theme) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                        Text(
-                                            text = stringResource(R.string.settings_accent_color),
-                                            fontSize = 12.sp,
-                                            color = TextSecondary,
-                                            modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
-                                        )
-                                        OptionGrid(AppAccentColor.entries, columns = 3) { accent, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(accent.labelRes),
-                                                selected = accent == currentAccent,
-                                                swatch = Color(accent.colorHex),
-                                                onClick = { repository.setAccentColor(accent) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_background),
+                                        value = stringResource(currentTheme.labelRes),
+                                        swatch = Color(currentTheme.backgroundColorHex),
+                                        onClick = { open(SettingsPanel.Background) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.Background)).focusRequester(contentStart)
+                                    )
                                 }
                                 item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_density_title),
-                                        description = stringResource(R.string.settings_density_description)
-                                    ) {
-                                        OptionGrid(UiDensity.entries, columns = 3) { density, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(density.labelRes),
-                                                description = stringResource(density.descriptionRes),
-                                                selected = density == currentDensity,
-                                                onClick = { repository.setUiDensity(density) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_accent_color),
+                                        value = stringResource(currentAccent.labelRes),
+                                        swatch = Color(currentAccent.colorHex),
+                                        onClick = { open(SettingsPanel.Accent) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.Accent))
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_density_title),
+                                        value = stringResource(currentDensity.labelRes),
+                                        onClick = { open(SettingsPanel.Density) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.Density))
+                                    )
                                 }
                             }
 
                             SettingsPage.VOD -> {
                                 item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_vod_title),
-                                        description = stringResource(R.string.settings_vod_description)
-                                    ) {
-                                        OptionGrid(listOf(true, false), columns = 2) { enabled, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(if (enabled) R.string.settings_vod_on else R.string.settings_vod_off),
-                                                description = stringResource(if (enabled) R.string.settings_vod_on_description else R.string.settings_vod_off_description),
-                                                selected = vodEnabled == enabled,
-                                                onClick = { repository.setVodEnabled(enabled) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_vod_title),
+                                        description = stringResource(if (vodEnabled) R.string.settings_vod_on_description else R.string.settings_vod_off_description),
+                                        toggle = vodEnabled,
+                                        onClick = { repository.setVodEnabled(!vodEnabled) },
+                                        modifier = Modifier.focusRequester(contentStart)
+                                    )
                                 }
-                                // Categories loaded from each source (chosen at the first opening)
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_vod_categories_title),
-                                        description = stringResource(R.string.settings_vod_categories_description)
-                                    ) {
-                                        @OptIn(ExperimentalLayoutApi::class)
-                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            enabledConfigs.forEach { config ->
-                                                val selection = vodSelections[config.id]
-                                                val state = when {
-                                                    selection == null -> stringResource(R.string.settings_vod_categories_none)
-                                                    selection.all -> stringResource(R.string.settings_vod_categories_all)
-                                                    selection.keys.isEmpty() -> stringResource(R.string.settings_vod_categories_skipped)
-                                                    else -> pluralStringResource(R.plurals.settings_vod_categories_count, selection.keys.size, selection.keys.size)
-                                                }
-                                                ActionButton(
-                                                    label = "${config.name} · $state",
-                                                    icon = Icons.Filled.Edit,
-                                                    onClick = { onChooseVodCategories(config) }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_tmdb_title),
-                                        description = stringResource(R.string.settings_tmdb_description)
-                                    ) {
-                                        Text(
-                                            text = stringResource(if (tmdbKey.isBlank()) R.string.settings_tmdb_none else R.string.settings_tmdb_saved),
-                                            fontSize = 12.sp,
-                                            color = TextSecondary,
-                                            modifier = Modifier.padding(bottom = 10.dp)
+                                if (vodEnabled) {
+                                    item { KeyRow(ApiKeyService.TMDB, tmdbKey) }
+                                    // Categories loaded from each source (chosen at the first opening)
+                                    item {
+                                        SettingGroup(
+                                            title = stringResource(R.string.settings_vod_categories_title),
+                                            caption = stringResource(R.string.settings_vod_categories_description)
                                         )
-                                        AdaptiveButtonRow(wrap = compact) {
-                                            ActionButton(
-                                                label = stringResource(R.string.settings_tmdb_enter),
-                                                icon = Icons.Filled.Edit,
-                                                onClick = { editingKey = ApiKeyService.TMDB }
-                                            )
-                                            if (tmdbKey.isNotBlank()) {
-                                                ActionButton(
-                                                    label = stringResource(R.string.settings_tmdb_remove),
-                                                    icon = Icons.Filled.Delete,
-                                                    destructive = true,
-                                                    onClick = { repository.setTmdbKey("") }
-                                                )
-                                            }
-                                        }
                                     }
-                                }
-                                // OpenSubtitles: subtitles searched on request, in the chosen languages
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_opensubtitles_title),
-                                        description = stringResource(R.string.settings_opensubtitles_description)
-                                    ) {
-                                        Text(
-                                            text = stringResource(if (openSubtitlesKey.isBlank()) R.string.settings_tmdb_none else R.string.settings_tmdb_saved),
-                                            fontSize = 12.sp,
-                                            color = TextSecondary,
-                                            modifier = Modifier.padding(bottom = 10.dp)
+                                    items(enabledConfigs, key = { "vod:" + it.id }) { config ->
+                                        val selection = vodSelections[config.id]
+                                        SettingRow(
+                                            label = config.name.ifBlank { stringResource(R.string.settings_unnamed) },
+                                            value = when {
+                                                selection == null -> stringResource(R.string.settings_vod_categories_none)
+                                                selection.all -> stringResource(R.string.settings_vod_categories_all)
+                                                selection.keys.isEmpty() -> stringResource(R.string.settings_vod_categories_skipped)
+                                                else -> pluralStringResource(R.plurals.settings_vod_categories_count, selection.keys.size, selection.keys.size)
+                                            },
+                                            onClick = { onChooseVodCategories(config) }
                                         )
-                                        AdaptiveButtonRow(wrap = compact) {
-                                            ActionButton(
-                                                label = stringResource(R.string.settings_tmdb_enter),
-                                                icon = Icons.Filled.Edit,
-                                                onClick = { editingKey = ApiKeyService.OPENSUBTITLES }
-                                            )
-                                            if (openSubtitlesKey.isNotBlank()) {
-                                                ActionButton(
-                                                    label = stringResource(R.string.settings_tmdb_remove),
-                                                    icon = Icons.Filled.Delete,
-                                                    destructive = true,
-                                                    onClick = { repository.setOpenSubtitlesKey("") }
-                                                )
-                                            }
-                                        }
                                     }
-                                }
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_subtitle_languages_title),
-                                        description = stringResource(R.string.settings_subtitle_languages_description)
-                                    ) {
-                                        val offered = remember(subtitleLanguages) {
-                                            (subtitleLanguages + listOf(java.util.Locale.getDefault().language) + DEFAULT_LANGUAGES).filter { it.length == 2 }.distinct()
-                                        }
-                                        // None: every language
-                                        SelectAllButtons(
-                                            onSelectAll = { repository.setSubtitleLanguages(subtitleLanguages + offered.filter { it !in subtitleLanguages }) },
-                                            onSelectNone = { repository.setSubtitleLanguages(emptyList()) }
+                                    item { SettingGroup(title = stringResource(R.string.settings_vod_display_title)) }
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_vod_rows_title),
+                                            value = "${VodRow.Kind.entries.count { it !in vodDisplay.hiddenRows }} / ${VodRow.Kind.entries.size}",
+                                            onClick = { open(SettingsPanel.VodRows) },
+                                            modifier = Modifier.focusRequester(focusOf(SettingsPanel.VodRows))
                                         )
-                                        // Toggled in place: the order of the choice is the order of the search
-                                        OptionGrid(offered, columns = 4) { language, cellModifier ->
-                                            val index = subtitleLanguages.indexOf(language)
-                                            OptionButton(
-                                                label = (languageName(language) ?: language) + if (index >= 0 && subtitleLanguages.size > 1) " · ${index + 1}" else "",
-                                                selected = index >= 0,
-                                                onClick = {
-                                                    repository.setSubtitleLanguages(
-                                                        if (index >= 0) subtitleLanguages - language else subtitleLanguages + language
-                                                    )
+                                    }
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_vod_poster_title),
+                                            value = posterSizeLabel(vodDisplay.posterSize),
+                                            onClick = { open(SettingsPanel.Posters) },
+                                            modifier = Modifier.focusRequester(focusOf(SettingsPanel.Posters))
+                                        )
+                                    }
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_vod_theater_title),
+                                            description = stringResource(R.string.settings_vod_theater_description),
+                                            toggle = !vodDisplay.hideTheater,
+                                            onClick = { repository.setVodDisplay(vodDisplay.copy(hideTheater = !vodDisplay.hideTheater)) }
+                                        )
+                                    }
+                                    // Filters the Movies and Series tabs open with
+                                    item {
+                                        SettingGroup(
+                                            title = stringResource(R.string.settings_vod_defaults_title),
+                                            caption = stringResource(R.string.settings_vod_defaults_description)
+                                        )
+                                    }
+                                    listOf(VodKind.MOVIE, VodKind.SERIES).forEach { kind ->
+                                        items(DefaultField.entries, key = { "default:$kind:$it" }) { field ->
+                                            val filter = vodDisplay.defaults[kind] ?: VodFilter()
+                                            val defaultPanel = SettingsPanel.Default(kind, field)
+                                            SettingRow(
+                                                label = defaultFieldTitle(kind, field),
+                                                value = when (field) {
+                                                    DefaultField.COUNTRY -> filter.countries.takeIf { it.isNotEmpty() }?.let { countriesLabel(it) }
+                                                        ?: stringResource(R.string.vod_filter_any)
+                                                    DefaultField.AUDIO -> filter.audio?.let { languageName(it) ?: it } ?: stringResource(R.string.vod_filter_any)
+                                                    DefaultField.SUBTITLES -> filter.subtitles?.let { languageName(it) ?: it } ?: stringResource(R.string.vod_filter_any)
+                                                    DefaultField.SORT -> sortLabel(filter.sort)
                                                 },
-                                                modifier = cellModifier
+                                                onClick = { open(defaultPanel) },
+                                                modifier = Modifier.focusRequester(focusOf(defaultPanel))
                                             )
-                                        }
-                                    }
-                                }
-                                // Rows of the movies and series home, each shown or hidden
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_vod_rows_title),
-                                        description = stringResource(R.string.settings_vod_rows_description)
-                                    ) {
-                                        SelectAllButtons(
-                                            onSelectAll = { repository.setVodDisplay(vodDisplay.copy(hiddenRows = emptySet())) },
-                                            onSelectNone = { repository.setVodDisplay(vodDisplay.copy(hiddenRows = VodRow.Kind.entries.toSet())) }
-                                        )
-                                        OptionGrid(VodRow.Kind.entries, columns = 3) { kind, cellModifier ->
-                                            OptionButton(
-                                                label = vodRowLabel(kind),
-                                                selected = kind !in vodDisplay.hiddenRows,
-                                                onClick = {
-                                                    val hidden = vodDisplay.hiddenRows
-                                                    repository.setVodDisplay(vodDisplay.copy(hiddenRows = if (kind in hidden) hidden - kind else hidden + kind))
-                                                },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
-                                }
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_vod_poster_title),
-                                        description = stringResource(R.string.settings_vod_poster_description)
-                                    ) {
-                                        OptionGrid(PosterSize.entries, columns = 3) { size, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(
-                                                    when (size) {
-                                                        PosterSize.SMALL -> R.string.settings_vod_poster_small
-                                                        PosterSize.NORMAL -> R.string.settings_vod_poster_normal
-                                                        PosterSize.LARGE -> R.string.settings_vod_poster_large
-                                                    }
-                                                ),
-                                                selected = size == vodDisplay.posterSize,
-                                                onClick = { repository.setVodDisplay(vodDisplay.copy(posterSize = size)) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
-                                }
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_vod_theater_title),
-                                        description = stringResource(R.string.settings_vod_theater_description)
-                                    ) {
-                                        OptionGrid(listOf(false, true), columns = 2) { hide, cellModifier ->
-                                            OptionButton(
-                                                label = stringResource(if (hide) R.string.settings_vod_theater_hide else R.string.settings_vod_theater_show),
-                                                selected = vodDisplay.hideTheater == hide,
-                                                onClick = { repository.setVodDisplay(vodDisplay.copy(hideTheater = hide)) },
-                                                modifier = cellModifier
-                                            )
-                                        }
-                                    }
-                                }
-                                // Filters the Movies and Series tabs open with
-                                item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_vod_defaults_title),
-                                        description = stringResource(R.string.settings_vod_defaults_description)
-                                    ) {
-                                        val countries = remember {
-                                            listOf<String?>(null) + (listOf(java.util.Locale.getDefault().country) + DEFAULT_COUNTRIES).filter { it.length == 2 }.distinct()
-                                        }
-                                        val languages = remember {
-                                            listOf<String?>(null) + (listOf(java.util.Locale.getDefault().language) + DEFAULT_LANGUAGES).filter { it.length == 2 }.distinct()
-                                        }
-                                        listOf(VodKind.MOVIE to R.string.vod_tab_movies, VodKind.SERIES to R.string.vod_tab_series).forEach { (kind, labelRes) ->
-                                            val current = vodDisplay.defaults[kind] ?: VodFilter()
-                                            fun update(filter: VodFilter) = repository.setVodDisplay(vodDisplay.copy(defaults = vodDisplay.defaults + (kind to filter)))
-                                            Text(
-                                                text = stringResource(labelRes) + " · " + stringResource(R.string.settings_vod_default_country),
-                                                fontSize = 12.sp,
-                                                color = TextSecondary,
-                                                modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
-                                            )
-                                            // Several countries: each one toggled, "any" (or none) clears them
-                                            SelectAllButtons(
-                                                onSelectAll = { update(current.copy(countries = countries.filterNotNull().toSet())) },
-                                                onSelectNone = { update(current.copy(countries = emptySet())) }
-                                            )
-                                            OptionGrid(countries, columns = 5) { country, cellModifier ->
-                                                OptionButton(
-                                                    label = country?.let { countryName(it) } ?: stringResource(R.string.vod_filter_any),
-                                                    selected = if (country == null) current.countries.isEmpty() else country in current.countries,
-                                                    onClick = {
-                                                        update(
-                                                            current.copy(
-                                                                countries = when {
-                                                                    country == null -> emptySet()
-                                                                    country in current.countries -> current.countries - country
-                                                                    else -> current.countries + country
-                                                                }
-                                                            )
-                                                        )
-                                                    },
-                                                    modifier = cellModifier
-                                                )
-                                            }
-                                            Text(
-                                                text = stringResource(labelRes) + " · " + stringResource(R.string.vod_filter_audio),
-                                                fontSize = 12.sp,
-                                                color = TextSecondary,
-                                                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
-                                            )
-                                            OptionGrid(languages, columns = 5) { language, cellModifier ->
-                                                OptionButton(
-                                                    label = language?.let { languageName(it) ?: it } ?: stringResource(R.string.vod_filter_any),
-                                                    selected = current.audio == language,
-                                                    onClick = { update(current.copy(audio = language)) },
-                                                    modifier = cellModifier
-                                                )
-                                            }
-                                            Text(
-                                                text = stringResource(labelRes) + " · " + stringResource(R.string.vod_filter_subtitles),
-                                                fontSize = 12.sp,
-                                                color = TextSecondary,
-                                                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
-                                            )
-                                            OptionGrid(languages, columns = 5) { language, cellModifier ->
-                                                OptionButton(
-                                                    label = language?.let { languageName(it) ?: it } ?: stringResource(R.string.vod_filter_any),
-                                                    selected = current.subtitles == language,
-                                                    onClick = { update(current.copy(subtitles = language)) },
-                                                    modifier = cellModifier
-                                                )
-                                            }
-                                            Text(
-                                                text = stringResource(labelRes) + " · " + stringResource(R.string.settings_vod_default_sort),
-                                                fontSize = 12.sp,
-                                                color = TextSecondary,
-                                                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
-                                            )
-                                            OptionGrid(VodSort.entries, columns = 5) { sort, cellModifier ->
-                                                OptionButton(
-                                                    label = sortLabel(sort),
-                                                    selected = current.sort == sort,
-                                                    onClick = { update(current.copy(sort = sort)) },
-                                                    modifier = cellModifier
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(10.dp))
                                         }
                                     }
                                 }
@@ -901,20 +659,17 @@ fun SettingsScreen(
                                         supported = updatesSupported,
                                         state = updateState,
                                         onCheck = onCheckUpdate,
-                                        onInstall = onInstallUpdate
+                                        onInstall = onInstallUpdate,
+                                        modifier = Modifier.focusRequester(contentStart)
                                     )
                                 }
                                 item {
-                                    SettingsSection(
-                                        title = stringResource(R.string.settings_help_title),
-                                        description = stringResource(R.string.settings_help_description)
-                                    ) {
-                                        ActionButton(
-                                            label = stringResource(R.string.settings_show_guide),
-                                            icon = Icons.Filled.Info,
-                                            onClick = onShowGuide
-                                        )
-                                    }
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_show_guide),
+                                        description = stringResource(R.string.settings_help_description),
+                                        icon = Icons.Filled.Info,
+                                        onClick = onShowGuide
+                                    )
                                 }
                             }
                         }
@@ -923,6 +678,218 @@ fun SettingsScreen(
             }
         }
 
+
+        panel?.let { current ->
+            val close = { panel = null }
+            when (current) {
+                SettingsPanel.Bouquet -> ChoicePanel(
+                    title = stringResource(R.string.settings_bouquet_title),
+                    description = stringResource(R.string.settings_bouquet_description),
+                    choices = BouquetPreference.entries.map { preference ->
+                        Choice(
+                            label = stringResource(preference.labelRes),
+                            description = stringResource(preference.descriptionRes),
+                            selected = preference == currentBouquet,
+                            onClick = { repository.setBouquet(preference) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.CategoryModes -> ChoicePanel(
+                    title = stringResource(R.string.settings_category_mode),
+                    choices = CategoryMode.entries.map { mode ->
+                        Choice(
+                            label = stringResource(mode.labelRes),
+                            description = stringResource(mode.descriptionRes),
+                            selected = mode == categoryMode,
+                            onClick = { repository.setCategoryMode(mode) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.Categories -> ChoicePanel(
+                    title = stringResource(R.string.settings_categories_title),
+                    description = stringResource(R.string.settings_categories_description),
+                    style = ChoiceStyle.MULTIPLE,
+                    choices = categories.map { (group, count) ->
+                        val visible = group !in hiddenGroups
+                        Choice(
+                            label = groupLabel(group),
+                            trailing = if (visible) count.toString() else stringResource(R.string.settings_category_hidden),
+                            selected = visible,
+                            onClick = { repository.setGroupHidden(group, visible) }
+                        )
+                    },
+                    onSelectAll = { repository.setGroupsHidden(categories.map { it.first }, hidden = false) },
+                    onSelectNone = { repository.setGroupsHidden(categories.map { it.first }, hidden = true) },
+                    onDismiss = close
+                )
+                SettingsPanel.Hidden -> ChoicePanel(
+                    title = stringResource(R.string.settings_hidden_channels_title),
+                    description = pluralStringResource(R.plurals.settings_hidden_channels_description, hiddenIds.size, hiddenIds.size),
+                    style = ChoiceStyle.ACTIONS,
+                    choices = listOf(Choice(stringResource(R.string.settings_unhide_all), { repository.unhideAllChannels() }, icon = Icons.Filled.Refresh)),
+                    onDismiss = close
+                )
+                is SettingsPanel.ListActions -> channelLists.firstOrNull { it.id == current.id }?.let { list ->
+                    ChoicePanel(
+                        title = list.name,
+                        description = pluralStringResource(R.plurals.channel_count, list.channelIds.size, list.channelIds.size),
+                        style = ChoiceStyle.ACTIONS,
+                        choices = listOf(
+                            Choice(stringResource(R.string.settings_channel_list_rename), { renamingList = list }, icon = Icons.Filled.Edit),
+                            Choice(
+                                stringResource(R.string.settings_channel_list_delete),
+                                { repository.deleteChannelList(list.id) },
+                                icon = Icons.Filled.Delete,
+                                destructive = true
+                            )
+                        ),
+                        onDismiss = close
+                    )
+                }
+                SettingsPanel.Quality -> ChoicePanel(
+                    title = stringResource(R.string.settings_quality_title),
+                    description = stringResource(R.string.settings_quality_description),
+                    choices = QualityPreference.entries.map { preference ->
+                        Choice(
+                            label = stringResource(preference.labelRes),
+                            description = stringResource(preference.descriptionRes),
+                            selected = preference == currentQuality,
+                            onClick = { repository.setQualityPreference(preference) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.Preview -> ChoicePanel(
+                    title = stringResource(R.string.settings_preview_title),
+                    description = stringResource(R.string.settings_preview_description),
+                    choices = PreviewDelay.entries.map { delay ->
+                        Choice(label = previewDelayLabel(delay), selected = delay == previewDelay, onClick = { repository.setPreviewDelay(delay) })
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.SubtitleLanguages -> {
+                    // The languages offered stay put while toggled: the order of the choice is the order of the search
+                    val offered = remember {
+                        (subtitleLanguages + listOf(java.util.Locale.getDefault().language) + DEFAULT_LANGUAGES).filter { it.length == 2 }.distinct()
+                    }
+                    ChoicePanel(
+                        title = stringResource(R.string.settings_subtitle_languages_title),
+                        description = stringResource(R.string.settings_subtitle_languages_description),
+                        style = ChoiceStyle.MULTIPLE,
+                        choices = offered.map { language ->
+                            val index = subtitleLanguages.indexOf(language)
+                            Choice(
+                                label = languageName(language) ?: language,
+                                trailing = if (index >= 0 && subtitleLanguages.size > 1) "${index + 1}" else null,
+                                selected = index >= 0,
+                                onClick = {
+                                    repository.setSubtitleLanguages(if (index >= 0) subtitleLanguages - language else subtitleLanguages + language)
+                                }
+                            )
+                        },
+                        onSelectAll = { repository.setSubtitleLanguages(subtitleLanguages + offered.filter { it !in subtitleLanguages }) },
+                        onSelectNone = { repository.setSubtitleLanguages(emptyList()) },
+                        onDismiss = close
+                    )
+                }
+                is SettingsPanel.KeyActions -> ChoicePanel(
+                    title = stringResource(current.service.rowRes),
+                    description = stringResource(current.service.descriptionRes),
+                    style = ChoiceStyle.ACTIONS,
+                    choices = listOf(
+                        Choice(stringResource(R.string.settings_tmdb_enter), { editingKey = current.service }, icon = Icons.Filled.Edit),
+                        Choice(
+                            stringResource(R.string.settings_tmdb_remove),
+                            {
+                                when (current.service) {
+                                    ApiKeyService.TMDB -> repository.setTmdbKey("")
+                                    ApiKeyService.OPENSUBTITLES -> repository.setOpenSubtitlesKey("")
+                                }
+                            },
+                            icon = Icons.Filled.Delete,
+                            destructive = true
+                        )
+                    ),
+                    onDismiss = close
+                )
+                SettingsPanel.VodRows -> ChoicePanel(
+                    title = stringResource(R.string.settings_vod_rows_title),
+                    description = stringResource(R.string.settings_vod_rows_description),
+                    style = ChoiceStyle.MULTIPLE,
+                    choices = VodRow.Kind.entries.map { kind ->
+                        val hidden = vodDisplay.hiddenRows
+                        Choice(
+                            label = vodRowLabel(kind),
+                            selected = kind !in hidden,
+                            onClick = { repository.setVodDisplay(vodDisplay.copy(hiddenRows = if (kind in hidden) hidden - kind else hidden + kind)) }
+                        )
+                    },
+                    onSelectAll = { repository.setVodDisplay(vodDisplay.copy(hiddenRows = emptySet())) },
+                    onSelectNone = { repository.setVodDisplay(vodDisplay.copy(hiddenRows = VodRow.Kind.entries.toSet())) },
+                    onDismiss = close
+                )
+                SettingsPanel.Posters -> ChoicePanel(
+                    title = stringResource(R.string.settings_vod_poster_title),
+                    description = stringResource(R.string.settings_vod_poster_description),
+                    choices = PosterSize.entries.map { size ->
+                        Choice(
+                            label = posterSizeLabel(size),
+                            selected = size == vodDisplay.posterSize,
+                            onClick = { repository.setVodDisplay(vodDisplay.copy(posterSize = size)) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.Background -> ChoicePanel(
+                    title = stringResource(R.string.settings_background),
+                    description = stringResource(R.string.settings_appearance_description),
+                    choices = AppThemeBackground.entries.map { theme ->
+                        Choice(
+                            label = stringResource(theme.labelRes),
+                            swatch = Color(theme.backgroundColorHex),
+                            selected = theme == currentTheme,
+                            onClick = { repository.setThemeBackground(theme) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.Accent -> ChoicePanel(
+                    title = stringResource(R.string.settings_accent_color),
+                    description = stringResource(R.string.settings_appearance_description),
+                    choices = AppAccentColor.entries.map { accent ->
+                        Choice(
+                            label = stringResource(accent.labelRes),
+                            swatch = Color(accent.colorHex),
+                            selected = accent == currentAccent,
+                            onClick = { repository.setAccentColor(accent) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.Density -> ChoicePanel(
+                    title = stringResource(R.string.settings_density_title),
+                    description = stringResource(R.string.settings_density_description),
+                    choices = UiDensity.entries.map { density ->
+                        Choice(
+                            label = stringResource(density.labelRes),
+                            description = stringResource(density.descriptionRes),
+                            selected = density == currentDensity,
+                            onClick = { repository.setUiDensity(density) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                is SettingsPanel.Default -> DefaultFilterPanel(
+                    kind = current.kind,
+                    field = current.field,
+                    filter = vodDisplay.defaults[current.kind] ?: VodFilter(),
+                    onChange = { filter -> repository.setVodDisplay(vodDisplay.copy(defaults = vodDisplay.defaults + (current.kind to filter))) },
+                    onDismiss = close
+                )
+            }
+        }
         editingKey?.let { service ->
             ApiKeyDialog(
                 service = service,
@@ -980,10 +947,124 @@ fun SettingsScreen(
     }
 }
 
+/** The choices opened from a row of the settings. */
+private sealed interface SettingsPanel {
+    data object Bouquet : SettingsPanel
+    data object CategoryModes : SettingsPanel
+    data object Categories : SettingsPanel
+    data object Hidden : SettingsPanel
+    data class ListActions(val id: String) : SettingsPanel
+    data object Quality : SettingsPanel
+    data object Preview : SettingsPanel
+    data object SubtitleLanguages : SettingsPanel
+    data class KeyActions(val service: ApiKeyService) : SettingsPanel
+    data object VodRows : SettingsPanel
+    data object Posters : SettingsPanel
+    data object Background : SettingsPanel
+    data object Accent : SettingsPanel
+    data object Density : SettingsPanel
+    data class Default(val kind: VodKind, val field: DefaultField) : SettingsPanel
+}
+
+/** Filters the Movies and Series tabs open with. */
+private enum class DefaultField { COUNTRY, AUDIO, SUBTITLES, SORT }
+
+private const val UNMATCHED_ROW = "unmatched"
+
+@Composable
+private fun posterSizeLabel(size: PosterSize): String = stringResource(
+    when (size) {
+        PosterSize.SMALL -> R.string.settings_vod_poster_small
+        PosterSize.NORMAL -> R.string.settings_vod_poster_normal
+        PosterSize.LARGE -> R.string.settings_vod_poster_large
+    }
+)
+
+@Composable
+private fun defaultFieldTitle(kind: VodKind, field: DefaultField): String =
+    stringResource(if (kind == VodKind.MOVIE) R.string.vod_tab_movies else R.string.vod_tab_series) + " · " + stringResource(
+        when (field) {
+            DefaultField.COUNTRY -> R.string.settings_vod_default_country
+            DefaultField.AUDIO -> R.string.vod_filter_audio
+            DefaultField.SUBTITLES -> R.string.vod_filter_subtitles
+            DefaultField.SORT -> R.string.settings_vod_default_sort
+        }
+    )
+
+/** One default filter of the Movies or Series tab: several countries, else one value ("any" first). */
+@Composable
+private fun DefaultFilterPanel(kind: VodKind, field: DefaultField, filter: VodFilter, onChange: (VodFilter) -> Unit, onDismiss: () -> Unit) {
+    val title = defaultFieldTitle(kind, field)
+    val description = stringResource(R.string.settings_vod_defaults_description)
+    val any = stringResource(R.string.vod_filter_any)
+    val languages = remember {
+        listOf<String?>(null) + (listOf(java.util.Locale.getDefault().language) + DEFAULT_LANGUAGES).filter { it.length == 2 }.distinct()
+    }
+    when (field) {
+        DefaultField.COUNTRY -> {
+            val countries = remember {
+                (listOf(java.util.Locale.getDefault().country) + DEFAULT_COUNTRIES).filter { it.length == 2 }.distinct()
+            }
+            ChoicePanel(
+                title = title,
+                description = description,
+                style = ChoiceStyle.MULTIPLE,
+                choices = countries.map { country ->
+                    Choice(
+                        label = countryName(country),
+                        selected = country in filter.countries,
+                        onClick = {
+                            onChange(filter.copy(countries = if (country in filter.countries) filter.countries - country else filter.countries + country))
+                        }
+                    )
+                },
+                // None: any country
+                onSelectAll = { onChange(filter.copy(countries = countries.toSet())) },
+                onSelectNone = { onChange(filter.copy(countries = emptySet())) },
+                onDismiss = onDismiss
+            )
+        }
+        DefaultField.AUDIO, DefaultField.SUBTITLES -> {
+            val current = if (field == DefaultField.AUDIO) filter.audio else filter.subtitles
+            ChoicePanel(
+                title = title,
+                description = description,
+                choices = languages.map { language ->
+                    Choice(
+                        label = language?.let { languageName(it) ?: it } ?: any,
+                        selected = current == language,
+                        onClick = { onChange(if (field == DefaultField.AUDIO) filter.copy(audio = language) else filter.copy(subtitles = language)) }
+                    )
+                },
+                onDismiss = onDismiss
+            )
+        }
+        DefaultField.SORT -> ChoicePanel(
+            title = title,
+            description = description,
+            choices = VodSort.entries.map { sort -> Choice(label = sortLabel(sort), selected = filter.sort == sort, onClick = { onChange(filter.copy(sort = sort)) }) },
+            onDismiss = onDismiss
+        )
+    }
+}
+
 /** Services whose API key the user brings: the page where it is created, and what the dialog says of it. */
-private enum class ApiKeyService(val label: String, val keyPageUrl: String, @param:StringRes val titleRes: Int, @param:StringRes val hintRes: Int) {
-    TMDB("TMDB", "https://www.themoviedb.org/settings/api", R.string.settings_tmdb_dialog_title, R.string.settings_tmdb_dialog_hint),
-    OPENSUBTITLES("OpenSubtitles", "https://www.opensubtitles.com/consumers", R.string.settings_opensubtitles_dialog_title, R.string.settings_opensubtitles_dialog_hint)
+private enum class ApiKeyService(
+    val label: String,
+    val keyPageUrl: String,
+    @param:StringRes val titleRes: Int,
+    @param:StringRes val hintRes: Int,
+    @param:StringRes val rowRes: Int,
+    @param:StringRes val descriptionRes: Int
+) {
+    TMDB(
+        "TMDB", "https://www.themoviedb.org/settings/api", R.string.settings_tmdb_dialog_title, R.string.settings_tmdb_dialog_hint,
+        R.string.settings_tmdb_title, R.string.settings_tmdb_description
+    ),
+    OPENSUBTITLES(
+        "OpenSubtitles", "https://www.opensubtitles.com/consumers", R.string.settings_opensubtitles_dialog_title, R.string.settings_opensubtitles_dialog_hint,
+        R.string.settings_opensubtitles_title, R.string.settings_opensubtitles_description
+    )
 }
 
 /**
@@ -1146,27 +1227,6 @@ private fun previewDelayLabel(delay: PreviewDelay): String = when (delay) {
     else -> stringResource(R.string.preview_delay_seconds, delay.seconds)
 }
 
-/** Options laid out in rows of [columns] equal cells (the content width is that of a section). */
-@Composable
-private fun <T> OptionGrid(
-    items: List<T>,
-    columns: Int,
-    cell: @Composable (item: T, modifier: Modifier) -> Unit
-) {
-    // Phone: two options per row at most, their labels stay readable
-    val shown = if (LocalScreen.current.compact) columns.coerceAtMost(COMPACT_OPTION_COLUMNS) else columns
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items.chunked(shown).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                row.forEach { item -> cell(item, Modifier.weight(1f)) }
-                repeat(shown - row.size) { Spacer(modifier = Modifier.weight(1f)) }
-            }
-        }
-    }
-}
-
-private const val COMPACT_OPTION_COLUMNS = 2
-
 /** Section of the settings menu: icon, name and what it holds; filled when focused, marked when open. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -1235,31 +1295,6 @@ private fun SettingsNavItem(
                 )
             }
         }
-    }
-}
-
-/** Settings block: subtle title, description, content. */
-@Composable
-private fun SettingsSection(
-    title: String,
-    description: String,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceDark)
-            .padding(horizontal = 20.dp, vertical = 18.dp)
-    ) {
-        SectionLabel(text = title)
-        Text(
-            text = description,
-            fontSize = 12.sp,
-            color = TextSecondary.copy(alpha = 0.8f),
-            modifier = Modifier.padding(top = 2.dp, bottom = 14.dp)
-        )
-        content()
     }
 }
 
@@ -1344,85 +1379,6 @@ private fun OptionButton(
     }
 }
 
-/**
- * Category checkbox: checked = shown, unchecked = hidden (dimmed label).
- */
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun CategoryToggle(
-    label: String,
-    channelCount: Int,
-    visible: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(12.dp)
-    val focusedContent = LocalAppColors.current.background
-    val labelColor = when {
-        isFocused -> focusedContent
-        visible -> TextPrimary
-        else -> TextSecondary.copy(alpha = 0.6f)
-    }
-
-    Surface(
-        onClick = onClick,
-        interactionSource = interactionSource,
-        modifier = modifier.touchClick(onClick),
-        shape = ClickableSurfaceDefaults.shape(shape = shape),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = SurfaceCard,
-            focusedContainerColor = TextPrimary
-        )
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-        ) {
-            // Box: filled with a check mark if shown, plain outline if hidden
-            Box(
-                modifier = Modifier
-                    .size(16.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(if (visible) AccentCyan else Color.Transparent)
-                    .border(
-                        1.5.dp,
-                        if (visible) AccentCyan else labelColor.copy(alpha = 0.6f),
-                        RoundedCornerShape(4.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (visible) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = null,
-                        tint = BackgroundDark,
-                        modifier = Modifier.size(12.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = label,
-                fontSize = 12.sp,
-                fontWeight = if (visible) FontWeight.Medium else FontWeight.Normal,
-                color = labelColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = if (visible) channelCount.toString() else stringResource(R.string.settings_category_hidden),
-                fontSize = 11.sp,
-                color = if (isFocused) focusedContent.copy(alpha = 0.7f) else TextSecondary
-            )
-        }
-    }
-}
-
 /** Pill-shaped action button, with an optional icon. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -1465,18 +1421,6 @@ private fun ActionButton(
             }
             Text(text = label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = contentColor)
         }
-    }
-}
-
-/** "Select all" and "Deselect all" above a multiple choice. */
-@Composable
-private fun SelectAllButtons(onSelectAll: () -> Unit, onSelectNone: () -> Unit) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.padding(bottom = 10.dp)
-    ) {
-        ActionButton(label = stringResource(R.string.settings_select_all), icon = Icons.Filled.Check, onClick = onSelectAll)
-        ActionButton(label = stringResource(R.string.settings_select_none), icon = Icons.Filled.Close, onClick = onSelectNone)
     }
 }
 
@@ -1980,8 +1924,8 @@ private fun TvInputField(
 }
 
 /**
- * App updates: installed version, check button, then the available version with its highlights
- * and an install button; download progress and errors are shown inline.
+ * App updates: one row with the installed version and the state; OK checks, or installs the version
+ * found, its highlights listed under it. Download progress and errors are shown as its value.
  */
 @Composable
 private fun UpdateSection(
@@ -1989,65 +1933,53 @@ private fun UpdateSection(
     supported: Boolean,
     state: UpdateState,
     onCheck: () -> Unit,
-    onInstall: (AppRelease) -> Unit
+    onInstall: (AppRelease) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    SettingsSection(
-        title = stringResource(R.string.settings_update_title),
-        description = if (supported) {
-            stringResource(R.string.settings_update_description, installedVersion)
-        } else {
-            stringResource(R.string.settings_update_dev, installedVersion)
-        }
-    ) {
-        if (!supported) return@SettingsSection
-        val release = when (state) {
-            is UpdateState.Available -> state.release
-            is UpdateState.Failed -> state.release
-            else -> null
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (release != null) {
-                ActionButton(
-                    label = stringResource(R.string.settings_update_install, release.version),
-                    icon = Icons.Filled.Refresh,
-                    primary = true,
-                    onClick = { onInstall(release) }
-                )
-            } else if (state !is UpdateState.Downloading && state !is UpdateState.Installing) {
-                ActionButton(
-                    label = stringResource(R.string.settings_update_check),
-                    icon = Icons.Filled.Refresh,
-                    onClick = onCheck
-                )
+    // The version found, also while it downloads in the background or after a failed installation
+    val release = state.offeredRelease
+    val busy = state is UpdateState.Downloading || state is UpdateState.Installing || state is UpdateState.Checking
+    val status = when (state) {
+        UpdateState.Idle -> null
+        UpdateState.Checking -> stringResource(R.string.settings_update_checking)
+        UpdateState.UpToDate -> stringResource(R.string.settings_update_up_to_date)
+        is UpdateState.Available -> null
+        is UpdateState.Ready -> stringResource(R.string.settings_update_ready)
+        is UpdateState.Downloading ->
+            stringResource(R.string.settings_update_downloading, (state.progress * 100).toInt().coerceIn(0, 100))
+        is UpdateState.Installing -> stringResource(R.string.settings_update_installing)
+        is UpdateState.Failed -> state.message.resolve()
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingRow(
+            label = when {
+                !supported -> stringResource(R.string.settings_update_title)
+                release != null -> stringResource(R.string.settings_update_install, release.version)
+                else -> stringResource(R.string.settings_update_check)
+            },
+            description = if (supported) {
+                stringResource(R.string.settings_update_description, installedVersion)
+            } else {
+                stringResource(R.string.settings_update_dev, installedVersion)
+            },
+            value = status,
+            icon = Icons.Filled.Refresh,
+            modifier = modifier,
+            chevron = false,
+            onClick = {
+                when {
+                    !supported || busy -> Unit
+                    release != null -> onInstall(release)
+                    else -> onCheck()
+                }
             }
-            val status = when (state) {
-                UpdateState.Idle -> null
-                UpdateState.Checking -> stringResource(R.string.settings_update_checking)
-                UpdateState.UpToDate -> stringResource(R.string.settings_update_up_to_date)
-                is UpdateState.Available -> stringResource(R.string.settings_update_available, state.release.version)
-                is UpdateState.Downloading ->
-                    stringResource(R.string.settings_update_downloading, (state.progress * 100).toInt().coerceIn(0, 100))
-                is UpdateState.Installing -> stringResource(R.string.settings_update_installing)
-                is UpdateState.Failed -> state.message.resolve()
-            }
-            if (status != null) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = status,
-                    fontSize = 12.sp,
-                    color = if (state is UpdateState.Failed) LiveRed.copy(alpha = 0.85f) else TextSecondary
-                )
-            }
-        }
-        if (state is UpdateState.Available && state.release.highlights.isNotEmpty()) {
+        )
+        if (release != null && state !is UpdateState.Failed && release.highlights.isNotEmpty()) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
-                modifier = Modifier.padding(top = 12.dp)
+                modifier = Modifier.padding(start = 18.dp, top = 4.dp)
             ) {
-                state.release.highlights.forEach { point ->
+                release.highlights.forEach { point ->
                     Text(
                         text = "·  $point",
                         fontSize = 12.sp,

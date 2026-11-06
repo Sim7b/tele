@@ -50,6 +50,7 @@ import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.SelectionDot
 import io.github.sim7b.tele.ui.components.dialogWidth
+import io.github.sim7b.tele.ui.components.ignoreHeldConfirm
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.LocalAppColors
 import io.github.sim7b.tele.ui.theme.SurfaceCard
@@ -117,6 +118,8 @@ internal fun VodDialogFrame(title: String, onDismiss: () -> Unit, subtitle: Stri
                 .dialogWidth(560.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(SurfaceDark)
+                // Opened by a long press on a title or an episode
+                .ignoreHeldConfirm()
                 .padding(horizontal = 26.dp, vertical = 22.dp)
         ) {
             Text(text = title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)

@@ -54,6 +54,7 @@ import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.res.pluralStringResource
 import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.vod.RankedItem
@@ -71,6 +72,7 @@ import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodLibraryState
 import io.github.sim7b.tele.data.vod.VodRow
 import io.github.sim7b.tele.data.vod.VodRows
+import io.github.sim7b.tele.data.vod.VodShelf
 import io.github.sim7b.tele.data.vod.VodTitle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -132,6 +134,8 @@ fun VodHomeScreen(
     onRenameCollection: (id: String, name: String) -> Unit,
     onDeleteCollection: (id: String) -> Unit,
     onRefresh: () -> Unit,
+    // Settings of the movies and series
+    onOpenSettings: () -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     findPoster: (suspend (VodTitle) -> String?)? = null,
@@ -179,6 +183,11 @@ fun VodHomeScreen(
     val listed by produceState(emptyList<VodTitle>(), library.titles, kind, filter, indexVersion) {
         value = if (kind == null) emptyList() else withContext(Dispatchers.Default) { VodBrowse.filter(library.titles, kind, filter, facts()) }
     }
+    // Movies and Series tabs: rows (latest releases, best rated, genres) of the filtered titles, or all of them in a grid
+    var gridView by rememberSaveable { mutableStateOf(false) }
+    val shelves by produceState(emptyList<VodShelf>(), listed, indexVersion) {
+        value = if (listed.isEmpty()) emptyList() else withContext(Dispatchers.Default) { VodBrowse.shelves(listed, facts()) }
+    }
     val options by produceState(VodFilterOptions(), library.titles, kind, indexVersion) {
         value = if (kind == null) VodFilterOptions() else withContext(Dispatchers.Default) { VodBrowse.options(library.titles, kind, facts()) }
     }
@@ -193,8 +202,9 @@ fun VodHomeScreen(
         if (rows.isEmpty() && listed.isEmpty()) tabFocus.requestFocusWithRetry()
     }
     // First card once the content is there
-    LaunchedEffect(rows.isNotEmpty(), listed.isNotEmpty(), tab) {
-        if ((tab == VodTab.HOME && rows.isNotEmpty()) || (kind != null && listed.isNotEmpty()) || tab == VodTab.COLLECTIONS) {
+    LaunchedEffect(rows.isNotEmpty(), listed.isNotEmpty(), shelves.isNotEmpty(), gridView, tab) {
+        val tabReady = if (gridView) listed.isNotEmpty() else shelves.isNotEmpty()
+        if ((tab == VodTab.HOME && rows.isNotEmpty()) || (kind != null && tabReady) || tab == VodTab.COLLECTIONS) {
             firstFocus.requestFocusWithRetry(attempts = 40)
         }
     }
@@ -311,6 +321,8 @@ fun VodHomeScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 RoundIconButton(icon = Icons.Filled.Refresh, contentDescription = stringResource(R.string.vod_refresh), onClick = onRefresh)
                 Spacer(modifier = Modifier.width(10.dp))
+                RoundIconButton(icon = Icons.Filled.Settings, contentDescription = stringResource(R.string.vod_settings), onClick = onOpenSettings)
+                Spacer(modifier = Modifier.width(10.dp))
                 RoundIconButton(icon = Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.vod_back_to_tv), onClick = onBack)
             }
             if (compact) {
@@ -379,9 +391,29 @@ fun VodHomeScreen(
                         filter = filter,
                         count = listed.size,
                         onOpen = { openFilter = it },
-                        onClear = { kind?.let { onFiltersChange(it, VodFilter(sort = filter.sort)) } }
+                        onClear = { kind?.let { onFiltersChange(it, VodFilter(sort = filter.sort)) } },
+                        gridView = gridView,
+                        onToggleView = { gridView = !gridView }
                     )
-                    LazyVerticalGrid(
+                    if (!gridView) LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                        contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        shelves.forEachIndexed { index, shelf ->
+                            item(key = "${shelf.kind}:${shelf.genre}") {
+                                PosterRow(
+                                    label = shelfTitle(shelf),
+                                    titles = shelf.titles,
+                                    progress = progressByTitle,
+                                    onOpenTitle = onOpenTitle,
+                                    onLongClick = { menuFor = it to null },
+                                    findPoster = findPoster,
+                                    firstFocus = if (index == 0) firstFocus else null
+                                )
+                            }
+                        }
+                    } else LazyVerticalGrid(
                         columns = GridCells.Adaptive(LocalPosterWidth.current + 14.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
@@ -636,12 +668,27 @@ private fun PosterRow(
 
 /** Filters of the Movies and Series tabs, each opening its values; the count of titles shown. */
 @Composable
-private fun FilterBar(filter: VodFilter, count: Int, onOpen: (FilterField) -> Unit, onClear: () -> Unit) {
+private fun FilterBar(
+    filter: VodFilter,
+    count: Int,
+    onOpen: (FilterField) -> Unit,
+    onClear: () -> Unit,
+    gridView: Boolean,
+    onToggleView: () -> Unit
+) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         contentPadding = PaddingValues(top = 14.dp)
     ) {
+        // Rows of the titles, or all of them in a grid
+        item {
+            VodChip(
+                label = stringResource(if (gridView) R.string.vod_view_rows else R.string.vod_view_grid),
+                selected = false,
+                onClick = onToggleView
+            )
+        }
         item {
             VodChip(
                 label = stringResource(R.string.vod_filter_country) +

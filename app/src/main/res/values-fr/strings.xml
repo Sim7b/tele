@@ -96,7 +96,6 @@
     <string name="settings_refresh_guide">Actualiser le guide</string>
     <string name="settings_refresh_guide_started">Actualisation du guide lancée</string>
 
-    <string name="settings_appearance_title">Apparence</string>
     <string name="settings_appearance_description">Fond de l\'application et couleur des indicateurs (progression, sélection)</string>
     <string name="settings_background">Fond</string>
     <string name="settings_accent_color">Couleur d\'accentuation</string>
@@ -127,7 +126,6 @@
     <string name="settings_selected">Sélectionné</string>
 
     <!-- Channel sources -->
-    <string name="settings_sources_title">Sources de chaînes</string>
     <string name="settings_add_source">Ajouter une source</string>
     <string name="settings_edit_source">Modifier la source</string>
     <string name="settings_unnamed">Sans nom</string>
@@ -276,10 +274,14 @@
     <string name="settings_update_check">Rechercher une mise à jour</string>
     <string name="settings_update_checking">Recherche…</string>
     <string name="settings_update_up_to_date">Vous avez la dernière version</string>
-    <string name="settings_update_available">La version %1$s est disponible</string>
     <string name="settings_update_install">Installer la version %1$s</string>
     <string name="settings_update_downloading">Téléchargement… %1$d %%</string>
     <string name="settings_update_installing">Installation…</string>
+    <string name="settings_update_ready">Téléchargée, prête à installer</string>
+    <string name="update_prompt_title">La version %1$s est prête</string>
+    <string name="update_prompt_text">Téléchargée en arrière-plan depuis GitHub. L\'installer maintenant ?</string>
+    <string name="update_prompt_install">Installer maintenant</string>
+    <string name="update_prompt_ignore">Ignorer cette version</string>
     <string name="home_settings_update">Paramètres, mise à jour disponible</string>
     <string name="update_error_check">Impossible de rechercher les mises à jour (HTTP %1$d)</string>
     <string name="update_error_download">Échec du téléchargement (HTTP %1$d)</string>
@@ -326,7 +328,6 @@
     <string name="guide_search_3">Ce guide reste disponible dans les paramètres.</string>
     <string name="guide_hint_next">→ ou OK : suivant · Retour : passer</string>
     <string name="guide_hint_last">OK : c\'est parti · ← : précédent</string>
-    <string name="settings_help_title">Aide</string>
     <string name="settings_help_description">Les principaux gestes à la télécommande, en quelques pages</string>
     <string name="settings_show_guide">Revoir le guide de démarrage</string>
 
@@ -398,9 +399,9 @@
     <string name="settings_nav_sources">Sources</string>
     <string name="settings_nav_sources_hint">Serveurs, synchro, autre TV</string>
     <string name="settings_nav_channels">Chaînes</string>
-    <string name="settings_nav_channels_hint">Bouquet, catégories, masquage</string>
+    <string name="settings_nav_channels_hint">Bouquet, catégories, listes</string>
     <string name="settings_nav_playback">Lecture</string>
-    <string name="settings_nav_playback_hint">Qualité des flux, aperçu à l\'accueil</string>
+    <string name="settings_nav_playback_hint">Qualité, aperçu, sous-titres</string>
     <string name="settings_nav_appearance">Apparence</string>
     <string name="settings_nav_appearance_hint">Fond, couleur, densité</string>
     <string name="settings_nav_system">Système</string>
@@ -474,6 +475,7 @@
     <string name="vod_tab_movies">Films</string>
     <string name="vod_tab_series">Séries</string>
     <string name="vod_refresh">Actualiser</string>
+    <string name="vod_settings">Paramètres des films et séries</string>
     <string name="vod_loading">Chargement des films et séries…</string>
     <string name="vod_updating">Mise à jour de la bibliothèque…</string>
     <string name="vod_empty">Aucun film ni série dans vos sources</string>
@@ -484,6 +486,10 @@
     <string name="vod_row_recent_series">Séries ajoutées récemment</string>
     <string name="vod_row_top_movies">Films les mieux notés</string>
     <string name="vod_row_top_series">Séries les mieux notées</string>
+    <string name="vod_shelf_latest">Dernières sorties</string>
+    <string name="vod_shelf_top_rated">Les mieux notés</string>
+    <string name="vod_view_grid">Tous les titres</string>
+    <string name="vod_view_rows">Par rangées</string>
     <string name="vod_featured">À la une</string>
     <string name="vod_movie">Film</string>
     <string name="vod_series">Série</string>
@@ -566,12 +572,9 @@
         <item quantity="other">%d fichiers</item>
     </plurals>
     <string name="settings_nav_vod">Films et séries</string>
-    <string name="settings_nav_vod_hint">Bibliothèque, TMDB</string>
+    <string name="settings_nav_vod_hint">Bibliothèque, affichage, filtres</string>
     <string name="settings_vod_title">Films et séries</string>
-    <string name="settings_vod_description">Une bibliothèque façon Plex construite à partir des films et séries de vos sources (Xtream, M3U, Dispatcharr), quels que soient leurs groupes dans la playlist.</string>
-    <string name="settings_vod_on">Activé</string>
     <string name="settings_vod_on_description">Bouton Films et séries à l\'accueil</string>
-    <string name="settings_vod_off">Désactivé</string>
     <string name="settings_vod_off_description">TV en direct seulement</string>
     <string name="settings_tmdb_title">Clé TMDB (facultative)</string>
     <string name="settings_tmdb_description">Sans clé, les fiches utilisent les infos de vos fournisseurs, et TVmaze pour les séries. Avec une clé TMDB gratuite (themoviedb.org), chaque titre a son affiche, son résumé en français, sa distribution et ses épisodes.</string>
@@ -589,6 +592,7 @@
     <string name="settings_opensubtitles_dialog_hint">Clé API (consumer)</string>
     <string name="settings_subtitle_languages_title">Langues des sous-titres</string>
     <string name="settings_subtitle_languages_description">Cherchées sur OpenSubtitles, dans l\'ordre choisi ; aucune cochée : toutes les langues</string>
+    <string name="settings_subtitle_languages_any">Toutes les langues</string>
     <string name="settings_select_all">Tout sélectionner</string>
     <string name="settings_select_none">Tout désélectionner</string>
     <string name="api_key_step_create">1. Créer une clé %1$s</string>
@@ -691,6 +695,7 @@
     </plurals>
     <string name="settings_vod_categories_none">pas encore choisi</string>
     <string name="settings_vod_categories_skipped">rien de chargé</string>
+    <string name="settings_vod_display_title">Affichage</string>
     <string name="settings_vod_rows_title">Rangées de l\'accueil</string>
     <string name="settings_vod_rows_description">Rangées affichées sur l\'accueil des films et séries (une rangée vide n\'est jamais affichée)</string>
     <string name="settings_vod_collections_row">Collections</string>
@@ -701,8 +706,6 @@
     <string name="settings_vod_poster_large">Grande</string>
     <string name="settings_vod_theater_title">Enregistrements en salle</string>
     <string name="settings_vod_theater_description">Films filmés au cinéma (CAM, TS, screener) : image et son de mauvaise qualité</string>
-    <string name="settings_vod_theater_show">Afficher</string>
-    <string name="settings_vod_theater_hide">Masquer</string>
     <string name="settings_vod_defaults_title">Filtres par défaut</string>
     <string name="settings_vod_defaults_description">Appliqués à l\'ouverture des onglets Films et Séries</string>
     <string name="settings_vod_default_country">Pays</string>

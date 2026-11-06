@@ -62,6 +62,41 @@ object VodBrowse {
         return sort(kept, filter.sort, facts, locale)
     }
 
+    /** Rating shown for a title, out of 10: the TMDB vote when known, else the provider's; null when unknown. */
+    fun rating(title: VodTitle, facts: TmdbFacts?): Double? =
+        (facts?.vote?.takeIf { it > 0 } ?: title.rating?.takeIf { it > 0 })?.takeIf { it.isFinite() }?.coerceAtMost(MAX_RATING)
+
+    /**
+     * Rows of the Movies or Series tab, from its titles (already filtered): the latest releases, the best
+     * rated, then the main genres (at least [MIN_GENRE_TITLES] titles), each by rating. Empty rows are left out.
+     */
+    fun shelves(titles: List<VodTitle>, facts: Map<String, TmdbFacts>): List<VodShelf> {
+        if (titles.isEmpty()) return emptyList()
+        fun ratingOf(title: VodTitle) = rating(title, facts[title.key])
+        val byRating = compareByDescending<VodTitle> { ratingOf(it) ?: 0.0 }.thenByDescending { it.year ?: 0 }
+        val shelves = ArrayList<VodShelf>()
+        shelves += VodShelf(
+            VodShelf.Kind.LATEST,
+            titles.filter { it.year != null }
+                .sortedWith(compareByDescending<VodTitle> { it.year }.thenByDescending { it.addedAt ?: 0L })
+                .take(SHELF_SIZE)
+        )
+        shelves += VodShelf(VodShelf.Kind.TOP_RATED, titles.filter { ratingOf(it) != null }.sortedWith(byRating).take(SHELF_SIZE))
+        titles.asSequence().flatMap { it.genres.asSequence() }
+            .groupingBy { it }.eachCount()
+            .filterValues { it >= MIN_GENRE_TITLES }
+            .entries.sortedByDescending { it.value }
+            .take(MAX_GENRE_SHELVES)
+            .forEach { (genre, _) ->
+                shelves += VodShelf(VodShelf.Kind.GENRE, titles.filter { genre in it.genres }.sortedWith(byRating).take(SHELF_SIZE), genre)
+            }
+        return shelves.filter { it.titles.isNotEmpty() }
+    }
+
+    private const val MAX_RATING = 10.0
+    private const val SHELF_SIZE = 40
+    private const val MIN_GENRE_TITLES = 4
+    private const val MAX_GENRE_SHELVES = 15
     fun sort(titles: List<VodTitle>, sort: VodSort, facts: Map<String, TmdbFacts>, locale: Locale = Locale.getDefault()): List<VodTitle> = when (sort) {
         VodSort.TITLE -> {
             val collator = Collator.getInstance(locale)
@@ -72,7 +107,7 @@ object VodBrowse {
             compareByDescending<VodTitle> { facts[it.key]?.popularity ?: 0.0 }.thenByDescending { it.rating ?: 0.0 }
         )
         VodSort.YEAR -> titles.sortedByDescending { it.year ?: 0 }
-        VodSort.RATING -> titles.sortedByDescending { facts[it.key]?.vote?.takeIf { v -> v > 0 } ?: it.rating ?: 0.0 }
+        VodSort.RATING -> titles.sortedByDescending { rating(it, facts[it.key]) ?: 0.0 }
         VodSort.ADDED -> titles.sortedByDescending { it.addedAt ?: 0L }
     }
 
@@ -165,4 +200,9 @@ object VodBrowse {
         }
 
     private const val MAX_PEOPLE = 3
+}
+
+/** A row of the Movies or Series tab. */
+data class VodShelf(val kind: Kind, val titles: List<VodTitle>, val genre: String? = null) {
+    enum class Kind { LATEST, TOP_RATED, GENRE }
 }
