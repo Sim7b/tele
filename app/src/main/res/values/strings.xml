@@ -391,6 +391,18 @@
 
     <!-- Home channel preview -->
     <string name="settings_preview_title">Channel preview</string>
+    <string name="settings_match_frame_rate">Match the screen to the video</string>
+    <string name="settings_match_frame_rate_description">Switches the screen to 50 Hz for the European channels and 24 Hz for movies: smooth movements (the screen may go black a second)</string>
+    <string name="settings_audio_leveling">Volume</string>
+    <string name="audio_leveling_off">As broadcast</string>
+    <string name="audio_leveling_off_description">The sound of each channel unchanged</string>
+    <string name="audio_leveling_normal">Evened out</string>
+    <string name="audio_leveling_normal_description">Loud channels and adverts brought down, quiet ones up</string>
+    <string name="audio_leveling_night">Night mode</string>
+    <string name="audio_leveling_night_description">Clear dialogues, explosions and music much quieter</string>
+    <string name="settings_audio_leveling_description">Applies to the sound decoded by the TV (not to a sound sent as is to an amplifier)</string>
+    <string name="settings_timeshift">Pause live TV</string>
+    <string name="settings_timeshift_description">The channel is kept on the TV (up to 1 hour, as storage allows) to pause it and go back in it</string>
     <string name="settings_preview_description">On the home screen, the selected channel plays without sound after this delay. It uses a provider connection (Dispatcharr slot) while it plays.</string>
     <string name="preview_delay_off">Off</string>
     <string name="preview_delay_immediate">Immediate</string>
@@ -439,6 +451,17 @@
     <string name="options_track">Track %1$d</string>
     <string name="options_speed">Speed</string>
     <string name="inset_watch">Watch in a corner of the picture</string>
+    <string name="timeshift_title">Live</string>
+    <string name="timeshift_status_live">Live · %1$s kept</string>
+    <string name="timeshift_status_behind">%1$s behind live · %2$s kept</string>
+    <string name="timeshift_pause">Pause</string>
+    <string name="timeshift_resume">Resume</string>
+    <string name="timeshift_back">Back %1$d s</string>
+    <string name="timeshift_back_minutes">Back %1$d min</string>
+    <string name="timeshift_forward">Forward %1$d s</string>
+    <string name="timeshift_live">Back to live</string>
+    <string name="timeshift_badge_paused">Paused · %1$s</string>
+    <string name="timeshift_badge_behind">Delayed %1$s</string>
     <string name="inset_title">Channel in a corner</string>
     <string name="inset_swap">Swap with %1$s</string>
     <string name="inset_close">Close the corner channel</string>

@@ -47,4 +47,38 @@ class CastMediaTest {
         val insecureHls = "http://host/live/u/p/12.m3u8"
         assertEquals(listOf(ts, insecureHls), CastMedia.castOrder(listOf(insecureHls, ts), live = true))
     }
+
+    @Test
+    fun `a Dispatcharr channel is offered to the Chromecast as fragmented MP4 and HLS before its raw MPEG-TS`() {
+        val ts = "http://dispatcharr:9191/proxy/ts/stream/0b6c-41f2"
+        assertEquals(listOf("$ts?output_format=fmp4", "$ts?output_format=m3u8", ts), CastMedia.castVariants(ts))
+        assertEquals(CastMedia.MP4, CastMedia.mimeType("$ts?output_format=fmp4", live = true))
+        assertEquals(CastMedia.HLS, CastMedia.mimeType("$ts?output_format=m3u8", live = true))
+        // A format already asked, or another server: as it is
+        assertEquals(listOf("$ts?output_format=m3u8"), CastMedia.castVariants("$ts?output_format=m3u8"))
+        assertEquals(listOf("http://host/live/u/p/12.ts"), CastMedia.castVariants("http://host/live/u/p/12.ts"))
+        // A query kept
+        assertEquals("$ts?profile=2&output_format=fmp4", CastMedia.castVariants("$ts?profile=2").first())
+    }
+
+    @Test
+    fun `over HTTP the fragmented MP4 comes first, over HTTPS the HLS`() {
+        val http = "http://dispatcharr:9191/proxy/ts/stream/abc"
+        assertEquals(
+            listOf("$http?output_format=fmp4", http, "$http?output_format=m3u8"),
+            CastMedia.castOrder(listOf(http), live = true)
+        )
+        val https = "https://dispatcharr.example.com/proxy/ts/stream/abc"
+        assertEquals(
+            listOf("$https?output_format=m3u8", "$https?output_format=fmp4", https),
+            CastMedia.castOrder(listOf(https), live = true)
+        )
+    }
+
+    @Test
+    fun `a movie in MP4 is tried before the other files`() {
+        val mkv = "http://host/movie/u/p/7.mkv"
+        val mp4 = "http://host/movie/u/p/7.mp4"
+        assertEquals(listOf(mp4, mkv), CastMedia.castOrder(listOf(mkv, mp4), live = false))
+    }
 }

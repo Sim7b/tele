@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.storage
 
+import androidx.core.content.edit
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
@@ -9,6 +10,7 @@ import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.remote.CachedGuide
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
+import io.github.sim7b.tele.playback.AudioLeveling
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.ChannelList
@@ -169,6 +171,16 @@ class SettingsRepository(context: Context) {
     // Movies and series module (off by default) and the optional TMDB API key that completes its sheets
     private val _vodEnabled = MutableStateFlow(false)
     val vodEnabled: StateFlow<Boolean> = _vodEnabled.asStateFlow()
+
+    // Screen switched to the frame rate of the video (50 Hz for the European channels, 24 Hz for movies)
+    private val _matchFrameRate = MutableStateFlow(true)
+    val matchFrameRate: StateFlow<Boolean> = _matchFrameRate.asStateFlow()
+    // Same loudness from one channel to the next, or night mode
+    private val _audioLeveling = MutableStateFlow(AudioLeveling.OFF)
+    val audioLeveling: StateFlow<AudioLeveling> = _audioLeveling.asStateFlow()
+    // Live TV kept on the device to pause it and go back in it
+    private val _timeshift = MutableStateFlow(true)
+    val timeshift: StateFlow<Boolean> = _timeshift.asStateFlow()
     private val _tmdbKey = MutableStateFlow("")
     val tmdbKey: StateFlow<String> = _tmdbKey.asStateFlow()
     private val _vodDisplay = MutableStateFlow(VodDisplay())
@@ -234,6 +246,9 @@ class SettingsRepository(context: Context) {
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
         _vodEnabled.value = prefs.getBoolean(KEY_VOD_ENABLED, false)
+        _matchFrameRate.value = prefs.getBoolean(KEY_MATCH_FRAME_RATE, true)
+        _audioLeveling.value = AudioLeveling.entries.firstOrNull { it.name == prefs.getString(KEY_AUDIO_LEVELING, null) } ?: AudioLeveling.OFF
+        _timeshift.value = prefs.getBoolean(KEY_TIMESHIFT, true)
         _vodSelections.value = VodCategories.fromJson(prefs.getString(KEY_VOD_SELECTIONS, null))
         _vodDisplay.value = prefs.getString(KEY_VOD_DISPLAY, null)?.let { saved ->
             try {
@@ -405,6 +420,21 @@ class SettingsRepository(context: Context) {
     fun setVodDisplay(display: VodDisplay) {
         prefs.edit().putString(KEY_VOD_DISPLAY, display.toJson().toString()).apply()
         _vodDisplay.value = display
+    }
+
+    fun setMatchFrameRate(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_MATCH_FRAME_RATE, enabled) }
+        _matchFrameRate.value = enabled
+    }
+
+    fun setAudioLeveling(leveling: AudioLeveling) {
+        prefs.edit { putString(KEY_AUDIO_LEVELING, leveling.name) }
+        _audioLeveling.value = leveling
+    }
+
+    fun setTimeshift(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_TIMESHIFT, enabled) }
+        _timeshift.value = enabled
     }
 
     fun setVodEnabled(enabled: Boolean) {
@@ -713,6 +743,9 @@ class SettingsRepository(context: Context) {
         put("pictureFormat", _pictureFormat.value.name)
         _audioLanguage.value?.let { put("audioLanguage", it) }
         put("vodEnabled", _vodEnabled.value)
+        put("matchFrameRate", _matchFrameRate.value)
+        put("audioLeveling", _audioLeveling.value.name)
+        put("timeshift", _timeshift.value)
         put("vodDisplay", _vodDisplay.value.toJson())
         _tmdbKey.value.takeIf { it.isNotEmpty() }?.let { put("tmdbKey", it) }
         _openSubtitlesKey.value.takeIf { it.isNotEmpty() }?.let { put("openSubtitlesKey", it) }
@@ -769,6 +802,9 @@ class SettingsRepository(context: Context) {
         enumValue(PictureFormat.entries.toTypedArray(), "pictureFormat")?.let { setPictureFormat(it) }
         setAudioLanguage(json.optStringOrNull("audioLanguage"))
         if (json.has("vodEnabled")) setVodEnabled(json.optBoolean("vodEnabled", false))
+        if (json.has("matchFrameRate")) setMatchFrameRate(json.optBoolean("matchFrameRate", true))
+        AudioLeveling.entries.firstOrNull { it.name == json.optString("audioLeveling") }?.let { setAudioLeveling(it) }
+        if (json.has("timeshift")) setTimeshift(json.optBoolean("timeshift", true))
         json.optJSONObject("vodDisplay")?.let { setVodDisplay(VodDisplay.fromJson(it)) }
         json.optStringOrNull("tmdbKey")?.let { setTmdbKey(it) }
         json.optStringOrNull("openSubtitlesKey")?.let { setOpenSubtitlesKey(it) }
@@ -832,6 +868,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_CHANNEL_PREVIEW = "home_channel_preview"
         private const val KEY_PREVIEW_DELAY = "home_preview_delay"
         private const val KEY_VOD_ENABLED = "vod_enabled"
+        private const val KEY_MATCH_FRAME_RATE = "match_frame_rate"
+        private const val KEY_AUDIO_LEVELING = "audio_leveling"
+        private const val KEY_TIMESHIFT = "timeshift"
         private const val KEY_VOD_DISPLAY = "vod_display"
         private const val KEY_VOD_SELECTIONS = "vod_selections"
         private const val VOD_STATE_FILE = "vod_state.json"

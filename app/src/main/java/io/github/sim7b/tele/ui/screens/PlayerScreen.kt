@@ -1,5 +1,8 @@
 package io.github.sim7b.tele.ui.screens
 
+import io.github.sim7b.tele.ui.components.TIMESHIFT_LIVE_MS
+import io.github.sim7b.tele.ui.components.clockLabel
+import io.github.sim7b.tele.playback.TimeshiftState
 import io.github.sim7b.tele.playback.InsetPlayer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.border
@@ -133,6 +136,14 @@ fun PlayerScreen(
     val streamInfo by playerManager.streamInfo.collectAsState()
     val reconnection by playerManager.reconnection.collectAsState()
     val showStats by playerManager.showStats.collectAsState()
+    // Live channel kept on the device: paused, how far behind live (read every second)
+    var timeshift by remember { mutableStateOf<TimeshiftState?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            timeshift = playerManager.timeshiftState()
+            delay(TIMESHIFT_POLL_MS)
+        }
+    }
     // Phone / tablet casting: the stream plays on the Chromecast, this screen is the remote
     val castDevice by playerManager.castDevice.collectAsState()
 
@@ -279,6 +290,11 @@ fun PlayerScreen(
                         when {
                             repeatCount == 1 -> showStreamPicker = true
                             repeatCount == 0 && errorMessage != null -> playerManager.retry()
+                            // Paused live channel: OK resumes it
+                            repeatCount == 0 && timeshift?.paused == true -> {
+                                playerManager.timeshiftPlayPause()
+                                timeshift = playerManager.timeshiftState()
+                            }
                             repeatCount == 0 -> revealOverlay()
                         }
                         true
@@ -304,8 +320,20 @@ fun PlayerScreen(
                         true
                     }
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                        playerManager.togglePlayPause()
+                        playerManager.timeshiftPlayPause()
+                        timeshift = playerManager.timeshiftState()
                         revealOverlay()
+                        true
+                    }
+                    // Back and forward in the live channel kept on the device
+                    KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD -> {
+                        playerManager.timeshiftSeekBy(-TIMESHIFT_STEP_MS)
+                        timeshift = playerManager.timeshiftState()
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD -> {
+                        playerManager.timeshiftSeekBy(TIMESHIFT_STEP_MS)
+                        timeshift = playerManager.timeshiftState()
                         true
                     }
                     else -> false
@@ -519,6 +547,11 @@ fun PlayerScreen(
 
         if (showStats) PlaybackStatsOverlay(playerManager, modifier = Modifier.align(Alignment.TopStart))
 
+        // Live channel paused or played behind live
+        timeshift?.takeIf { it.paused || it.behindMs >= TIMESHIFT_LIVE_MS }?.let { state ->
+            TimeshiftBadge(state, modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp))
+        }
+
         if (inset != null && insetPlayer != null && castDevice == null) {
             InsetVideo(channel = inset, player = insetPlayer, modifier = Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 24.dp))
         }
@@ -559,6 +592,19 @@ fun PlayerScreen(
                     showOptionsPanel = false
                     refocusToken++
                     onCloseInset()
+                },
+                timeshift = timeshift,
+                onTimeshiftPlayPause = {
+                    playerManager.timeshiftPlayPause()
+                    timeshift = playerManager.timeshiftState()
+                },
+                onTimeshiftSeek = { delta ->
+                    playerManager.timeshiftSeekBy(delta)
+                    timeshift = playerManager.timeshiftState()
+                },
+                onTimeshiftLive = {
+                    playerManager.timeshiftToLive()
+                    timeshift = playerManager.timeshiftState()
                 }
             )
         }
@@ -779,3 +825,21 @@ private fun InsetVideo(channel: Channel, player: InsetPlayer, modifier: Modifier
 }
 
 private const val INSET_WIDTH = 0.3f
+
+/** "Paused · −2:05" or "Delayed −2:05": where the live channel is. */
+@Composable
+private fun TimeshiftBadge(state: TimeshiftState, modifier: Modifier = Modifier) {
+    val behind = "−" + clockLabel(state.behindMs)
+    Text(
+        text = if (state.paused) stringResource(R.string.timeshift_badge_paused, behind) else stringResource(R.string.timeshift_badge_behind, behind),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White,
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50))
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+    )
+}
+
+private const val TIMESHIFT_STEP_MS = 30_000L
+private const val TIMESHIFT_POLL_MS = 1_000L

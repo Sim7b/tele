@@ -118,11 +118,13 @@ fun SearchScreen(
     // Movies and series of the library
     vodTitles: List<VodTitle> = emptyList(),
     onTitleSelected: (VodTitle) -> Unit = {},
-    findPoster: (suspend (VodTitle) -> String?)? = null
+    findPoster: (suspend (VodTitle) -> String?)? = null,
+    // Search already typed (asked by voice from outside the app)
+    initialQuery: String = ""
 ) {
     val context = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf(initialQuery) }
     var lastFocusedId by rememberSaveable { mutableStateOf<String?>(null) }
     // Voice already offered on this screen (not again when coming back from the player)
     var voiceStarted by rememberSaveable { mutableStateOf(false) }
