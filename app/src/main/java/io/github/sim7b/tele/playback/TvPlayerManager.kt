@@ -49,6 +49,8 @@ import io.github.sim7b.tele.data.subtitles.ExternalSubtitle
 import java.util.concurrent.TimeUnit
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,6 +67,21 @@ data class StreamInfo(
     val audioCodec: String? = null,
     val audioChannels: Int? = null,
     val bitrateKbps: Int? = null
+)
+
+/**
+ * What the playback statistics show: the picture and sound decoded, the bitrate of the video, the
+ * bandwidth measured, the buffer ahead and the frames dropped since the stream started.
+ */
+data class PlaybackStats(
+    val resolution: String?,
+    val fps: Float?,
+    val videoCodec: String?,
+    val audioCodec: String?,
+    val videoBitrateKbps: Int?,
+    val bandwidthKbps: Int?,
+    val bufferMs: Long,
+    val droppedFrames: Int
 )
 
 /** Automatic reconnection in progress after the stream dropped: retry [attempt] of [maxAttempts]. */
@@ -157,6 +174,34 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
     private val _streamInfo = MutableStateFlow(StreamInfo())
     val streamInfo: StateFlow<StreamInfo> = _streamInfo.asStateFlow()
+
+    // Playback statistics shown over the picture (for this session), and the frames dropped by the stream
+    private val _showStats = MutableStateFlow(false)
+    val showStats: StateFlow<Boolean> = _showStats.asStateFlow()
+    @Volatile
+    private var droppedFrames = 0
+
+    fun toggleStats() {
+        _showStats.value = !_showStats.value
+    }
+
+    /** Statistics of the stream playing on the TV, null when nothing plays (to call on the main thread). */
+    fun playbackStats(): PlaybackStats? {
+        val player = exoPlayer ?: return null
+        if (player.playbackState == Player.STATE_IDLE) return null
+        val video = player.videoFormat
+        val audio = player.audioFormat
+        return PlaybackStats(
+            resolution = video?.takeIf { it.width > 0 && it.height > 0 }?.let { "${it.width}x${it.height}" },
+            fps = video?.frameRate?.takeIf { it > 0f },
+            videoCodec = video?.let { codecLabel(it) },
+            audioCodec = audio?.let { codecLabel(it) },
+            videoBitrateKbps = (video?.bitrate ?: Format.NO_VALUE).takeIf { it > 0 }?.div(1000),
+            bandwidthKbps = DefaultBandwidthMeter.getSingletonInstance(context).bitrateEstimate.takeIf { it > 0 }?.div(1000)?.toInt(),
+            bufferMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0),
+            droppedFrames = droppedFrames
+        )
+    }
 
     private val _reconnection = MutableStateFlow<Reconnection?>(null)
     val reconnection: StateFlow<Reconnection?> = _reconnection.asStateFlow()
@@ -268,6 +313,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
             player.stop()
         }
         _streamInfo.value = StreamInfo()
+        droppedFrames = 0
         _tracks.value = PlaybackTracks()
         _reconnection.value = null
         orderForCast()
@@ -374,6 +420,11 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
             .setSeekForwardIncrementMs(10000)
             .build().apply {
                 playWhenReady = true
+                addAnalyticsListener(object : AnalyticsListener {
+                    override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, count: Int, elapsedMs: Long) {
+                        droppedFrames += count
+                    }
+                })
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         _isPlaying.value = playing
@@ -640,6 +691,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         mainHandler.removeCallbacks(retryRunnable)
         _reconnection.value = null
         _streamInfo.value = StreamInfo()
+        droppedFrames = 0
         if (casting) orderForCast()
         prepareCurrent()
     }
@@ -862,6 +914,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         _isPlaying.value = false
         _error.value = null
         _streamInfo.value = StreamInfo()
+        droppedFrames = 0
     }
 
     fun release() {

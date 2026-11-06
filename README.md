@@ -44,12 +44,6 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 - **In-app updates**: the latest GitHub release is checked at launch (discreet dot on the settings button), then installed from **Settings → System** after the system confirmation.
 - **Credentials encrypted** on the device with a key kept in the Android Keystore.
 
-![Guide grid](docs/screenshots/guide.png)
-
-| Channel panel | Stream picker |
-|---|---|
-| ![Channel panel](docs/screenshots/channel-panel.png) | ![Stream picker](docs/screenshots/stream-picker.png) |
-
 | Search | Channel number |
 |---|---|
 | ![Search](docs/screenshots/search.png) | ![Channel number](docs/screenshots/channel-number.jpg) |

@@ -112,6 +112,15 @@
     </plurals>
     <string name="settings_unhide_all">Tout réafficher</string>
 
+    <string name="settings_channel_lists_title">Listes de chaînes</string>
+    <string name="settings_channel_lists_description">Créées depuis le menu d\'une chaîne (OK maintenu) : chaque liste est une catégorie de l\'accueil, du panneau des chaînes et du guide</string>
+    <string name="settings_channel_list_rename">Renommer</string>
+    <string name="settings_channel_list_delete">Supprimer</string>
+    <plurals name="channel_count">
+        <item quantity="one">%d chaîne</item>
+        <item quantity="many">%d chaînes</item>
+        <item quantity="other">%d chaînes</item>
+    </plurals>
     <string name="settings_categories_title">Catégories</string>
     <string name="settings_categories_description">Catégories affichées sur l\'accueil, dans le volet des chaînes et au zapping. Vos favoris restent visibles.</string>
     <string name="settings_category_hidden">Masquée</string>
@@ -236,6 +245,11 @@
     <string name="card_add_favorite">Ajouter aux favoris</string>
     <string name="card_remove_favorite">Retirer des favoris</string>
     <string name="card_hide_channel">Masquer la chaîne</string>
+    <string name="channel_list_new">Nouvelle liste…</string>
+    <string name="channel_list_create">Créer la liste</string>
+    <string name="channel_list_name_hint">Nom de la liste (Sport, Enfants…)</string>
+    <string name="channel_list_add">Ajouter à %1$s</string>
+    <string name="channel_list_remove">Retirer de %1$s</string>
     <string name="card_move_in_favorites">Déplacer dans les favoris</string>
     <string name="card_hide_category">Masquer cette catégorie</string>
     <plurals name="card_category_channel_count">
@@ -282,6 +296,8 @@
     <string name="search_no_results">Aucun résultat pour « %1$s »</string>
     <string name="search_voice">Recherche vocale</string>
     <string name="search_voice_prompt">Dites une chaîne ou un programme</string>
+    <string name="search_programs">Programmes</string>
+    <string name="search_vod">Films et séries</string>
     <plurals name="search_results">
         <item quantity="one">%1$d résultat</item>
         <item quantity="many">%1$d résultats</item>
@@ -403,6 +419,14 @@
     <string name="options_channels">%1$d canaux</string>
     <string name="options_track">Piste %1$d</string>
     <string name="options_speed">Vitesse</string>
+    <string name="options_stats">Statistiques</string>
+    <string name="options_stats_show">Afficher les statistiques de lecture</string>
+    <string name="stats_video">Vidéo</string>
+    <string name="stats_audio">Audio</string>
+    <string name="stats_bitrate">Débit vidéo</string>
+    <string name="stats_bandwidth">Bande passante</string>
+    <string name="stats_buffer">Tampon</string>
+    <string name="stats_dropped">Images perdues</string>
     <string name="options_speed_normal">Normale</string>
     <string name="picture_fit">Ajusté</string>
     <string name="picture_zoom">Remplir (rogné)</string>
@@ -467,6 +491,7 @@
     <string name="vod_player_ends_at">Fin à %1$s</string>
     <string name="vod_player_up_next">Épisode suivant dans %1$d s</string>
     <string name="vod_player_play_now">Lire</string>
+    <string name="vod_player_skip_intro">Passer le générique</string>
     <string name="vod_player_paused">En pause</string>
     <string name="vod_player_episode_line">S%1$d · É%2$d</string>
     <string name="vod_player_back_10">Reculer de 10 secondes</string>
@@ -648,6 +673,14 @@
         <item quantity="many">Charger %d catégories</item>
         <item quantity="other">Charger %d catégories</item>
     </plurals>
+    <string name="vod_categories_new">Nouveau</string>
+    <plurals name="vod_new_categories">
+        <item quantity="one">%1$d nouvelle catégorie dans %2$s</item>
+        <item quantity="many">%1$d nouvelles catégories dans %2$s</item>
+        <item quantity="other">%1$d nouvelles catégories dans %2$s</item>
+    </plurals>
+    <string name="vod_new_categories_choose">Voir</string>
+    <string name="vod_new_categories_dismiss">Ignorer</string>
     <string name="settings_vod_categories_title">Contenu chargé</string>
     <string name="settings_vod_categories_description">Catégories de films et séries chargées depuis chaque source</string>
     <string name="settings_vod_categories_all">toutes les catégories</string>

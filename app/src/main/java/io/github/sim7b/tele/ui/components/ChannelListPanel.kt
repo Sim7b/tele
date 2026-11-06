@@ -54,6 +54,7 @@ import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.epg.GuideTimeline
 import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.ChannelListView
 import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.ui.theme.AccentCyan
 import kotlinx.coroutines.delay
@@ -104,17 +105,19 @@ fun ChannelListPanel(
     programsOf: (Channel) -> List<GuideProgram> = { emptyList() },
     actions: GuideActions = GuideActions()
 ) {
-    val categories = remember(channels, categoryOrder, favorites.isEmpty(), recents.isEmpty()) {
-        listOfNotNull(FAVORITES.takeIf { favorites.isNotEmpty() }, RECENTS.takeIf { recents.isNotEmpty() }, ALL_CHANNELS) +
+    val lists = actions.listCategories
+    val categories = remember(channels, categoryOrder, favorites.isEmpty(), recents.isEmpty(), lists) {
+        listOfNotNull(FAVORITES.takeIf { favorites.isNotEmpty() }, RECENTS.takeIf { recents.isNotEmpty() }) + lists.keys + ALL_CHANNELS +
             Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
     }
     var category by remember { mutableStateOf(ALL_CHANNELS) }
     if (category !in categories) category = ALL_CHANNELS
-    val shown = remember(channels, favorites, recents, category) {
+    val shown = remember(channels, favorites, recents, category, lists) {
         when (category) {
             ALL_CHANNELS -> channels
             FAVORITES -> favorites
             RECENTS -> recents
+            in lists -> lists.getValue(category).channels
             else -> channels.filter { it.group == category }
         }
     }
@@ -356,9 +359,9 @@ fun ChannelListPanel(
             ) {
                 val index = categories.indexOf(category)
                 PanelHeader(
-                    category = categoryLabel(category),
-                    previous = categoryLabel(categories[Math.floorMod(index - 1, categories.size)]),
-                    next = categoryLabel(categories[Math.floorMod(index + 1, categories.size)]),
+                    category = categoryLabel(category, lists),
+                    previous = categoryLabel(categories[Math.floorMod(index - 1, categories.size)], lists),
+                    next = categoryLabel(categories[Math.floorMod(index + 1, categories.size)], lists),
                     count = shown.size,
                     onPrevious = { moveCategory(-1) },
                     onNext = { moveCategory(+1) },
@@ -472,7 +475,10 @@ fun ChannelListPanel(
                     menuChannel = null
                     scope.launch { rowFocus.requestFocusWithRetry() }
                 },
-                automaticDescription = actions.automaticStreamDescription(channel)
+                automaticDescription = actions.automaticStreamDescription(channel),
+                lists = actions.savedLists,
+                onToggleInList = { listId -> actions.toggleInList(listId, channel) },
+                onCreateList = { name -> actions.createList(name, channel) }
             )
         }
     }
@@ -496,10 +502,11 @@ fun ChannelListPanel(
 }
 
 @Composable
-private fun categoryLabel(category: String): String = when (category) {
+private fun categoryLabel(category: String, lists: Map<String, ChannelListView>): String = when (category) {
     ALL_CHANNELS -> stringResource(R.string.panel_all_channels)
     FAVORITES -> stringResource(R.string.home_favorites)
     RECENTS -> stringResource(R.string.panel_recent_channels)
+    in lists -> lists.getValue(category).name
     else -> groupLabel(category)
 }
 

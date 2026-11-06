@@ -95,6 +95,7 @@ import io.github.sim7b.tele.ui.components.Device
 import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
+import io.github.sim7b.tele.ui.components.PlaybackStatsOverlay
 import io.github.sim7b.tele.ui.components.TouchSteps
 import io.github.sim7b.tele.ui.components.blockTouches
 import io.github.sim7b.tele.ui.components.onAnyTouch
@@ -134,6 +135,8 @@ fun VodPlayerScreen(
     onPlayNext: (VodPlayRequest) -> Unit = {},
     trackPrefs: VodTrackPrefs? = null,
     onTrackPrefsChange: (VodTrackPrefs) -> Unit = {},
+    // Series: end of the intro learned when the user skips it by hand
+    onIntroLearned: (Long) -> Unit = {},
     pictureFormat: PictureFormat = PictureFormat.FIT,
     onPictureFormatChange: (PictureFormat) -> Unit = {},
     subtitles: VodSubtitles? = null
@@ -142,6 +145,7 @@ fun VodPlayerScreen(
     val error by playerManager.error.collectAsState()
     val tracks by playerManager.tracks.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
+    val showStats by playerManager.showStats.collectAsState()
     val reportProgress by rememberUpdatedState(onProgress)
     val currentNext by rememberUpdatedState(next)
     val currentPlayNext by rememberUpdatedState(onPlayNext)
@@ -172,6 +176,8 @@ fun VodPlayerScreen(
     // Next episode or sheet already asked for: the end of the stream must not ask again
     var leaving by remember(request) { mutableStateOf(false) }
     var refocusToken by remember { mutableIntStateOf(0) }
+    // End of the intro of the series, learned from the previous episodes (or this one)
+    var learnedIntro by remember(request.titleKey) { mutableStateOf(trackPrefs?.introEndMs) }
 
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -200,6 +206,12 @@ fun VodPlayerScreen(
 
     fun commitSeek() {
         seekTarget?.let {
+            if (request.episodeKey != null) {
+                learnedIntroEnd(player.currentPosition, it, durationMs)?.let { end ->
+                    learnedIntro = end
+                    onIntroLearned(end)
+                }
+            }
             player.seekTo(it)
             positionMs = it
         }
@@ -280,6 +292,17 @@ fun VodPlayerScreen(
     }
 
     val upNext = next != null && !upNextDismissed && error == null && seekTarget == null && inCredits(positionMs, durationMs)
+    // Opening minutes of an episode: OK skips the intro
+    val introTarget = if (request.episodeKey != null && !upNext && error == null && seekTarget == null && castDevice == null) {
+        introSkipTarget(positionMs, durationMs, learnedIntro)
+    } else {
+        null
+    }
+    fun skipIntro() {
+        val target = introTarget ?: return
+        player.seekTo(if (durationMs > 0) target.coerceAtMost(durationMs) else target)
+        positionMs = target
+    }
     // Countdown of the next episode, stopped while paused
     LaunchedEffect(upNext) {
         if (!upNext) return@LaunchedEffect
@@ -391,7 +414,12 @@ fun VodPlayerScreen(
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_UP,
                     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_INFO -> {
                         if (up) {
-                            if (error != null && native.keyCode != KeyEvent.KEYCODE_INFO) playerManager.retry() else revealControls()
+                            val ok = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || native.keyCode == KeyEvent.KEYCODE_ENTER
+                            when {
+                                ok && introTarget != null -> skipIntro()
+                                error != null && native.keyCode != KeyEvent.KEYCODE_INFO -> playerManager.retry()
+                                else -> revealControls()
+                            }
                         }
                         true
                     }
@@ -528,6 +556,19 @@ fun VodPlayerScreen(
         }
 
         AnimatedVisibility(
+            visible = introTarget != null && !showControls && !showOptions && !showSubtitleSearch,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomEnd)
+        ) {
+            Pill(
+                text = stringResource(R.string.vod_player_skip_intro),
+                onClick = ::skipIntro,
+                modifier = Modifier.padding(end = 48.dp, bottom = 40.dp)
+            )
+        }
+
+        AnimatedVisibility(
             visible = upNext,
             enter = fadeIn() + slideInVertically { it / 3 },
             exit = fadeOut() + slideOutVertically { it / 3 },
@@ -546,6 +587,8 @@ fun VodPlayerScreen(
                 )
             }
         }
+
+        if (showStats && castDevice == null) PlaybackStatsOverlay(playerManager, modifier = Modifier.align(Alignment.TopStart))
 
         AnimatedVisibility(
             visible = showOptions,
@@ -573,6 +616,8 @@ fun VodPlayerScreen(
                     refocusToken++
                 },
                 speed = speed,
+                statsOn = if (castDevice == null) showStats else null,
+                onToggleStats = { playerManager.toggleStats() },
                 onSelectSpeed = { value ->
                     speed = value
                     player.setPlaybackSpeed(value)

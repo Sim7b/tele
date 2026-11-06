@@ -147,6 +147,9 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.17")
     // Main dispatcher of the tests: runs coroutines at once, as Dispatchers.Main.immediate on the device
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    // Compose UI tests on the JVM (Robolectric): focus and remote navigation of the screens
+    testImplementation("androidx.compose.ui:ui-test-junit4:1.11.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest:1.11.0")
 }
 
 configurations.configureEach {

@@ -11,6 +11,8 @@ import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.ChannelList
+import io.github.sim7b.tele.data.model.ChannelLists
 import io.github.sim7b.tele.data.model.PreviewDelay
 import io.github.sim7b.tele.data.vod.VodCategories
 import io.github.sim7b.tele.data.vod.VodDisplay
@@ -131,6 +133,10 @@ class SettingsRepository(context: Context) {
     // Favorites in the order chosen by the user (reorderable on the home grid)
     private val _favoriteIds = MutableStateFlow<List<String>>(emptyList())
     val favoriteIds: StateFlow<List<String>> = _favoriteIds.asStateFlow()
+
+    // Lists of channels made by the user, besides the favorites
+    private val _channelLists = MutableStateFlow<List<ChannelList>>(emptyList())
+    val channelLists: StateFlow<List<ChannelList>> = _channelLists.asStateFlow()
 
     private val _hiddenIds = MutableStateFlow<Set<String>>(emptySet())
     val hiddenIds: StateFlow<Set<String>> = _hiddenIds.asStateFlow()
@@ -294,6 +300,7 @@ class SettingsRepository(context: Context) {
         _accentColor.value = try { AppAccentColor.valueOf(savedAccent ?: AppAccentColor.CYAN.name) } catch (e: Exception) { AppAccentColor.CYAN }
 
         _favoriteIds.value = loadFavoriteOrder()
+        _channelLists.value = ChannelLists.fromJson(prefs.getString(KEY_CHANNEL_LISTS, null))
         _hiddenIds.value = prefs.getStringSet(KEY_HIDDEN, emptySet()) ?: emptySet()
         _hiddenGroups.value = prefs.getStringSet(KEY_HIDDEN_GROUPS, emptySet()) ?: emptySet()
         _selectedStreams.value = loadSelectedStreams()
@@ -471,6 +478,22 @@ class SettingsRepository(context: Context) {
         persistFavorites(_favoriteIds.value.sortedBy { rank[it] ?: Int.MAX_VALUE })
     }
 
+    private fun persistChannelLists(lists: List<ChannelList>) {
+        if (lists == _channelLists.value) return
+        prefs.edit().putString(KEY_CHANNEL_LISTS, ChannelLists.toJson(lists).toString()).apply()
+        _channelLists.value = lists
+    }
+
+    /** New list of channels named [name], holding [channelId] when given. */
+    fun createChannelList(name: String, channelId: String? = null) = persistChannelLists(ChannelLists.create(_channelLists.value, name, channelId))
+
+    /** Adds the channel to list [listId], or removes it. */
+    fun toggleInChannelList(listId: String, channelId: String) = persistChannelLists(ChannelLists.toggle(_channelLists.value, listId, channelId))
+
+    fun renameChannelList(listId: String, name: String) = persistChannelLists(ChannelLists.rename(_channelLists.value, listId, name))
+
+    fun deleteChannelList(listId: String) = persistChannelLists(ChannelLists.delete(_channelLists.value, listId))
+
     /** Appends the channel to the favorites, or removes it. */
     fun toggleFavoriteChannel(channelId: String) {
         val current = _favoriteIds.value
@@ -564,13 +587,13 @@ class SettingsRepository(context: Context) {
             null
         }
 
-    /** Saves the movies and series of source [configId] (to call off the main thread). */
     /** Forgets the movies and series catalog of [configId] (its categories changed; off the main thread). */
     fun clearVodCatalog(configId: String) = vodCatalogCache(configId).clear()
 
-    fun saveVodCatalog(configId: String, savedAt: Long, entries: List<VodEntry>) {
+    /** Saves the movies and series of source [configId] (to call off the main thread). */
+    fun saveVodCatalog(configId: String, savedAt: Long, entries: List<VodEntry>, fullAt: Long = savedAt) {
         try {
-            vodCatalogCache(configId).save(configId, savedAt, entries)
+            vodCatalogCache(configId).save(configId, savedAt, entries, fullAt)
         } catch (e: Exception) {
             Log.w(TAG, "Unable to save the movies and series catalog: ${e.javaClass.simpleName}")
         }
@@ -670,6 +693,7 @@ class SettingsRepository(context: Context) {
         put(EXPORT_VERSION_KEY, EXPORT_VERSION)
         put("sources", JSONArray().apply { _configs.value.forEach { put(it.toJson()) } })
         put("favorites", JSONArray(_favoriteIds.value))
+        put("channelLists", ChannelLists.toJson(_channelLists.value))
         put("hiddenChannels", JSONArray(_hiddenIds.value.toList()))
         put("hiddenCategories", JSONArray(_hiddenGroups.value.toList()))
         put("categoryNames", JSONObject(_categoryNames.value as Map<*, *>))
@@ -715,6 +739,7 @@ class SettingsRepository(context: Context) {
             persistConfigs(merged)
         }
         strings("favorites")?.let { persistFavorites(it) }
+        json.optJSONArray("channelLists")?.let { persistChannelLists(ChannelLists.fromJson(it)) }
         strings("hiddenChannels")?.toSet()?.let {
             prefs.edit().putStringSet(KEY_HIDDEN, it).apply()
             _hiddenIds.value = it
@@ -776,6 +801,7 @@ class SettingsRepository(context: Context) {
             persistFavorites(_favoriteIds.value - owned.toSet())
         }
         _selectedStreams.value.keys.filter(::ownedBySource).forEach { setSelectedStream(it, null) }
+        persistChannelLists(ChannelLists.without(_channelLists.value, ::ownedBySource))
     }
 
     companion object {
@@ -792,6 +818,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_THEME_BG = "iptv_theme_bg"
         private const val KEY_ACCENT_COLOR = "iptv_accent_color"
         private const val KEY_FAVORITES = "iptv_favorite_ids"
+        private const val KEY_CHANNEL_LISTS = "channel_lists"
         private const val KEY_FAVORITE_ORDER = "iptv_favorite_order"
         private const val KEY_HIDDEN_GROUPS = "iptv_hidden_groups"
         private const val KEY_HIDDEN = "iptv_hidden_ids"

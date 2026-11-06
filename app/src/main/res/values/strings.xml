@@ -112,6 +112,14 @@
     </plurals>
     <string name="settings_unhide_all">Show all again</string>
 
+    <string name="settings_channel_lists_title">Lists of channels</string>
+    <string name="settings_channel_lists_description">Made from the menu of a channel (hold OK): each list is a category of the home, the channel panel and the guide</string>
+    <string name="settings_channel_list_rename">Rename</string>
+    <string name="settings_channel_list_delete">Delete</string>
+    <plurals name="channel_count">
+        <item quantity="one">%d channel</item>
+        <item quantity="other">%d channels</item>
+    </plurals>
     <string name="settings_categories_title">Categories</string>
     <string name="settings_categories_description">Categories shown on the home screen, in the channel panel and when zapping. Your favorites stay visible.</string>
     <string name="settings_category_hidden">Hidden</string>
@@ -238,6 +246,11 @@
     <string name="card_add_favorite">Add to favorites</string>
     <string name="card_remove_favorite">Remove from favorites</string>
     <string name="card_hide_channel">Hide channel</string>
+    <string name="channel_list_new">New list…</string>
+    <string name="channel_list_create">Create the list</string>
+    <string name="channel_list_name_hint">Name of the list (Sport, Kids…)</string>
+    <string name="channel_list_add">Add to %1$s</string>
+    <string name="channel_list_remove">Remove from %1$s</string>
     <string name="card_move_in_favorites">Move within favorites</string>
     <string name="card_hide_category">Hide this category</string>
     <plurals name="card_category_channel_count">
@@ -283,6 +296,8 @@
     <string name="search_no_results">No results for “%1$s”</string>
     <string name="search_voice">Voice search</string>
     <string name="search_voice_prompt">Say a channel or a program</string>
+    <string name="search_programs">Programs</string>
+    <string name="search_vod">Movies and series</string>
     <plurals name="search_results">
         <item quantity="one">%1$d result</item>
         <item quantity="other">%1$d results</item>
@@ -402,6 +417,14 @@
     <string name="options_channels">%1$d channels</string>
     <string name="options_track">Track %1$d</string>
     <string name="options_speed">Speed</string>
+    <string name="options_stats">Statistics</string>
+    <string name="options_stats_show">Show the playback statistics</string>
+    <string name="stats_video">Video</string>
+    <string name="stats_audio">Audio</string>
+    <string name="stats_bitrate">Video bitrate</string>
+    <string name="stats_bandwidth">Bandwidth</string>
+    <string name="stats_buffer">Buffer</string>
+    <string name="stats_dropped">Dropped frames</string>
     <string name="options_speed_normal">Normal</string>
     <string name="picture_fit">Fit</string>
     <string name="picture_zoom">Fill (crop)</string>
@@ -465,6 +488,7 @@
     <string name="vod_player_ends_at">Ends at %1$s</string>
     <string name="vod_player_up_next">Next episode in %1$d s</string>
     <string name="vod_player_play_now">Play now</string>
+    <string name="vod_player_skip_intro">Skip intro</string>
     <string name="vod_player_paused">Paused</string>
     <string name="vod_player_episode_line">S%1$d · E%2$d</string>
     <string name="vod_player_back_10">Back 10 seconds</string>
@@ -638,6 +662,13 @@
         <item quantity="one">Load %d category</item>
         <item quantity="other">Load %d categories</item>
     </plurals>
+    <string name="vod_categories_new">New</string>
+    <plurals name="vod_new_categories">
+        <item quantity="one">%1$d new category in %2$s</item>
+        <item quantity="other">%1$d new categories in %2$s</item>
+    </plurals>
+    <string name="vod_new_categories_choose">See</string>
+    <string name="vod_new_categories_dismiss">Ignore</string>
     <string name="settings_vod_categories_title">Content loaded</string>
     <string name="settings_vod_categories_description">Categories of movies and series loaded from each source</string>
     <string name="settings_vod_categories_all">all categories</string>

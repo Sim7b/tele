@@ -142,7 +142,11 @@ fun VodHomeScreen(
     matcherFor: (List<VodTitle>, Map<Ranking, List<RankedItem>>) -> VodRankings.Matcher? = { titles, ranked ->
         if (ranked.isEmpty()) null else VodRankings.Matcher(titles, facts())
     },
-    onRows: (List<VodRow>) -> Unit = {}
+    onRows: (List<VodRow>) -> Unit = {},
+    // New categories suggested (source name, count), to choose or dismiss
+    newCategories: Pair<String, Int>? = null,
+    onChooseNewCategories: () -> Unit = {},
+    onDismissNewCategories: () -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
     val screen = LocalScreen.current
@@ -317,6 +321,24 @@ fun VodHomeScreen(
                         .padding(top = 12.dp)
                         .horizontalScroll(rememberScrollState())
                 ) { tabs() }
+            }
+            newCategories?.let { (source, count) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(top = 10.dp)
+                ) {
+                    Text(
+                        text = pluralStringResource(R.plurals.vod_new_categories, count, count, source),
+                        fontSize = 13.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    VodChip(label = stringResource(R.string.vod_new_categories_choose), selected = false, onClick = onChooseNewCategories)
+                    VodChip(label = stringResource(R.string.vod_new_categories_dismiss), selected = false, onClick = onDismissNewCategories)
+                }
             }
 
             if (library.titles.isEmpty()) {

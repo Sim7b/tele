@@ -69,6 +69,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
+import io.github.sim7b.tele.ui.components.PlaybackStatsOverlay
 import io.github.sim7b.tele.ui.components.ChannelNumberBadge
 import io.github.sim7b.tele.ui.components.rememberChannelNumberEntry
 import io.github.sim7b.tele.ui.components.LogoPlate
@@ -121,6 +122,7 @@ fun PlayerScreen(
     val errorMessage by playerManager.error.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
     val reconnection by playerManager.reconnection.collectAsState()
+    val showStats by playerManager.showStats.collectAsState()
     // Phone / tablet casting: the stream plays on the Chromecast, this screen is the remote
     val castDevice by playerManager.castDevice.collectAsState()
 
@@ -504,6 +506,8 @@ fun PlayerScreen(
             )
         }
 
+        if (showStats) PlaybackStatsOverlay(playerManager, modifier = Modifier.align(Alignment.TopStart))
+
         // Playback options (right arrow): stream, audio, subtitles, picture format
         AnimatedVisibility(
             visible = showOptionsPanel,
@@ -527,7 +531,9 @@ fun PlayerScreen(
                 onDismiss = {
                     showOptionsPanel = false
                     refocusToken++
-                }
+                },
+                statsOn = showStats,
+                onToggleStats = { playerManager.toggleStats() }
             )
         }
     }

@@ -70,6 +70,7 @@ import io.github.sim7b.tele.ui.vod.VodSubtitles
 import io.github.sim7b.tele.ui.vod.LocalPosterWidth
 import androidx.compose.ui.unit.dp
 import io.github.sim7b.tele.data.storage.VodStore
+import io.github.sim7b.tele.data.storage.VodTrackPrefs
 import io.github.sim7b.tele.data.vod.VodFilter
 import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodRows
@@ -107,7 +108,7 @@ sealed class CurrentScreen {
     /** Sheet of a title; Back returns to [returnTo] (the library, or the search it was opened from). */
     data class VodDetail(val titleKey: String, val returnTo: CurrentScreen = Vod) : CurrentScreen()
     /** Choice of the categories of movies and series loaded from a source (from the settings). */
-    data class VodCategories(val configId: String) : CurrentScreen()
+    data class VodCategories(val configId: String, val returnTo: CurrentScreen = Settings) : CurrentScreen()
     data class VodPlayer(val request: VodPlayRequest, val returnTo: CurrentScreen) : CurrentScreen()
 }
 
@@ -326,6 +327,14 @@ class MainActivity : ComponentActivity() {
             val visibleChannels = homeLists.visible
             val favoriteChannels = homeLists.favorites
             val categoryCounts = homeLists.categoryCounts
+            // Lists of channels made by the user (with their channels found), and the channel menu actions on them
+            val channelListViews by viewModel.channelLists.collectAsState()
+            val savedChannelLists by configRepository.channelLists.collectAsState()
+            fun toggleInList(listId: String, channel: Channel) {
+                // A grouped channel may be in the list by one of its versions
+                val id = savedChannelLists.firstOrNull { it.id == listId }?.channelIds?.firstOrNull { it in channel.allIds } ?: channel.id
+                configRepository.toggleInChannelList(listId, id)
+            }
 
             // Guide: recent channels (last watched first), reminders, replays and the menu of a channel
             val recentIds by viewModel.guideStore.recentChannels.collectAsState()
@@ -364,7 +373,11 @@ class MainActivity : ComponentActivity() {
                 hideChannel = { channel -> hideChannel(channel.id) },
                 loadStreams = { channel -> viewModel.loadStreams(channel) },
                 selectStream = { channel, stream -> viewModel.selectStream(channel, stream) },
-                automaticStreamDescription = automaticStreamDescription
+                automaticStreamDescription = automaticStreamDescription,
+                channelLists = channelListViews,
+                savedLists = savedChannelLists,
+                toggleInList = ::toggleInList,
+                createList = { name, channel -> configRepository.createChannelList(name, channel.id) }
             )
             // A program with a reminder starts: shown once, on any screen (after the welcome)
             var dueReminder by remember { mutableStateOf<Reminder?>(null) }
@@ -419,6 +432,10 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     channels = visibleChannels,
                                     favorites = favoriteChannels,
+                                    channelLists = channelListViews,
+                                    savedLists = savedChannelLists,
+                                    onToggleInList = ::toggleInList,
+                                    onCreateList = { name, channel -> configRepository.createChannelList(name, channel.id) },
                                     hasSource = enabledConfigs.isNotEmpty(),
                                     favoriteIds = favoriteIds,
                                     isLoading = isLoadingChannels,
@@ -491,6 +508,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         is CurrentScreen.Search -> {
+                            val searchSchedules by viewModel.schedules.collectAsState()
+                            val searchLibrary by viewModel.vod.library.collectAsState()
                             // State kept (query, focused result) when coming back from the player
                             saveableStateHolder.SaveableStateProvider("search") {
                                 SearchScreen(
@@ -502,7 +521,14 @@ class MainActivity : ComponentActivity() {
                                     onBack = {
                                         saveableStateHolder.removeState("search")
                                         currentScreen = CurrentScreen.Home
-                                    }
+                                    },
+                                    schedules = searchSchedules,
+                                    actions = guideActions(returnTo = CurrentScreen.Search(startWithVoice = false)),
+                                    vodTitles = if (vodEnabled) searchLibrary.titles else emptyList(),
+                                    onTitleSelected = { title ->
+                                        currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Search(startWithVoice = false))
+                                    },
+                                    findPoster = { title -> viewModel.vod.posterFor(title) }
                                 )
                             }
                         }
@@ -572,7 +598,16 @@ class MainActivity : ComponentActivity() {
                                     actions = vodActions,
                                     initialRows = viewModel.vod.lastRows,
                                     matcherFor = { titles, ranked -> viewModel.vod.matcher(titles, ranked) },
-                                    onRows = { built -> viewModel.vod.lastRows = built }
+                                    onRows = { built -> viewModel.vod.lastRows = built },
+                                    newCategories = vodLibrary.newCategories.entries.firstOrNull()?.let { (id, added) ->
+                                        enabledConfigs.firstOrNull { it.id == id }?.let { it.name to added.size }
+                                    },
+                                    onChooseNewCategories = {
+                                        vodLibrary.newCategories.keys.firstOrNull()?.let { currentScreen = CurrentScreen.VodCategories(it, returnTo = CurrentScreen.Vod) }
+                                    },
+                                    onDismissNewCategories = {
+                                        vodLibrary.newCategories.keys.firstOrNull()?.let { viewModel.vod.dismissNewCategories(it) }
+                                    }
                                 )
                                 }
                             }
@@ -580,18 +615,20 @@ class MainActivity : ComponentActivity() {
                         is CurrentScreen.VodCategories -> {
                             val config = enabledConfigs.firstOrNull { it.id == screen.configId }
                             val selections by configRepository.vodSelections.collectAsState()
+                            val newCategories by viewModel.vod.library.collectAsState()
                             if (config == null) {
-                                LaunchedEffect(Unit) { currentScreen = CurrentScreen.Settings }
+                                LaunchedEffect(Unit) { currentScreen = screen.returnTo }
                             } else {
                                 VodCategoryPicker(
                                     source = config,
                                     current = selections[config.id],
+                                    suggested = newCategories.newCategories[config.id].orEmpty().mapTo(HashSet()) { it.key },
                                     loadCategories = { viewModel.vod.categories(config) },
                                     onChoose = { selection ->
                                         viewModel.vod.choose(config, selection)
-                                        currentScreen = CurrentScreen.Settings
+                                        currentScreen = screen.returnTo
                                     },
-                                    onBack = { currentScreen = CurrentScreen.Settings }
+                                    onBack = { currentScreen = screen.returnTo }
                                 )
                             }
                         }
@@ -690,7 +727,10 @@ class MainActivity : ComponentActivity() {
                                 next = next,
                                 onPlayNext = { upcoming -> currentScreen = CurrentScreen.VodPlayer(upcoming, screen.returnTo) },
                                 trackPrefs = if (isReplay) null else vodTrackPrefs[request.titleKey],
-                                onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs) } },
+                                onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs.copy(introEndMs = trackPrefs.value[request.titleKey]?.introEndMs)) } },
+                                onIntroLearned = { end ->
+                                    if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, (trackPrefs.value[request.titleKey] ?: VodTrackPrefs()).copy(introEndMs = end)) }
+                                },
                                 pictureFormat = pictureFormat,
                                 onPictureFormatChange = { configRepository.setPictureFormat(it) },
                                 subtitles = vodSubtitles.takeIf { !isReplay }

@@ -17,12 +17,14 @@ import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
+import io.github.sim7b.tele.data.model.ChannelList
 import io.github.sim7b.tele.data.model.PreviewDelay
 import io.github.sim7b.tele.data.vod.PosterSize
 import io.github.sim7b.tele.data.vod.VodFilter
 import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodRow
 import io.github.sim7b.tele.data.vod.VodSort
+import io.github.sim7b.tele.ui.vod.NameDialog
 import io.github.sim7b.tele.ui.vod.countryName
 import io.github.sim7b.tele.ui.vod.languageName
 import io.github.sim7b.tele.ui.vod.sortLabel
@@ -166,6 +168,8 @@ fun SettingsScreen(
     val tmdbKey by repository.tmdbKey.collectAsState()
     val vodDisplay by repository.vodDisplay.collectAsState()
     val vodSelections by repository.vodSelections.collectAsState()
+    val channelLists by repository.channelLists.collectAsState()
+    var renamingList by remember { mutableStateOf<ChannelList?>(null) }
     var editingKey by remember { mutableStateOf<ApiKeyService?>(null) }
     val openSubtitlesKey by repository.openSubtitlesKey.collectAsState()
     val subtitleLanguages by repository.subtitleLanguages.collectAsState()
@@ -421,6 +425,37 @@ fun SettingsScreen(
                                                     ),
                                                     icon = Icons.Filled.Info,
                                                     onClick = { showUnmatched = true }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                // Lists of channels made from the menu of a channel: renamed or deleted here
+                                item {
+                                    SettingsSection(
+                                        title = stringResource(R.string.settings_channel_lists_title),
+                                        description = stringResource(R.string.settings_channel_lists_description)
+                                    ) {
+                                        channelLists.forEach { list ->
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                modifier = Modifier.padding(bottom = 8.dp)
+                                            ) {
+                                                Text(
+                                                    text = list.name + "  ·  " + pluralStringResource(R.plurals.channel_count, list.channelIds.size, list.channelIds.size),
+                                                    fontSize = 14.sp,
+                                                    color = TextPrimary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                ActionButton(label = stringResource(R.string.settings_channel_list_rename), icon = Icons.Filled.Edit, onClick = { renamingList = list })
+                                                ActionButton(
+                                                    label = stringResource(R.string.settings_channel_list_delete),
+                                                    icon = Icons.Filled.Delete,
+                                                    destructive = true,
+                                                    onClick = { repository.deleteChannelList(list.id) }
                                                 )
                                             }
                                         }
@@ -900,6 +935,19 @@ fun SettingsScreen(
                     }
                     editingKey = null
                 }
+            )
+        }
+        renamingList?.let { list ->
+            NameDialog(
+                title = stringResource(R.string.settings_channel_list_rename),
+                initial = list.name,
+                confirm = stringResource(R.string.settings_channel_list_rename),
+                hint = stringResource(R.string.channel_list_name_hint),
+                onConfirm = { name ->
+                    repository.renameChannelList(list.id, name)
+                    renamingList = null
+                },
+                onDismiss = { renamingList = null }
             )
         }
         if (showUnmatched) {

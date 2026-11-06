@@ -18,6 +18,8 @@ import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.DispatcharrEpgChannel
 import io.github.sim7b.tele.data.model.GuideProgram
+import io.github.sim7b.tele.data.model.ChannelListView
+import io.github.sim7b.tele.data.model.ChannelLists
 import io.github.sim7b.tele.data.model.HomeLists
 import io.github.sim7b.tele.data.model.ProgramArtwork
 import io.github.sim7b.tele.data.model.SourceConfig
@@ -136,6 +138,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) { display, hiddenIds, hiddenGroups, favoriteIds, categoryOrder ->
         withContext(Dispatchers.Default) { HomeLists.build(display, hiddenIds, hiddenGroups, favoriteIds, categoryOrder) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeLists.EMPTY)
+    // Lists of channels made by the user, with their channels (among the ones not hidden)
+    val channelLists: StateFlow<List<ChannelListView>> = combine(homeLists, configRepository.channelLists) { lists, saved ->
+        withContext(Dispatchers.Default) { ChannelLists.resolve(saved, lists.unhidden) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     // Same channels before the renames: the categories a rename applies to
     @Volatile
     private var groupedChannels: List<Channel> = emptyList()

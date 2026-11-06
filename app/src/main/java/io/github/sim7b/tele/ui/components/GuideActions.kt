@@ -5,6 +5,8 @@ import androidx.compose.ui.res.stringResource
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.epg.Catchup
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.ChannelList
+import io.github.sim7b.tele.data.model.ChannelListView
 import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.storage.Reminder
@@ -24,8 +26,18 @@ class GuideActions(
     val hideChannel: (Channel) -> Unit = {},
     val loadStreams: (suspend (Channel) -> Result<List<StreamSource>>)? = null,
     val selectStream: (Channel, StreamSource?) -> Unit = { _, _ -> },
-    val automaticStreamDescription: (Channel) -> String = { "" }
+    val automaticStreamDescription: (Channel) -> String = { "" },
+    // Lists of channels made by the user: categories of their own, and their rows in the channel menu
+    val channelLists: List<ChannelListView> = emptyList(),
+    val savedLists: List<ChannelList> = emptyList(),
+    val toggleInList: (listId: String, Channel) -> Unit = { _, _ -> },
+    val createList: (name: String, Channel) -> Unit = { _, _ -> }
 ) {
+    /** Lists holding channels, by their category key (after the favorites and the recent channels). */
+    val listCategories: Map<String, ChannelListView> by lazy {
+        channelLists.filter { it.channels.isNotEmpty() }.associateBy { CHANNEL_LIST_PREFIX + it.id }
+    }
+
     fun hasReminder(channel: Channel, program: GuideProgram): Boolean =
         reminders.any { Reminders.matches(it, channel.id, program.startMillis) }
 
@@ -35,6 +47,9 @@ class GuideActions(
     fun reminderOf(channel: Channel, program: GuideProgram) =
         Reminder(channel.id, channel.name, program.title, program.startMillis, program.endMillis)
 }
+
+/** Prefix of the category keys of the lists of channels. */
+const val CHANNEL_LIST_PREFIX = "__list__:"
 
 /** What OK does on a program of the guide. */
 enum class ProgramChoice { WATCH, REPLAY, MENU }

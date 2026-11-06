@@ -24,6 +24,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -63,6 +65,9 @@ import androidx.tv.material3.Glow
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.ChannelList
+import io.github.sim7b.tele.data.model.ChannelLists
+import io.github.sim7b.tele.ui.vod.NameDialog
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.model.GuideProgram
@@ -490,9 +495,29 @@ fun ChannelActionMenuDialog(
     onSelectStream: (StreamSource?) -> Unit,
     onDismiss: () -> Unit,
     onMove: (() -> Unit)? = null,
-    automaticDescription: String = DISPATCHARR_AUTOMATIC
+    automaticDescription: String = DISPATCHARR_AUTOMATIC,
+    // Lists of channels: the channel added to or removed from one, or a new list made with it
+    lists: List<ChannelList> = emptyList(),
+    onToggleInList: (String) -> Unit = {},
+    onCreateList: ((String) -> Unit)? = null
 ) {
     val firstItemFocus = remember { FocusRequester() }
+    var naming by remember { mutableStateOf(false) }
+    if (naming) {
+        NameDialog(
+            title = stringResource(R.string.channel_list_new),
+            initial = "",
+            confirm = stringResource(R.string.channel_list_create),
+            hint = stringResource(R.string.channel_list_name_hint),
+            onConfirm = { name ->
+                onCreateList?.invoke(name)
+                naming = false
+                onDismiss()
+            },
+            onDismiss = { naming = false }
+        )
+        return
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -552,6 +577,21 @@ fun ChannelActionMenuDialog(
                         onMove()
                     }
                 )
+            }
+
+            lists.forEach { list ->
+                val inList = channel.allIds.any { it in list.channelIds }
+                MenuRow(
+                    label = stringResource(if (inList) R.string.channel_list_remove else R.string.channel_list_add, list.name),
+                    icon = if (inList) Icons.Filled.Check else Icons.Filled.Add,
+                    onClick = {
+                        onToggleInList(list.id)
+                        onDismiss()
+                    }
+                )
+            }
+            if (onCreateList != null && lists.size < ChannelLists.MAX_LISTS) {
+                MenuRow(label = stringResource(R.string.channel_list_new), icon = Icons.Filled.Add, onClick = { naming = true })
             }
 
             Spacer(modifier = Modifier.height(14.dp))
