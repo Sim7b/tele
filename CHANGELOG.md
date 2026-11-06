@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.15](https://github.com/Sim7b/tele/compare/v0.3.14...v0.3.15) (2026-11-06)
+
+### Features
+
+* **channels:** lists of channels besides the favorites ([134de12](https://github.com/Sim7b/tele/commit/134de12633aa474a3c7885fb8a2571fbbf301fc8))
+* **player:** optional playback statistics ([fe2a3af](https://github.com/Sim7b/tele/commit/fe2a3af6ce1b44f66949cc7672c59f1fe069d567))
+* **search:** programs of the guide and movies and series in the search ([0836d68](https://github.com/Sim7b/tele/commit/0836d68c5626b3c0ca74352101444c7d91b30044))
+* **vod:** progressive first load, daily update of the added titles only, new categories suggested ([16e9512](https://github.com/Sim7b/tele/commit/16e95122aa982696a82ab3373cf37b75db3a1890))
+* **vod:** skip the intro of an episode ([a7a5a13](https://github.com/Sim7b/tele/commit/a7a5a1341fda6403805d33e95cb505a49832d28d))
+
 ## [0.3.14](https://github.com/Sim7b/tele/compare/v0.3.13...v0.3.14) (2026-11-05)
 
 ### Features
