@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.17](https://github.com/Sim7b/tele/compare/v0.3.16...v0.3.17) (2026-11-06)
+
+### Features
+
+* parental control, trailers, corner channel and continue watching on the home ([3be3d95](https://github.com/Sim7b/tele/commit/3be3d95b02a00fa474bee95772680373c6de4afe))
+
 ## [0.3.16](https://github.com/Sim7b/tele/compare/v0.3.15...v0.3.16) (2026-11-06)
 
 ### Features
