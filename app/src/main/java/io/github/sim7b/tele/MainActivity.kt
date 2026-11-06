@@ -91,6 +91,13 @@ import io.github.sim7b.tele.ui.components.UpdateReadyDialog
 import io.github.sim7b.tele.ui.components.PinDialog
 import io.github.sim7b.tele.ui.components.withInset
 import io.github.sim7b.tele.playback.InsetPlayer
+import io.github.sim7b.tele.playback.DisplayModes
+import io.github.sim7b.tele.data.search.AppIntents
+import io.github.sim7b.tele.data.search.AppRequest
+import io.github.sim7b.tele.data.vod.WatchNext
+import android.app.SearchManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import android.os.Build
 import androidx.compose.ui.platform.LocalResources
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -108,7 +115,8 @@ sealed class CurrentScreen {
     object Home : CurrentScreen()
     /** Settings; [vod]: opened from the movies and series, on their section (Back returns to [returnTo]). */
     data class Settings(val vod: Boolean = false, val returnTo: CurrentScreen = Home) : CurrentScreen()
-    data class Search(val startWithVoice: Boolean) : CurrentScreen()
+    // [query]: asked by voice from outside the app (the Assistant)
+    data class Search(val startWithVoice: Boolean, val query: String = "") : CurrentScreen()
 
     /** Guide grid of the channels, opened from the home screen. */
     object Guide : CurrentScreen()
@@ -128,6 +136,9 @@ sealed class CurrentScreen {
 
 private const val WELCOME_MIN_MS = 1_800L
 private const val HOME_RESUME_SIZE = 12
+private const val FRAME_RATE_SETTLE_MS = 1_500L
+private const val WATCH_NEXT_SIZE = 10
+private const val WATCH_NEXT_DELAY_MS = 3_000L
 private const val WELCOME_MAX_MS = 15_000L
 // After the live TV is loaded: the movies and series library is prepared without slowing the startup
 private const val VOD_PRELOAD_DELAY_MS = 15_000L
@@ -144,6 +155,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var playerManager: TvPlayerManager
     // Second channel in a corner of the player
     private val insetPlayer by lazy { InsetPlayer(applicationContext) }
+    // Screen mode before one was chosen for a video (0: none chosen)
+    private var usualDisplayMode = 0
     private val viewModel: MainViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
     // Phone / tablet: a player is shown (system bars hidden)
@@ -153,6 +166,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
         playerManager = TvPlayerManager(this, castEnabled = Device.isTouch)
         val configRepository = viewModel.configRepository
         // Phone / tablet: drawn behind the system bars, the screens keep clear of them (safe area below)
@@ -188,6 +202,10 @@ class MainActivity : ComponentActivity() {
             // Audio language chosen in the playback options: preferred for every channel
             val audioLanguage by configRepository.audioLanguage.collectAsState()
             LaunchedEffect(audioLanguage) { playerManager.setPreferredAudioLanguage(audioLanguage) }
+            val audioLeveling by configRepository.audioLeveling.collectAsState()
+            LaunchedEffect(audioLeveling) { playerManager.setAudioLeveling(audioLeveling) }
+            val timeshiftOn by configRepository.timeshift.collectAsState()
+            LaunchedEffect(timeshiftOn) { playerManager.timeshiftEnabled = timeshiftOn }
 
             val userName by viewModel.userName.collectAsState()
             // The guide grid is offered once a guide is loaded (only this flag: the programs are read in its screen)
@@ -553,6 +571,7 @@ class MainActivity : ComponentActivity() {
                                 SearchScreen(
                                     channels = unhiddenChannels,
                                     startWithVoice = screen.startWithVoice,
+                                    initialQuery = screen.query,
                                     onChannelSelected = { channel ->
                                         currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Search(startWithVoice = false))
                                     },
@@ -849,6 +868,67 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    // Screen switched to the frame rate of the video while a channel, a movie or an episode plays;
+                    // back to the usual mode afterwards. The rate must hold a moment: zapping does not make it blink
+                    val matchFrameRate by configRepository.matchFrameRate.collectAsState()
+                    val playbackFps = playerManager.streamInfo.collectAsState().value.fps
+                    val playing = currentScreen is CurrentScreen.Player || currentScreen is CurrentScreen.VodPlayer
+                    LaunchedEffect(playing && matchFrameRate, playbackFps) {
+                        if (!(playing && matchFrameRate)) {
+                            setDisplayMode(null)
+                            return@LaunchedEffect
+                        }
+                        delay(FRAME_RATE_SETTLE_MS)
+                        setDisplayMode(playbackFps)
+                    }
+                    // Opened from outside: a title of the Play next row, or a channel / title asked by voice. Locked
+                    // channels are not in the lists; locked movies and series ask the parental code first
+                    val appRequest by appRequests.collectAsState()
+                    val requestLibrary by viewModel.vod.library.collectAsState()
+                    LaunchedEffect(appRequest, unhiddenChannels.isEmpty(), requestLibrary.titles.isEmpty()) {
+                        val request = appRequest ?: return@LaunchedEffect
+                        fun openVod(action: () -> Unit) = if (vodHidden) pinFor = action else action()
+                        when (request) {
+                            is AppRequest.OpenTitle -> {
+                                if (!vodEnabled) {
+                                    appRequests.value = null
+                                    return@LaunchedEffect
+                                }
+                                // The library is read in the background at startup
+                                if (requestLibrary.byKey[request.titleKey] == null && requestLibrary.titles.isEmpty()) return@LaunchedEffect
+                                showWelcome = false
+                                openVod { currentScreen = CurrentScreen.VodDetail(request.titleKey, returnTo = CurrentScreen.Home) }
+                            }
+                            is AppRequest.Play -> {
+                                if (unhiddenChannels.isEmpty()) return@LaunchedEffect
+                                showWelcome = false
+                                val channel = AppIntents.channelFor(request.query, unhiddenChannels)
+                                val title = if (channel == null && vodEnabled) AppIntents.titleFor(request.query, requestLibrary.titles) else null
+                                when {
+                                    channel != null -> currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Home)
+                                    title != null -> openVod { currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) }
+                                    else -> currentScreen = CurrentScreen.Search(startWithVoice = false, query = request.query)
+                                }
+                            }
+                        }
+                        appRequests.value = null
+                    }
+
+                    // Movies and series started, in the Play next row of the TV home (not when locked by the parental
+                    // code: that row is outside the app); left as it is while the library is not read
+                    if (!Device.isTouch) {
+                        val watchNext = remember { WatchNext(applicationContext) }
+                        val nextProgress by configRepository.vodStore.progress.collectAsState()
+                        val vodLockedSetting by configRepository.parental.vodLocked.collectAsState()
+                        val parentalCode by configRepository.parental.hasPin.collectAsState()
+                        LaunchedEffect(nextProgress, requestLibrary.byKey, vodEnabled, vodLockedSetting, parentalCode) {
+                            val shown = vodEnabled && !(vodLockedSetting && parentalCode)
+                            if (shown && requestLibrary.titles.isEmpty()) return@LaunchedEffect
+                            delay(WATCH_NEXT_DELAY_MS)
+                            watchNext.publish(if (shown) VodRows.continuing(requestLibrary.byKey, nextProgress, WATCH_NEXT_SIZE) else emptyList())
+                        }
+                    }
+
                     // Locked again (the app was left) while on the movies and series: back to the live TV home
                     LaunchedEffect(vodHidden) {
                         val onVod = currentScreen.let {
@@ -947,6 +1027,44 @@ class MainActivity : ComponentActivity() {
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.statusBars())
         if (navigation) controller.show(WindowInsetsCompat.Type.navigationBars()) else controller.hide(WindowInsetsCompat.Type.navigationBars())
+    }
+
+    /**
+     * Screen mode for a video of [fps] frames per second ([DisplayModes.pick]); null (or no better mode) gives
+     * the choice back to the system.
+     */
+    private fun setDisplayMode(fps: Float?) {
+        @Suppress("DEPRECATION")
+        val display = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay) ?: return
+        val wanted = if (fps == null) {
+            0
+        } else {
+            val modes = display.supportedModes.map { DisplayModes.Mode(it.modeId, it.physicalWidth, it.physicalHeight, it.refreshRate) }
+            // Compared with the usual mode (not one chosen for the previous video)
+            val usual = display.supportedModes.firstOrNull { it.modeId == usualDisplayMode } ?: display.mode
+            val current = DisplayModes.Mode(usual.modeId, usual.physicalWidth, usual.physicalHeight, usual.refreshRate)
+            DisplayModes.pick(modes, current, fps)?.id ?: 0
+        }
+        if (wanted != 0 && usualDisplayMode == 0) usualDisplayMode = display.mode.modeId
+        if (wanted == 0) usualDisplayMode = 0
+        val attributes = window.attributes
+        if (attributes.preferredDisplayModeId == wanted) return
+        attributes.preferredDisplayModeId = wanted
+        window.attributes = attributes
+    }
+
+    // Request from outside the app (Play next row of the TV home, Assistant), handled once the lists are there
+    private val appRequests = MutableStateFlow<AppRequest?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        intent ?: return
+        AppIntents.parse(intent.action, intent.dataString, intent.getStringExtra(SearchManager.QUERY))?.let { appRequests.value = it }
     }
 
     override fun onStop() {

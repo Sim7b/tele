@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.playback.TimeshiftState
 import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.playback.PlaybackTracks
 import io.github.sim7b.tele.playback.TrackChoice
@@ -65,7 +66,12 @@ fun PlaybackOptionsPanel(
     // Channel shown in a corner (null: none): swapped with the main picture, or closed
     insetName: String? = null,
     onSwapInset: () -> Unit = {},
-    onCloseInset: () -> Unit = {}
+    onCloseInset: () -> Unit = {},
+    // Live channel kept on the device (null: none): pause, back, forward, to live
+    timeshift: TimeshiftState? = null,
+    onTimeshiftPlayPause: () -> Unit = {},
+    onTimeshiftSeek: (deltaMs: Long) -> Unit = {},
+    onTimeshiftLive: () -> Unit = {}
 ) {
     val firstRow = remember { FocusRequester() }
     var interactions by remember { mutableIntStateOf(0) }
@@ -202,6 +208,28 @@ fun PlaybackOptionsPanel(
             items(PictureFormat.entries) { format ->
                 ChoiceRow(label = stringResource(format.labelRes), selected = format == pictureFormat) { onSelectPictureFormat(format) }
             }
+            if (timeshift != null) {
+                item {
+                    OptionsHeader(R.string.timeshift_title)
+                    Text(
+                        text = if (timeshift.behindMs >= TIMESHIFT_LIVE_MS) {
+                            stringResource(R.string.timeshift_status_behind, clockLabel(timeshift.behindMs), clockLabel(timeshift.windowMs))
+                        } else {
+                            stringResource(R.string.timeshift_status_live, clockLabel(timeshift.windowMs))
+                        },
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(start = 14.dp, bottom = 4.dp)
+                    )
+                    MenuRow(label = stringResource(if (timeshift.paused) R.string.timeshift_resume else R.string.timeshift_pause), onClick = onTimeshiftPlayPause)
+                    MenuRow(label = stringResource(R.string.timeshift_back, 30), onClick = { onTimeshiftSeek(-30_000L) })
+                    MenuRow(label = stringResource(R.string.timeshift_back_minutes, 5), onClick = { onTimeshiftSeek(-300_000L) })
+                    if (timeshift.behindMs >= TIMESHIFT_LIVE_MS) {
+                        MenuRow(label = stringResource(R.string.timeshift_forward, 30), onClick = { onTimeshiftSeek(30_000L) })
+                        MenuRow(label = stringResource(R.string.timeshift_live), onClick = onTimeshiftLive)
+                    }
+                }
+            }
             if (insetName != null) {
                 item {
                     OptionsHeader(R.string.inset_title)
@@ -255,4 +283,16 @@ internal fun trackLabel(choice: TrackChoice, locale: Locale, isAudio: Boolean): 
     val name = choice.label?.takeIf { it != language } ?: language
     return listOfNotNull(name, channels).joinToString(" · ")
         .ifEmpty { stringResource(R.string.options_track, choice.trackIndex + 1) }
+}
+
+/** Under this, the channel plays live. */
+internal const val TIMESHIFT_LIVE_MS = 2_000L
+
+/** "2:05", "1:02:05": a time behind live, or kept. */
+internal fun clockLabel(ms: Long): String {
+    val total = (ms.coerceAtLeast(0) / 1000).toInt()
+    val hours = total / 3600
+    val minutes = total % 3600 / 60
+    val seconds = total % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }

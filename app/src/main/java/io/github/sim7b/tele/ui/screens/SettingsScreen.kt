@@ -122,6 +122,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.ui.platform.LocalUriHandler
 import io.github.sim7b.tele.ui.theme.*
 import io.github.sim7b.tele.update.UpdateState
+import io.github.sim7b.tele.playback.AudioLeveling
 import io.github.sim7b.tele.update.release as offeredRelease
 import io.github.sim7b.tele.data.update.AppRelease
 import kotlinx.coroutines.launch
@@ -172,6 +173,9 @@ fun SettingsScreen(
     val currentAccent by repository.accentColor.collectAsState()
     val currentQuality by repository.qualityPreference.collectAsState()
     val previewDelay by repository.previewDelay.collectAsState()
+    val matchFrameRate by repository.matchFrameRate.collectAsState()
+    val audioLeveling by repository.audioLeveling.collectAsState()
+    val timeshift by repository.timeshift.collectAsState()
     val vodEnabled by repository.vodEnabled.collectAsState()
     val tmdbKey by repository.tmdbKey.collectAsState()
     val vodDisplay by repository.vodDisplay.collectAsState()
@@ -539,6 +543,30 @@ fun SettingsScreen(
                                         modifier = Modifier.focusRequester(focusOf(SettingsPanel.Preview))
                                     )
                                 }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_audio_leveling),
+                                        value = stringResource(audioLeveling.labelRes),
+                                        onClick = { open(SettingsPanel.Leveling) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.Leveling))
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_match_frame_rate),
+                                        description = stringResource(R.string.settings_match_frame_rate_description),
+                                        toggle = matchFrameRate,
+                                        onClick = { repository.setMatchFrameRate(!matchFrameRate) }
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_timeshift),
+                                        description = stringResource(R.string.settings_timeshift_description),
+                                        toggle = timeshift,
+                                        onClick = { repository.setTimeshift(!timeshift) }
+                                    )
+                                }
                                 item { SettingGroup(title = stringResource(R.string.vod_filter_subtitles)) }
                                 item {
                                     SettingRow(
@@ -862,6 +890,19 @@ fun SettingsScreen(
                     },
                     onDismiss = close
                 )
+                SettingsPanel.Leveling -> ChoicePanel(
+                    title = stringResource(R.string.settings_audio_leveling),
+                    description = stringResource(R.string.settings_audio_leveling_description),
+                    choices = AudioLeveling.entries.map { choice ->
+                        Choice(
+                            label = stringResource(choice.labelRes),
+                            description = stringResource(choice.descriptionRes),
+                            selected = choice == audioLeveling,
+                            onClick = { repository.setAudioLeveling(choice) }
+                        )
+                    },
+                    onDismiss = close
+                )
                 SettingsPanel.Preview -> ChoicePanel(
                     title = stringResource(R.string.settings_preview_title),
                     description = stringResource(R.string.settings_preview_description),
@@ -1103,6 +1144,7 @@ private sealed interface SettingsPanel {
     data class ListActions(val id: String) : SettingsPanel
     data object Quality : SettingsPanel
     data object Preview : SettingsPanel
+    data object Leveling : SettingsPanel
     data object SubtitleLanguages : SettingsPanel
     data class KeyActions(val service: ApiKeyService) : SettingsPanel
     data object VodRows : SettingsPanel

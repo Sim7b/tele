@@ -53,6 +53,8 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -157,6 +159,11 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     private val retryRunnable = Runnable { prepareCurrent() }
     // Shown on the TV by the Chromecast
     private var castInfo: CastInfo? = null
+    // Streams of the current channel before they were ordered for the Chromecast
+    private var beforeCast: List<String>? = null
+    // Loudness of the decoded sound (evened out, night mode)
+    private val levelingEffect = AudioLevelingEffect()
+    private var audioLeveling = AudioLeveling.OFF
     // The stream asked of the Chromecast has not failed yet (its error is handled once)
     private var castActive = false
     // The Chromecast played the stream asked of it
@@ -329,6 +336,12 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         castClient = null
         castActive = false
         mainHandler.removeCallbacks(castTimeoutRunnable)
+        beforeCast?.let { urls ->
+            currentUrl = urls.first()
+            fallbackUrls.clear()
+            fallbackUrls.addAll(urls.drop(1))
+        }
+        beforeCast = null
         if (currentUrl == null) return
         if (vodStartMs != null && castStarted && position > 0) vodStartMs = position
         retryCount = 0
@@ -336,9 +349,11 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         prepareCurrent()
     }
 
-    // The HLS variants first: the Chromecast reads them better than MPEG-TS
+    // The HLS variants first: the Chromecast reads them better than MPEG-TS (and the formats Dispatcharr can
+    // serve for it); the streams as they were come back with the playback on the device
     private fun orderForCast() {
         val url = currentUrl ?: return
+        beforeCast = listOf(url) + fallbackUrls
         val ordered = CastMedia.castOrder(listOf(url) + fallbackUrls, live = vodStartMs == null)
         currentUrl = ordered.first()
         fallbackUrls.clear()
@@ -363,6 +378,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
     /** Asks the Chromecast to play the current stream (a movie at its position). */
     private fun prepareOnCast(remote: RemoteCastPlayer) {
+        closeTimeshift()
         val url = currentUrl ?: return
         val live = vodStartMs == null
         val info = castInfo
@@ -421,6 +437,10 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
             .build().apply {
                 playWhenReady = true
                 addAnalyticsListener(object : AnalyticsListener {
+                    override fun onAudioSessionIdChanged(eventTime: AnalyticsListener.EventTime, audioSessionId: Int) {
+                        levelingEffect.apply(audioSessionId, audioLeveling)
+                    }
+
                     override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, count: Int, elapsedMs: Long) {
                         droppedFrames += count
                     }
@@ -746,6 +766,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     }
 
     private fun prepareCurrent() {
+        closeTimeshift()
         val url = currentUrl ?: return
         val remote = remotePlayer
         if (remote != null && casting) {
@@ -796,8 +817,9 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
                 .setAllowChunklessPreparation(true)
                 .createMediaSource(mediaItem)
         } else {
-            DefaultMediaSourceFactory(httpDataSourceFactory, extractorsFactory)
-                .createMediaSource(mediaItem)
+            // A live channel goes through the timeshift recording (to pause it, go back in it), when there is room
+            startTimeshift(url, httpDataSourceFactory)?.let { buffer -> timeshiftSource(buffer, buffer.startOffset()) }
+                ?: DefaultMediaSourceFactory(httpDataSourceFactory, extractorsFactory).createMediaSource(mediaItem)
         }
 
         // A movie restarts where it stopped (a live stream always at its live edge)
@@ -881,6 +903,100 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         player.trackSelectionParameters = builder.build()
     }
 
+
+    // ---------------------------------------------------------------- Timeshift (pause and go back in live TV)
+
+    /** Live channels kept on the device to pause them (set from the settings). */
+    var timeshiftEnabled = true
+        set(value) {
+            field = value
+            if (!value) closeTimeshift()
+        }
+
+    private val timeshiftDir = File(context.noBackupFilesDir, "timeshift").also { dir ->
+        // Left by a previous run stopped abruptly
+        dir.listFiles()?.forEach { it.deleteRecursively() }
+    }
+    private var timeshift: TimeshiftBuffer? = null
+    // How far behind live it plays (paused: since the pause too)
+    private var behindMs = 0L
+    private var pausedAtMs: Long? = null
+
+    /** The recording of a live channel played on the device (the home preview too: opening it keeps it), or null (movie, HLS, casting, no room). */
+    @OptIn(UnstableApi::class)
+    private fun startTimeshift(url: String, factory: HttpDataSource.Factory): TimeshiftBuffer? {
+        if (!timeshiftEnabled || vodStartMs != null || casting) return null
+        timeshiftDir.mkdirs()
+        if (timeshiftDir.usableSpace < TimeshiftBuffer.MIN_FREE_BYTES) return null
+        val dir = File(timeshiftDir, System.nanoTime().toString())
+        return TimeshiftBuffer(dir, factory.createDataSource(), url.toUri()).also {
+            it.start()
+            timeshift = it
+            behindMs = 0
+            pausedAtMs = null
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun timeshiftSource(buffer: TimeshiftBuffer, from: Long): MediaSource =
+        ProgressiveMediaSource.Factory(TimeshiftDataSource.Factory(buffer, from), extractorsFactory)
+            .createMediaSource(MediaItem.fromUri("timeshift://live/$from"))
+
+    private fun closeTimeshift() {
+        timeshift?.close()
+        timeshift = null
+        behindMs = 0
+        pausedAtMs = null
+    }
+
+    private fun currentBehindMs(): Long = behindMs + (pausedAtMs?.let { SystemClock.elapsedRealtime() - it } ?: 0L)
+
+    /** Where the live channel is, for the player screen (null without recording). */
+    fun timeshiftState(): TimeshiftState? {
+        val buffer = timeshift ?: return null
+        val window = buffer.windowMs()
+        return TimeshiftState(windowMs = window, behindMs = currentBehindMs().coerceAtMost(window), paused = pausedAtMs != null)
+    }
+
+    /** Pauses or resumes the live channel: the recording goes on meanwhile. */
+    fun timeshiftPlayPause() {
+        val player = exoPlayer ?: return
+        if (timeshift == null) {
+            togglePlayPause()
+            return
+        }
+        val pausedAt = pausedAtMs
+        if (pausedAt == null) {
+            pausedAtMs = SystemClock.elapsedRealtime()
+            player.pause()
+        } else {
+            behindMs += SystemClock.elapsedRealtime() - pausedAt
+            pausedAtMs = null
+            // Paused past what is kept: from the oldest part still there
+            if (behindMs > (timeshift?.windowMs() ?: 0L)) timeshiftSeekTo(behindMs) else player.play()
+        }
+    }
+
+    /** Goes [deltaMs] forward (positive) or back in the live channel, within what is kept; to live at the end. */
+    fun timeshiftSeekBy(deltaMs: Long) {
+        timeshiftSeekTo(currentBehindMs() - deltaMs)
+    }
+
+    fun timeshiftToLive() = timeshiftSeekTo(0)
+
+    private fun timeshiftSeekTo(targetBehindMs: Long) {
+        val buffer = timeshift ?: return
+        val player = exoPlayer ?: return
+        val paused = pausedAtMs != null
+        val behind = targetBehindMs.coerceIn(0, (buffer.windowMs() - TIMESHIFT_MARGIN_MS).coerceAtLeast(0))
+        val target = if (behind < TIMESHIFT_LIVE_MS) 0L else behind
+        val from = buffer.offsetAt(SystemClock.elapsedRealtime() - target - TIMESHIFT_LIVE_MS)
+        behindMs = target
+        pausedAtMs = if (paused) SystemClock.elapsedRealtime() else null
+        player.setMediaSource(timeshiftSource(buffer, from))
+        player.prepare()
+        if (paused) player.pause() else player.play()
+    }
     fun togglePlayPause() {
         val player: Player = remotePlayer?.takeIf { casting } ?: exoPlayer ?: return
         if (player.isPlaying) player.pause() else player.play()
@@ -890,6 +1006,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
      * Stops playback (back to home, app in background): releases the network stream and the audio.
      */
     fun stop() {
+        closeTimeshift()
         mainHandler.removeCallbacks(retryRunnable)
         mainHandler.removeCallbacks(castTimeoutRunnable)
         // Leaving the player stops the stream on the Chromecast too (the session stays open)
@@ -917,6 +1034,12 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         droppedFrames = 0
     }
 
+    /** Loudness of the decoded sound, applied at once to the current audio session. */
+    fun setAudioLeveling(choice: AudioLeveling) {
+        audioLeveling = choice
+        levelingEffect.apply(exoPlayer?.audioSessionId ?: 0, choice)
+    }
+
     fun release() {
         mainHandler.removeCallbacks(retryRunnable)
         mainHandler.removeCallbacks(castTimeoutRunnable)
@@ -929,6 +1052,8 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         } catch (e: RuntimeException) {
             Log.w(PERF_TAG, "Network callback not registered: ${e.javaClass.simpleName}")
         }
+        levelingEffect.release()
+        closeTimeshift()
         exoPlayer?.release()
         exoPlayer = null
     }
@@ -942,6 +1067,10 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         private const val HTTP_NO_FREE_CONNECTION = 503
         // Time given to the Chromecast to start a stream before the next one is tried
         private const val CAST_START_TIMEOUT_MS = 20_000L
+        // Not back to the very oldest part kept: it may be deleted while the player gets to it
+        private const val TIMESHIFT_MARGIN_MS = 5_000L
+        // Closer to live than this is live
+        private const val TIMESHIFT_LIVE_MS = 1_500L
     }
 }
 

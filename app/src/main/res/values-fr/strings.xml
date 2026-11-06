@@ -393,6 +393,18 @@
 
     <!-- Home channel preview -->
     <string name="settings_preview_title">Aperçu des chaînes</string>
+    <string name="settings_match_frame_rate">Adapter l\'écran à la vidéo</string>
+    <string name="settings_match_frame_rate_description">Passe l\'écran en 50 Hz pour les chaînes européennes et en 24 Hz pour les films : des mouvements fluides (l\'écran peut devenir noir une seconde)</string>
+    <string name="settings_audio_leveling">Volume</string>
+    <string name="audio_leveling_off">Tel quel</string>
+    <string name="audio_leveling_off_description">Le son de chaque chaîne sans changement</string>
+    <string name="audio_leveling_normal">Égalisé</string>
+    <string name="audio_leveling_normal_description">Chaînes et publicités trop fortes baissées, chaînes trop faibles montées</string>
+    <string name="audio_leveling_night">Mode nuit</string>
+    <string name="audio_leveling_night_description">Dialogues clairs, explosions et musique bien moins fortes</string>
+    <string name="settings_audio_leveling_description">S\'applique au son décodé par la TV (pas à un son envoyé tel quel à un ampli)</string>
+    <string name="settings_timeshift">Pause du direct</string>
+    <string name="settings_timeshift_description">La chaîne est gardée sur la TV (jusqu\'à 1 heure selon la place) pour la mettre en pause et revenir en arrière</string>
     <string name="settings_preview_description">À l\'accueil, la chaîne sélectionnée se lance sans le son après ce délai. Pendant l\'aperçu, elle utilise une connexion du fournisseur (slot Dispatcharr).</string>
     <string name="preview_delay_off">Désactivé</string>
     <string name="preview_delay_immediate">Immédiat</string>
@@ -441,6 +453,17 @@
     <string name="options_track">Piste %1$d</string>
     <string name="options_speed">Vitesse</string>
     <string name="inset_watch">Regarder en incrustation</string>
+    <string name="timeshift_title">Direct</string>
+    <string name="timeshift_status_live">En direct · %1$s gardées</string>
+    <string name="timeshift_status_behind">%1$s de retard sur le direct · %2$s gardées</string>
+    <string name="timeshift_pause">Mettre en pause</string>
+    <string name="timeshift_resume">Reprendre</string>
+    <string name="timeshift_back">Reculer de %1$d s</string>
+    <string name="timeshift_back_minutes">Reculer de %1$d min</string>
+    <string name="timeshift_forward">Avancer de %1$d s</string>
+    <string name="timeshift_live">Revenir au direct</string>
+    <string name="timeshift_badge_paused">En pause · %1$s</string>
+    <string name="timeshift_badge_behind">Différé %1$s</string>
     <string name="inset_title">Incrustation</string>
     <string name="inset_swap">Échanger avec %1$s</string>
     <string name="inset_close">Fermer l\'incrustation</string>
