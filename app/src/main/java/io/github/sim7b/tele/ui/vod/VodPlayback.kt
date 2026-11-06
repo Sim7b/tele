@@ -141,3 +141,31 @@ internal fun inCredits(positionMs: Long, durationMs: Long): Boolean =
     durationMs > UP_NEXT_LEAD_MS * 4 && durationMs - positionMs in 0..UP_NEXT_LEAD_MS
 
 internal const val UP_NEXT_LEAD_MS = 30_000L
+
+/**
+ * Where "Skip intro" jumps from [positionMs] of an episode: to the end of the intro learned for its series
+ * ([learnedEndMs]), shown until a little before it; else [DEFAULT_INTRO_SKIP_MS] further, shown in the
+ * first minutes only. Null when not offered (a movie-length check keeps it off short clips).
+ */
+internal fun introSkipTarget(positionMs: Long, durationMs: Long, learnedEndMs: Long?): Long? {
+    if (durationMs < INTRO_MIN_DURATION_MS || positionMs < INTRO_SHOW_FROM_MS) return null
+    if (learnedEndMs != null) return learnedEndMs.takeIf { positionMs < it - INTRO_MARGIN_MS }
+    return (positionMs + DEFAULT_INTRO_SKIP_MS).takeIf { positionMs < INTRO_DEFAULT_WINDOW_MS }
+}
+
+/**
+ * End of the intro told by a jump forward from [fromMs] to [toMs] in the opening minutes of an episode
+ * (the user skipping it by hand), null for any other jump.
+ */
+internal fun learnedIntroEnd(fromMs: Long, toMs: Long, durationMs: Long): Long? =
+    toMs.takeIf {
+        durationMs >= INTRO_MIN_DURATION_MS && fromMs < INTRO_WINDOW_MS && toMs - fromMs >= INTRO_MIN_JUMP_MS && toMs <= INTRO_WINDOW_MS
+    }
+
+private const val INTRO_MIN_DURATION_MS = 12 * 60_000L
+private const val INTRO_SHOW_FROM_MS = 5_000L
+private const val INTRO_MARGIN_MS = 3_000L
+private const val INTRO_DEFAULT_WINDOW_MS = 2 * 60_000L
+private const val INTRO_WINDOW_MS = 5 * 60_000L
+private const val INTRO_MIN_JUMP_MS = 20_000L
+internal const val DEFAULT_INTRO_SKIP_MS = 85_000L

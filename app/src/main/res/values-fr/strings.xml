@@ -467,6 +467,7 @@
     <string name="vod_player_ends_at">Fin à %1$s</string>
     <string name="vod_player_up_next">Épisode suivant dans %1$d s</string>
     <string name="vod_player_play_now">Lire</string>
+    <string name="vod_player_skip_intro">Passer le générique</string>
     <string name="vod_player_paused">En pause</string>
     <string name="vod_player_episode_line">S%1$d · É%2$d</string>
     <string name="vod_player_back_10">Reculer de 10 secondes</string>

@@ -70,6 +70,7 @@ import io.github.sim7b.tele.ui.vod.VodSubtitles
 import io.github.sim7b.tele.ui.vod.LocalPosterWidth
 import androidx.compose.ui.unit.dp
 import io.github.sim7b.tele.data.storage.VodStore
+import io.github.sim7b.tele.data.storage.VodTrackPrefs
 import io.github.sim7b.tele.data.vod.VodFilter
 import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodRows
@@ -701,7 +702,10 @@ class MainActivity : ComponentActivity() {
                                 next = next,
                                 onPlayNext = { upcoming -> currentScreen = CurrentScreen.VodPlayer(upcoming, screen.returnTo) },
                                 trackPrefs = if (isReplay) null else vodTrackPrefs[request.titleKey],
-                                onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs) } },
+                                onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs.copy(introEndMs = trackPrefs.value[request.titleKey]?.introEndMs)) } },
+                                onIntroLearned = { end ->
+                                    if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, (trackPrefs.value[request.titleKey] ?: VodTrackPrefs()).copy(introEndMs = end)) }
+                                },
                                 pictureFormat = pictureFormat,
                                 onPictureFormatChange = { configRepository.setPictureFormat(it) },
                                 subtitles = vodSubtitles.takeIf { !isReplay }

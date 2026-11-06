@@ -34,7 +34,13 @@ data class VodProgress(
  * Audio and subtitle languages chosen while watching a title, applied to its next episodes:
  * [audio] null keeps the stream's default track, [subtitlesOn] false hides the subtitles.
  */
-data class VodTrackPrefs(val audio: String? = null, val subtitles: String? = null, val subtitlesOn: Boolean = false)
+data class VodTrackPrefs(
+    val audio: String? = null,
+    val subtitles: String? = null,
+    val subtitlesOn: Boolean = false,
+    // Series: end of the intro, learned when skipped by hand
+    val introEndMs: Long? = null
+)
 
 /** A collection made by the user ("Family night"), shown as a row of the home: titles in the order added. */
 data class VodCollection(val id: String, val name: String, val titleKeys: List<String>)
@@ -93,7 +99,12 @@ class VodStore(private val file: File) {
                 for (i in 0 until array.length()) {
                     val obj = array.optJSONObject(i) ?: continue
                     val key = obj.optStringOrNull("title") ?: continue
-                    trackPrefs[key] = VodTrackPrefs(obj.optStringOrNull("audio"), obj.optStringOrNull("subtitles"), obj.optBoolean("subtitlesOn"))
+                    trackPrefs[key] = VodTrackPrefs(
+                        obj.optStringOrNull("audio"),
+                        obj.optStringOrNull("subtitles"),
+                        obj.optBoolean("subtitlesOn"),
+                        obj.optLong("introEndMs", 0L).takeIf { it > 0 }
+                    )
                 }
             }
             synchronized(lock) {
@@ -222,6 +233,7 @@ class VodStore(private val file: File) {
                             .putOpt("audio", prefs.audio)
                             .putOpt("subtitles", prefs.subtitles)
                             .put("subtitlesOn", prefs.subtitlesOn)
+                            .putOpt("introEndMs", prefs.introEndMs)
                     )
                 }
             })
