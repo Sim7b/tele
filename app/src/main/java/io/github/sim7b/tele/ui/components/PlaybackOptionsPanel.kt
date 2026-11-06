@@ -58,7 +58,10 @@ fun PlaybackOptionsPanel(
     speed: Float? = null,
     onSelectSpeed: (Float) -> Unit = {},
     // Movies and series with an OpenSubtitles key: subtitles searched online
-    onSearchSubtitles: (() -> Unit)? = null
+    onSearchSubtitles: (() -> Unit)? = null,
+    // Playback statistics over the picture: shown or not
+    statsOn: Boolean? = null,
+    onToggleStats: () -> Unit = {}
 ) {
     val firstRow = remember { FocusRequester() }
     var interactions by remember { mutableIntStateOf(0) }
@@ -194,6 +197,12 @@ fun PlaybackOptionsPanel(
             item { OptionsHeader(R.string.options_picture) }
             items(PictureFormat.entries) { format ->
                 ChoiceRow(label = stringResource(format.labelRes), selected = format == pictureFormat) { onSelectPictureFormat(format) }
+            }
+            if (statsOn != null) {
+                item {
+                    OptionsHeader(R.string.options_stats)
+                    ChoiceRow(label = stringResource(R.string.options_stats_show), selected = statsOn, onClick = onToggleStats)
+                }
             }
         }
     }

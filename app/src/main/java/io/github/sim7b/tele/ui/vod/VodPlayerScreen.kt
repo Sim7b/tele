@@ -95,6 +95,7 @@ import io.github.sim7b.tele.ui.components.Device
 import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
+import io.github.sim7b.tele.ui.components.PlaybackStatsOverlay
 import io.github.sim7b.tele.ui.components.TouchSteps
 import io.github.sim7b.tele.ui.components.blockTouches
 import io.github.sim7b.tele.ui.components.onAnyTouch
@@ -144,6 +145,7 @@ fun VodPlayerScreen(
     val error by playerManager.error.collectAsState()
     val tracks by playerManager.tracks.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
+    val showStats by playerManager.showStats.collectAsState()
     val reportProgress by rememberUpdatedState(onProgress)
     val currentNext by rememberUpdatedState(next)
     val currentPlayNext by rememberUpdatedState(onPlayNext)
@@ -586,6 +588,8 @@ fun VodPlayerScreen(
             }
         }
 
+        if (showStats && castDevice == null) PlaybackStatsOverlay(playerManager, modifier = Modifier.align(Alignment.TopStart))
+
         AnimatedVisibility(
             visible = showOptions,
             enter = fadeIn() + slideInHorizontally { it / 4 },
@@ -612,6 +616,8 @@ fun VodPlayerScreen(
                     refocusToken++
                 },
                 speed = speed,
+                statsOn = if (castDevice == null) showStats else null,
+                onToggleStats = { playerManager.toggleStats() },
                 onSelectSpeed = { value ->
                     speed = value
                     player.setPlaybackSpeed(value)

@@ -403,6 +403,14 @@
     <string name="options_channels">%1$d canaux</string>
     <string name="options_track">Piste %1$d</string>
     <string name="options_speed">Vitesse</string>
+    <string name="options_stats">Statistiques</string>
+    <string name="options_stats_show">Afficher les statistiques de lecture</string>
+    <string name="stats_video">Vidéo</string>
+    <string name="stats_audio">Audio</string>
+    <string name="stats_bitrate">Débit vidéo</string>
+    <string name="stats_bandwidth">Bande passante</string>
+    <string name="stats_buffer">Tampon</string>
+    <string name="stats_dropped">Images perdues</string>
     <string name="options_speed_normal">Normale</string>
     <string name="picture_fit">Ajusté</string>
     <string name="picture_zoom">Remplir (rogné)</string>

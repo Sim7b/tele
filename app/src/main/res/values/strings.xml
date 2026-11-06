@@ -402,6 +402,14 @@
     <string name="options_channels">%1$d channels</string>
     <string name="options_track">Track %1$d</string>
     <string name="options_speed">Speed</string>
+    <string name="options_stats">Statistics</string>
+    <string name="options_stats_show">Show the playback statistics</string>
+    <string name="stats_video">Video</string>
+    <string name="stats_audio">Audio</string>
+    <string name="stats_bitrate">Video bitrate</string>
+    <string name="stats_bandwidth">Bandwidth</string>
+    <string name="stats_buffer">Buffer</string>
+    <string name="stats_dropped">Dropped frames</string>
     <string name="options_speed_normal">Normal</string>
     <string name="picture_fit">Fit</string>
     <string name="picture_zoom">Fill (crop)</string>
