@@ -56,12 +56,12 @@ private const val MAX_CHOICES = 16
 fun VodCategoryPicker(
     source: SourceConfig,
     current: VodSelection?,
-    // New categories suggested: checked, first and marked
-    suggested: Set<String> = emptySet(),
     loadCategories: suspend () -> List<VodCategory>,
     onChoose: (VodSelection) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // New categories suggested: checked, first and marked
+    suggested: Set<String> = emptySet()
 ) {
     BackHandler(onBack = onBack)
     var attempt by remember { mutableIntStateOf(0) }
