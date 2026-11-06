@@ -12,11 +12,35 @@ object CastMedia {
     const val TS = "video/mp2t"
     const val MP4 = "video/mp4"
 
-    /** Type of the stream at [url], read from its extension; [live] streams without one are MPEG-TS. */
+    private const val DISPATCHARR_STREAM = "/proxy/ts/stream/"
+    private val OUTPUT_FORMAT = Regex("[?&](?:output_format|output)=([A-Za-z0-9]+)")
+
+    private fun dispatcharrFormat(url: String): String? = OUTPUT_FORMAT.find(url.substringBefore('#'))?.groupValues?.get(1)?.lowercase()
+
+    /**
+     * The same Dispatcharr channel in the formats a Chromecast reads: fragmented MP4 (one continuous file,
+     * remuxed by Dispatcharr without re-encoding) and HLS, before the raw MPEG-TS it does not read. Dispatcharr
+     * serves them without a key (as the MPEG-TS) and allows any origin. Other URLs are returned as they are.
+     */
+    fun castVariants(url: String): List<String> {
+        if (!url.contains(DISPATCHARR_STREAM, ignoreCase = true) || dispatcharrFormat(url) != null) return listOf(url)
+        val separator = if (url.contains('?')) "&" else "?"
+        return listOf("${url}${separator}output_format=fmp4", "${url}${separator}output_format=m3u8", url)
+    }
+
+    /**
+     * Type of the stream at [url], read from its extension (or the output format asked of Dispatcharr);
+     * [live] streams without one are MPEG-TS.
+     */
     fun mimeType(url: String, live: Boolean): String {
         val path = url.substringBefore('?').substringBefore('#').lowercase()
         val extension = path.substringAfterLast('/').substringAfterLast('.', missingDelimiterValue = "")
         return when {
+            path.contains(DISPATCHARR_STREAM) -> when (dispatcharrFormat(url)) {
+                "fmp4", "mp4" -> MP4
+                "hls", "m3u8" -> HLS
+                else -> TS
+            }
             extension == "m3u8" || path.contains(".m3u8") -> HLS
             extension == "mpd" -> DASH
             extension == "ts" || path.contains("/proxy/ts/") -> TS
@@ -39,16 +63,18 @@ object CastMedia {
         url.startsWith("http://", ignoreCase = true) && mimeType(url, live).let { it == HLS || it == DASH }
 
     /**
-     * [urls] in the order to try them on a Chromecast: the HLS and DASH variants first (an Xtream channel
-     * offers the same stream in .ts and .m3u8), the others after, those it refuses ([insecureAdaptive]) last,
-     * each group in its original order.
+     * [urls] in the order to try them on a Chromecast, each with its [castVariants]: the HLS and DASH
+     * variants first (an Xtream channel offers the same stream in .ts and .m3u8), then the MP4 files, then
+     * the others, those it refuses ([insecureAdaptive]) last; each group in its original order.
      */
     fun castOrder(urls: List<String>, live: Boolean): List<String> =
-        urls.distinct().sortedBy { url ->
+        urls.flatMap { castVariants(it) }.distinct().sortedBy { url ->
+            val type = mimeType(url, live)
             when {
-                insecureAdaptive(url, live) -> 2
-                mimeType(url, live) == HLS || mimeType(url, live) == DASH -> 0
-                else -> 1
+                insecureAdaptive(url, live) -> 3
+                type == HLS || type == DASH -> 0
+                type == MP4 -> 1
+                else -> 2
             }
         }
 }
