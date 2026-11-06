@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.16](https://github.com/Sim7b/tele/compare/v0.3.15...v0.3.16) (2026-11-06)
+
+### Features
+
+* settings rows, movie shelves, ratings and background updates ([ce929ec](https://github.com/Sim7b/tele/commit/ce929ecdeb1cc0a12ede3dd5e701c5b1670c0bac))
+
 ## [0.3.15](https://github.com/Sim7b/tele/compare/v0.3.14...v0.3.15) (2026-11-06)
 
 ### Features
