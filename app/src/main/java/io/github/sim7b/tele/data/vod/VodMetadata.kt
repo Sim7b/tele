@@ -29,7 +29,9 @@ data class VodEnrichment(
     val cast: List<String> = emptyList(),
     val tmdbId: String? = null,
     val imdbId: String? = null,
-    val episodes: Map<String, VodEpisode> = emptyMap()
+    val episodes: Map<String, VodEpisode> = emptyMap(),
+    // YouTube id of its trailer (TMDB videos)
+    val trailerKey: String? = null
 )
 
 /**
@@ -108,7 +110,9 @@ object VodMetadata {
         } ?: return null
 
         val details = tmdbGet("$type/$id", key, language) {
-            addQueryParameter("append_to_response", if (type == "movie") "credits" else "credits,external_ids")
+            addQueryParameter("append_to_response", if (type == "movie") "credits,videos" else "credits,external_ids,videos")
+            // Trailers in the language of the TV first, then in English or without a language
+            addQueryParameter("include_video_language", "${locale.language},en,null")
         } ?: return null
         val crew = details.optJSONObject("credits")?.optJSONArray("crew")
         val episodes = HashMap<String, VodEpisode>()
@@ -143,10 +147,29 @@ object VodMetadata {
             cast = objects(details.optJSONObject("credits")?.optJSONArray("cast")).take(12).mapNotNull { it.optStringOrNull("name") },
             tmdbId = id,
             imdbId = details.optStringOrNull("imdb_id") ?: details.optJSONObject("external_ids")?.optStringOrNull("imdb_id"),
-            episodes = episodes
+            episodes = episodes,
+            trailerKey = trailerKey(details.optJSONObject("videos"), locale.language)
         )
     }
 
+
+    private val YOUTUBE_KEY = Regex("[A-Za-z0-9_-]{6,20}")
+
+    /**
+     * YouTube id of the best trailer among TMDB [videos]: a trailer (else a teaser) in [language] first,
+     * official ones first. Null when there is none, or for any id that is not a plain YouTube id.
+     */
+    internal fun trailerKey(videos: JSONObject?, language: String): String? =
+        objects(videos?.optJSONArray("results"))
+            .filter { it.optString("site") == "YouTube" && YOUTUBE_KEY.matches(it.optString("key")) }
+            .filter { it.optString("type") == "Trailer" || it.optString("type") == "Teaser" }
+            .sortedWith(
+                compareByDescending<JSONObject> { it.optString("type") == "Trailer" }
+                    .thenByDescending { it.optString("iso_639_1") == language }
+                    .thenByDescending { it.optBoolean("official", false) }
+            )
+            .firstOrNull()
+            ?.optString("key")
     internal suspend fun tmdbGet(path: String, key: String, language: String, query: HttpUrl.Builder.() -> Unit): JSONObject? {
         val url = (TMDB_API + path).toHttpUrl().newBuilder()
             .addQueryParameter("api_key", key)

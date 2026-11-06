@@ -61,7 +61,11 @@ fun PlaybackOptionsPanel(
     onSearchSubtitles: (() -> Unit)? = null,
     // Playback statistics over the picture: shown or not
     statsOn: Boolean? = null,
-    onToggleStats: () -> Unit = {}
+    onToggleStats: () -> Unit = {},
+    // Channel shown in a corner (null: none): swapped with the main picture, or closed
+    insetName: String? = null,
+    onSwapInset: () -> Unit = {},
+    onCloseInset: () -> Unit = {}
 ) {
     val firstRow = remember { FocusRequester() }
     var interactions by remember { mutableIntStateOf(0) }
@@ -197,6 +201,13 @@ fun PlaybackOptionsPanel(
             item { OptionsHeader(R.string.options_picture) }
             items(PictureFormat.entries) { format ->
                 ChoiceRow(label = stringResource(format.labelRes), selected = format == pictureFormat) { onSelectPictureFormat(format) }
+            }
+            if (insetName != null) {
+                item {
+                    OptionsHeader(R.string.inset_title)
+                    MenuRow(label = stringResource(R.string.inset_swap, insetName), onClick = onSwapInset)
+                    MenuRow(label = stringResource(R.string.inset_close), onClick = onCloseInset)
+                }
             }
             if (statsOn != null) {
                 item {

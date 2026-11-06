@@ -9,13 +9,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import android.content.res.ColorStateList
+import android.widget.ProgressBar
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -94,13 +96,21 @@ fun WelcomeScreen(name: String?, modifier: Modifier = Modifier) {
 
             Spacer(modifier = Modifier.height(26.dp))
 
-            LinearProgressIndicator(
-                color = AccentCyan,
-                trackColor = TextSecondary.copy(alpha = 0.15f),
-                strokeCap = StrokeCap.Round,
+            // The system bar: its animation runs on the render thread, smooth while the main thread is
+            // busy building the home screen behind (a Compose one froze with it)
+            val accent = AccentCyan.toArgb()
+            val track = TextSecondary.copy(alpha = 0.15f).toArgb()
+            AndroidView(
+                factory = { context ->
+                    ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
+                        isIndeterminate = true
+                        indeterminateTintList = ColorStateList.valueOf(accent)
+                        progressBackgroundTintList = ColorStateList.valueOf(track)
+                    }
+                },
                 modifier = Modifier
                     .width(140.dp)
-                    .height(2.dp)
+                    .height(4.dp)
             )
 
             Spacer(modifier = Modifier.height(14.dp))

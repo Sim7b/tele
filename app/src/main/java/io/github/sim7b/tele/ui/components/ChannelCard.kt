@@ -477,7 +477,9 @@ fun ChannelActionMenuDialog(
     // Lists of channels: the channel added to or removed from one, or a new list made with it
     lists: List<ChannelList> = emptyList(),
     onToggleInList: (String) -> Unit = {},
-    onCreateList: ((String) -> Unit)? = null
+    onCreateList: ((String) -> Unit)? = null,
+    // During playback: shows the channel in a corner of the picture
+    onWatchInInset: (() -> Unit)? = null
 ) {
     val firstItemFocus = remember { FocusRequester() }
     var naming by remember { mutableStateOf(false) }
@@ -544,6 +546,17 @@ fun ChannelActionMenuDialog(
                     favoriteRow(Modifier.weight(1f))
                     hideRow(Modifier.weight(1f))
                 }
+            }
+
+            if (onWatchInInset != null) {
+                MenuRow(
+                    label = stringResource(R.string.inset_watch),
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = {
+                        onDismiss()
+                        onWatchInInset()
+                    }
+                )
             }
 
             if (onMove != null) {

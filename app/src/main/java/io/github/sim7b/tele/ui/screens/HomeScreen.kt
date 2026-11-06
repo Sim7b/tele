@@ -1,5 +1,8 @@
 package io.github.sim7b.tele.ui.screens
 
+import io.github.sim7b.tele.data.storage.VodProgress
+import io.github.sim7b.tele.data.vod.VodTitle
+import io.github.sim7b.tele.ui.vod.ResumeRow
 import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.R
@@ -128,7 +131,10 @@ fun HomeScreen(
     channelLists: List<ChannelListView> = emptyList(),
     savedLists: List<ChannelList> = emptyList(),
     onToggleInList: (listId: String, Channel) -> Unit = { _, _ -> },
-    onCreateList: (name: String, Channel) -> Unit = { _, _ -> }
+    onCreateList: (name: String, Channel) -> Unit = { _, _ -> },
+    // Movies and series started (shown above the favorites), their sheet opened on OK
+    resume: List<Pair<VodTitle, VodProgress>> = emptyList(),
+    onOpenResume: (VodTitle) -> Unit = {}
 ) {
     val compact = LocalScreen.current.compact
     val favoriteColumns = if (compact) COMPACT_COLUMNS else FAVORITE_COLUMNS
@@ -477,6 +483,9 @@ fun HomeScreen(
                     contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    if (resume.isNotEmpty()) {
+                        item(key = "resume") { ResumeRow(items = resume, onOpen = onOpenResume) }
+                    }
                     // SECTION 1: FAVORITES (2 rows x 4 columns)
                     item {
                         Column {

@@ -514,6 +514,7 @@ class VodRepository(
                 durationSecs = if (preferEnrichment) enrichment.durationSecs ?: details.durationSecs else details.durationSecs ?: enrichment.durationSecs,
                 director = pick(details.director, enrichment.director),
                 cast = if (preferEnrichment) enrichment.cast.ifEmpty { details.cast } else details.cast.ifEmpty { enrichment.cast },
+                trailerKey = enrichment.trailerKey ?: details.trailerKey,
                 seasons = details.seasons.map { season ->
                     season.copy(episodes = season.episodes.map { episode ->
                         val meta = episodesMeta[episode.key] ?: return@map episode

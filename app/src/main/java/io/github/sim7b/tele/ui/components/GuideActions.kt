@@ -31,7 +31,9 @@ class GuideActions(
     val channelLists: List<ChannelListView> = emptyList(),
     val savedLists: List<ChannelList> = emptyList(),
     val toggleInList: (listId: String, Channel) -> Unit = { _, _ -> },
-    val createList: (name: String, Channel) -> Unit = { _, _ -> }
+    val createList: (name: String, Channel) -> Unit = { _, _ -> },
+    // During playback: the channel shown in a corner of the picture
+    val watchInInset: ((Channel) -> Unit)? = null
 ) {
     /** Lists holding channels, by their category key (after the favorites and the recent channels). */
     val listCategories: Map<String, ChannelListView> by lazy {
@@ -69,3 +71,21 @@ fun programBadges(replay: Boolean, reminder: Boolean): List<String> {
     val reminderTag = stringResource(R.string.program_reminder_tag)
     return listOfNotNull(replayTag.takeIf { replay }, reminderTag.takeIf { reminder })
 }
+
+/** The same actions, with the channel menu offering to show a channel in a corner of the picture. */
+fun GuideActions.withInset(watchInInset: (Channel) -> Unit): GuideActions = GuideActions(
+    reminders = reminders,
+    toggleReminder = toggleReminder,
+    replay = replay,
+    isFavorite = isFavorite,
+    toggleFavorite = toggleFavorite,
+    hideChannel = hideChannel,
+    loadStreams = loadStreams,
+    selectStream = selectStream,
+    automaticStreamDescription = automaticStreamDescription,
+    channelLists = channelLists,
+    savedLists = savedLists,
+    toggleInList = toggleInList,
+    createList = createList,
+    watchInInset = watchInInset
+)

@@ -1,5 +1,9 @@
 package io.github.sim7b.tele.ui.screens
 
+import io.github.sim7b.tele.playback.InsetPlayer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.border
+import android.view.TextureView
 import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.R
 import android.os.SystemClock
@@ -115,6 +119,11 @@ fun PlayerScreen(
     favorites: List<Channel> = emptyList(),
     recents: List<Channel> = emptyList(),
     guideActions: GuideActions = GuideActions(),
+    // Second channel in a corner of the picture (muted), swapped with the main one or closed
+    inset: Channel? = null,
+    insetPlayer: InsetPlayer? = null,
+    onSwapInset: () -> Unit = {},
+    onCloseInset: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isLoading by playerManager.isLoading.collectAsState()
@@ -510,6 +519,10 @@ fun PlayerScreen(
 
         if (showStats) PlaybackStatsOverlay(playerManager, modifier = Modifier.align(Alignment.TopStart))
 
+        if (inset != null && insetPlayer != null && castDevice == null) {
+            InsetVideo(channel = inset, player = insetPlayer, modifier = Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 24.dp))
+        }
+
         // Playback options (right arrow): stream, audio, subtitles, picture format
         AnimatedVisibility(
             visible = showOptionsPanel,
@@ -535,7 +548,18 @@ fun PlayerScreen(
                     refocusToken++
                 },
                 statsOn = showStats,
-                onToggleStats = { playerManager.toggleStats() }
+                onToggleStats = { playerManager.toggleStats() },
+                insetName = inset?.name,
+                onSwapInset = {
+                    showOptionsPanel = false
+                    refocusToken++
+                    onSwapInset()
+                },
+                onCloseInset = {
+                    showOptionsPanel = false
+                    refocusToken++
+                    onCloseInset()
+                }
             )
         }
     }
@@ -720,3 +744,38 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
 
 /** What the Chromecast shows on the TV: the channel, its current program and its logo. */
 private fun Channel.castInfo() = CastInfo(title = name, subtitle = currentProgram?.title, artworkUrl = logoUrl)
+
+/** Second channel in a corner, muted: its name, or why it does not play (no free provider connection). */
+@Composable
+private fun InsetVideo(channel: Channel, player: InsetPlayer, modifier: Modifier = Modifier) {
+    val playing by player.playing.collectAsState()
+    val failed by player.failed.collectAsState()
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth(INSET_WIDTH)
+            .aspectRatio(16f / 9f)
+            .clip(shape)
+            .background(Color.Black)
+            .border(1.dp, Color.White.copy(alpha = 0.25f), shape)
+    ) {
+        AndroidView(
+            factory = { context -> TextureView(context).also { player.attach(it) } },
+            onRelease = { player.detach(it) },
+            modifier = Modifier.fillMaxSize()
+        )
+        Text(
+            text = if (failed) stringResource(R.string.inset_failed, channel.name) else channel.name,
+            fontSize = 12.sp,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(if (playing) Alignment.BottomStart else Alignment.Center)
+                .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}
+
+private const val INSET_WIDTH = 0.3f

@@ -476,6 +476,7 @@ fun ChannelListPanel(
                     scope.launch { rowFocus.requestFocusWithRetry() }
                 },
                 automaticDescription = actions.automaticStreamDescription(channel),
+                onWatchInInset = actions.watchInInset?.let { watch -> { watch(channel) } },
                 lists = actions.savedLists,
                 onToggleInList = { listId -> actions.toggleInList(listId, channel) },
                 onCreateList = { name -> actions.createList(name, channel) }

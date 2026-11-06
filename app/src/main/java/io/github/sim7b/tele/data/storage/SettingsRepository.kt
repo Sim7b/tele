@@ -143,6 +143,9 @@ class SettingsRepository(context: Context) {
 
     // Categories (source groups) hidden from the home screen, the channel panel and channel switching
     private val _hiddenGroups = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Code, locked categories and movies and series of the parental control. */
+    val parental = ParentalControl(prefs)
     val hiddenGroups: StateFlow<Set<String>> = _hiddenGroups.asStateFlow()
 
     // Favorites migrated from the legacy storage (unordered set): to be sorted once by channel order.

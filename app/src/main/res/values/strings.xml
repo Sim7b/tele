@@ -184,6 +184,7 @@
     <string name="home_no_channels_hint">Check your settings or show the hidden channels again.</string>
     <string name="home_open_settings">Open settings</string>
     <string name="home_retry">Retry</string>
+    <string name="home_resume">Continue watching</string>
     <string name="home_favorites">Favorites</string>
     <string name="home_featured">Featured</string>
     <string name="home_move_hint">"◀ ▶ ▲ ▼  Move      OK  Confirm"</string>
@@ -403,6 +404,25 @@
     <string name="settings_nav_appearance">Appearance</string>
     <string name="settings_nav_appearance_hint">Background, color, density</string>
     <string name="settings_nav_system">System</string>
+    <string name="settings_nav_parental">Parental control</string>
+    <string name="settings_nav_parental_hint">Code, locked categories</string>
+    <string name="parental_set_pin">Set a code</string>
+    <string name="parental_description">A 4-digit code locks the categories you choose, and the movies and series if you wish: hidden everywhere until the code is entered</string>
+    <string name="parental_unlock">Enter the code</string>
+    <string name="parental_locked_description">Locked: enter the code to show the locked content and change these settings, until the app is left</string>
+    <string name="parental_categories">Locked categories</string>
+    <string name="parental_categories_description">Hidden from the home screen, the channel panel, the guide, the search and channel switching while locked</string>
+    <string name="parental_vod">Lock the movies and series</string>
+    <string name="parental_vod_description">The code is asked to open them; hidden from the search and the home screen</string>
+    <string name="parental_change_pin">Change the code</string>
+    <string name="parental_lock_now">Lock now</string>
+    <string name="parental_remove">Remove the code and the locks</string>
+    <string name="parental_enter_pin">Parental code</string>
+    <string name="parental_new_pin">New code (4 digits)</string>
+    <string name="parental_confirm_pin">Same code again</string>
+    <string name="parental_wrong_pin">Wrong code</string>
+    <string name="parental_pin_mismatch">The two codes differ: enter a new one</string>
+    <string name="parental_wait">Too many tries: try again in %1$d s</string>
     <string name="settings_nav_system_hint">Updates, help</string>
 
     <!-- Playback options (right arrow in the player) -->
@@ -418,6 +438,11 @@
     <string name="options_channels">%1$d channels</string>
     <string name="options_track">Track %1$d</string>
     <string name="options_speed">Speed</string>
+    <string name="inset_watch">Watch in a corner of the picture</string>
+    <string name="inset_title">Channel in a corner</string>
+    <string name="inset_swap">Swap with %1$s</string>
+    <string name="inset_close">Close the corner channel</string>
+    <string name="inset_failed">%1$s: no free connection</string>
     <string name="options_stats">Statistics</string>
     <string name="options_stats_show">Show the playback statistics</string>
     <string name="stats_video">Video</string>
@@ -633,6 +658,7 @@
     <string name="vod_search_titles">Titles</string>
     <string name="vod_search_with">With %1$s</string>
     <string name="vod_add_to">Add to…</string>
+    <string name="vod_trailer">Trailer</string>
     <string name="vod_collections_title">Add to a collection</string>
     <string name="vod_collection_new">New collection</string>
     <string name="vod_collection_name_hint">Collection name</string>
