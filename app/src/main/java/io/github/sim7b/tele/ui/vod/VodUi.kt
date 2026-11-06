@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,10 +13,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.remember
@@ -35,7 +39,9 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.vod.VodBrowse
 import io.github.sim7b.tele.data.vod.VodRow
+import io.github.sim7b.tele.data.vod.VodShelf
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.vod.VodVersion
@@ -52,7 +58,14 @@ internal val PosterWidth = 112.dp
 
 /** Width of the posters, from the display settings. */
 internal val LocalPosterWidth = compositionLocalOf { PosterWidth }
+
+/** Rating of a title shown on its poster (TMDB vote, else the provider's), null when unknown. */
+internal val LocalRatingOf = staticCompositionLocalOf<(VodTitle) -> Double?> { { title -> VodBrowse.rating(title, null) } }
+
+/** "7.4" (one decimal, in the language of the TV). */
+internal fun ratingLabel(rating: Double, locale: Locale = Locale.getDefault()): String = String.format(locale, "%.1f", rating)
 private const val POSTER_LOOKUP_DELAY_MS = 400L
+private val RatingGold = androidx.compose.ui.graphics.Color(0xFFF5C518)
 internal val PosterHeight = 168.dp
 
 /**
@@ -116,6 +129,26 @@ internal fun PosterCard(
                     )
                 } else {
                     FadeInImage(url = poster, contentDescription = title.title, modifier = Modifier.fillMaxSize())
+                }
+                LocalRatingOf.current(title)?.let { rating ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(5.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.72f))
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Text(text = "★", fontSize = 10.sp, color = RatingGold)
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = ratingLabel(rating),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = androidx.compose.ui.graphics.Color.White
+                        )
+                    }
                 }
                 rank?.let {
                     Text(
@@ -278,4 +311,11 @@ private fun providerAudioLabels(version: VodVersion): List<String> {
 private fun providerSubtitleLabels(version: VodVersion): List<String> {
     if (version.subtitles.isNotEmpty()) return version.subtitles.mapNotNull { languageName(it) }
     return if ("VOSTFR" in version.languageTags) listOf(stringResource(R.string.vod_lang_vf)) else emptyList()
+}
+
+@Composable
+internal fun shelfTitle(shelf: VodShelf): String = when (shelf.kind) {
+    VodShelf.Kind.LATEST -> stringResource(R.string.vod_shelf_latest)
+    VodShelf.Kind.TOP_RATED -> stringResource(R.string.vod_shelf_top_rated)
+    VodShelf.Kind.GENRE -> shelf.genre.orEmpty()
 }

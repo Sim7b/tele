@@ -97,7 +97,6 @@
     <string name="settings_refresh_guide">Refresh guide</string>
     <string name="settings_refresh_guide_started">Guide refresh started</string>
 
-    <string name="settings_appearance_title">Appearance</string>
     <string name="settings_appearance_description">App background and indicator color (progress, selection)</string>
     <string name="settings_background">Background</string>
     <string name="settings_accent_color">Accent color</string>
@@ -126,7 +125,6 @@
     <string name="settings_selected">Selected</string>
 
     <!-- Channel sources -->
-    <string name="settings_sources_title">Channel sources</string>
     <string name="settings_add_source">Add a source</string>
     <string name="settings_edit_source">Edit source</string>
     <string name="settings_unnamed">Unnamed</string>
@@ -276,10 +274,14 @@
     <string name="settings_update_check">Check for updates</string>
     <string name="settings_update_checking">Checking…</string>
     <string name="settings_update_up_to_date">You have the latest version</string>
-    <string name="settings_update_available">Version %1$s is available</string>
     <string name="settings_update_install">Install version %1$s</string>
     <string name="settings_update_downloading">Downloading… %1$d%%</string>
     <string name="settings_update_installing">Installing…</string>
+    <string name="settings_update_ready">Downloaded, ready to install</string>
+    <string name="update_prompt_title">Version %1$s is ready</string>
+    <string name="update_prompt_text">Downloaded in the background from GitHub. Install it now?</string>
+    <string name="update_prompt_install">Install now</string>
+    <string name="update_prompt_ignore">Ignore this version</string>
     <string name="home_settings_update">Settings, update available</string>
     <string name="update_error_check">Unable to check for updates (HTTP %1$d)</string>
     <string name="update_error_download">Download failed (HTTP %1$d)</string>
@@ -325,7 +327,6 @@
     <string name="guide_search_3">This guide is available again in the settings.</string>
     <string name="guide_hint_next">→ or OK: next · Back: skip</string>
     <string name="guide_hint_last">OK: start · ←: previous</string>
-    <string name="settings_help_title">Help</string>
     <string name="settings_help_description">The main remote control gestures, in a few pages</string>
     <string name="settings_show_guide">Show the quick start guide</string>
 
@@ -396,9 +397,9 @@
     <string name="settings_nav_sources">Sources</string>
     <string name="settings_nav_sources_hint">Servers, sync, other TV</string>
     <string name="settings_nav_channels">Channels</string>
-    <string name="settings_nav_channels_hint">Bouquet, categories, hiding</string>
+    <string name="settings_nav_channels_hint">Bouquet, categories, lists</string>
     <string name="settings_nav_playback">Playback</string>
-    <string name="settings_nav_playback_hint">Stream quality, home preview</string>
+    <string name="settings_nav_playback_hint">Quality, preview, subtitles</string>
     <string name="settings_nav_appearance">Appearance</string>
     <string name="settings_nav_appearance_hint">Background, color, density</string>
     <string name="settings_nav_system">System</string>
@@ -471,6 +472,7 @@
     <string name="vod_tab_movies">Movies</string>
     <string name="vod_tab_series">Series</string>
     <string name="vod_refresh">Refresh</string>
+    <string name="vod_settings">Movies and series settings</string>
     <string name="vod_loading">Loading movies and series…</string>
     <string name="vod_updating">Updating the library…</string>
     <string name="vod_empty">No movies or series in your sources</string>
@@ -481,6 +483,10 @@
     <string name="vod_row_recent_series">Recently added series</string>
     <string name="vod_row_top_movies">Top rated movies</string>
     <string name="vod_row_top_series">Top rated series</string>
+    <string name="vod_shelf_latest">Latest releases</string>
+    <string name="vod_shelf_top_rated">Top rated</string>
+    <string name="vod_view_grid">All titles</string>
+    <string name="vod_view_rows">By rows</string>
     <string name="vod_featured">Featured</string>
     <string name="vod_movie">Movie</string>
     <string name="vod_series">Series</string>
@@ -558,12 +564,9 @@
         <item quantity="other">%d files</item>
     </plurals>
     <string name="settings_nav_vod">Movies and series</string>
-    <string name="settings_nav_vod_hint">Library, TMDB</string>
+    <string name="settings_nav_vod_hint">Library, display, filters</string>
     <string name="settings_vod_title">Movies and series</string>
-    <string name="settings_vod_description">A library like Plex built from the movies and series of your sources (Xtream, M3U, Dispatcharr), whatever their groups in the playlist.</string>
-    <string name="settings_vod_on">On</string>
     <string name="settings_vod_on_description">Movies and series button on the home screen</string>
-    <string name="settings_vod_off">Off</string>
     <string name="settings_vod_off_description">Live TV only</string>
     <string name="settings_tmdb_title">TMDB key (optional)</string>
     <string name="settings_tmdb_description">Without a key, the sheets use what your providers give, and TVmaze for the series. With a free TMDB key (themoviedb.org), every title gets its poster, summary in your language, cast and episodes.</string>
@@ -581,6 +584,7 @@
     <string name="settings_opensubtitles_dialog_hint">API key (consumer)</string>
     <string name="settings_subtitle_languages_title">Subtitle languages</string>
     <string name="settings_subtitle_languages_description">Searched on OpenSubtitles, in the order chosen; none checked: every language</string>
+    <string name="settings_subtitle_languages_any">All languages</string>
     <string name="settings_select_all">Select all</string>
     <string name="settings_select_none">Deselect all</string>
     <string name="api_key_step_create">1. Create a %1$s key</string>
@@ -678,6 +682,7 @@
     </plurals>
     <string name="settings_vod_categories_none">not chosen yet</string>
     <string name="settings_vod_categories_skipped">nothing loaded</string>
+    <string name="settings_vod_display_title">Display</string>
     <string name="settings_vod_rows_title">Rows of the home</string>
     <string name="settings_vod_rows_description">Rows shown on the movies and series home (empty rows are never shown)</string>
     <string name="settings_vod_collections_row">Collections</string>
@@ -688,8 +693,6 @@
     <string name="settings_vod_poster_large">Large</string>
     <string name="settings_vod_theater_title">Theater recordings</string>
     <string name="settings_vod_theater_description">Movies recorded in a theater (CAM, TS, screener): poor picture and sound</string>
-    <string name="settings_vod_theater_show">Show</string>
-    <string name="settings_vod_theater_hide">Hide</string>
     <string name="settings_vod_defaults_title">Default filters</string>
     <string name="settings_vod_defaults_description">Applied when the Movies and Series tabs open</string>
     <string name="settings_vod_default_country">Country</string>

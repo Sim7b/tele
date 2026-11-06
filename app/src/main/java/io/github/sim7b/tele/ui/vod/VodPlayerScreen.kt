@@ -89,6 +89,7 @@ import io.github.sim7b.tele.playback.PictureFormat
 import io.github.sim7b.tele.playback.StreamInfo
 import io.github.sim7b.tele.playback.TrackChoice
 import io.github.sim7b.tele.playback.TvPlayerManager
+import io.github.sim7b.tele.ui.components.applyTeleStyle
 import io.github.sim7b.tele.ui.components.CastButton
 import io.github.sim7b.tele.ui.components.CastRemoteScreen
 import io.github.sim7b.tele.ui.components.Device
@@ -178,6 +179,8 @@ fun VodPlayerScreen(
     var refocusToken by remember { mutableIntStateOf(0) }
     // End of the intro of the series, learned from the previous episodes (or this one)
     var learnedIntro by remember(request.titleKey) { mutableStateOf(trackPrefs?.introEndMs) }
+    // Learned in this episode: the jumps right after it adjust it
+    var learnedThisTime by remember(request.episodeKey) { mutableStateOf<Long?>(null) }
 
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -207,7 +210,8 @@ fun VodPlayerScreen(
     fun commitSeek() {
         seekTarget?.let {
             if (request.episodeKey != null) {
-                learnedIntroEnd(player.currentPosition, it, durationMs)?.let { end ->
+                learnedIntroEnd(player.currentPosition, it, durationMs, learnedThisTime)?.let { end ->
+                    learnedThisTime = end
                     learnedIntro = end
                     onIntroLearned(end)
                 }
@@ -444,6 +448,7 @@ fun VodPlayerScreen(
                     view.useController = false
                     view.keepScreenOn = true
                     view.isFocusable = false
+                    view.subtitleView?.applyTeleStyle()
                 }
             },
             update = { view ->

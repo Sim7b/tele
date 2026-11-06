@@ -1,6 +1,16 @@
 package io.github.sim7b.tele.ui.components
 
+import android.view.KeyEvent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.FocusRequester
 import kotlinx.coroutines.delay
 
@@ -25,4 +35,30 @@ suspend fun FocusRequester.requestFocusWithRetry(attempts: Int = 10, delayMs: Lo
         delay(delayMs)
     }
     return false
+}
+
+/**
+ * For a menu opened by a long press on OK: the repeats and the release of that key reach the menu and
+ * would confirm its first item. They are ignored until a new press has started in the menu.
+ */
+fun Modifier.ignoreHeldConfirm(): Modifier = composed {
+    var armed by remember { mutableStateOf(false) }
+    onPreviewKeyEvent { event ->
+        val keyCode = event.nativeKeyEvent.keyCode
+        if (keyCode != KeyEvent.KEYCODE_DPAD_CENTER && keyCode != KeyEvent.KEYCODE_ENTER &&
+            keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER
+        ) return@onPreviewKeyEvent false
+        when {
+            event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0 -> {
+                armed = true
+                false
+            }
+            !armed -> true
+            event.type == KeyEventType.KeyUp -> {
+                armed = false
+                false
+            }
+            else -> false
+        }
+    }
 }

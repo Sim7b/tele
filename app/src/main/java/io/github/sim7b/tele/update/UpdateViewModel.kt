@@ -2,9 +2,12 @@ package io.github.sim7b.tele.update
 
 import android.app.Application
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import android.provider.Settings
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sim7b.tele.R
@@ -13,10 +16,10 @@ import io.github.sim7b.tele.data.toUiText
 import io.github.sim7b.tele.data.update.AppRelease
 import io.github.sim7b.tele.data.update.AppVersion
 import io.github.sim7b.tele.data.update.UpdateClient
+import io.github.sim7b.tele.data.update.UpdateFiles
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,24 +34,43 @@ sealed interface UpdateState {
     data object UpToDate : UpdateState
     data class Available(val release: AppRelease) : UpdateState
     data class Downloading(val release: AppRelease, val progress: Float) : UpdateState
+    /** Downloaded and checked: installed at once when asked. */
+    data class Ready(val release: AppRelease) : UpdateState
     data class Installing(val release: AppRelease) : UpdateState
     data class Failed(val message: UiText, val release: AppRelease? = null) : UpdateState
 }
 
+/** The newer version this state is about (to offer, downloading, ready, failed), null when there is none. */
+val UpdateState.release: AppRelease?
+    get() = when (this) {
+        is UpdateState.Available -> release
+        is UpdateState.Downloading -> release
+        is UpdateState.Ready -> release
+        is UpdateState.Installing -> release
+        is UpdateState.Failed -> release
+        else -> null
+    }
+
 /**
- * In-app updates from the latest GitHub release: checked once at launch, then on demand;
- * the APK is downloaded to the cache and handed to the system installer.
+ * In-app updates from the latest GitHub release: checked once at launch, then on demand. A newer
+ * version is downloaded in the background to the cache, then offered (see [ignore]); installing hands it
+ * to the system installer.
  */
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
 
     private val client = UpdateClient()
-    private val apkFile = File(application.cacheDir, "updates/update.apk")
+    private val updatesDir = File(application.cacheDir, "updates")
+    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     val isSupported = UpdateInstaller.isSupported(application)
     val installedVersion = UpdateInstaller.installedVersion(application)
 
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
+
+    /** Version whose offer the user turned down: still installable from the settings. */
+    private val _ignoredVersion = MutableStateFlow(prefs.getString(KEY_IGNORED, null))
+    val ignoredVersion: StateFlow<String?> = _ignoredVersion.asStateFlow()
 
     private var job: Job? = null
 
@@ -61,7 +83,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 val release = (_state.value as? UpdateState.Installing)?.release ?: return@collect
                 UpdateInstaller.consumeResult()
                 _state.value = when (result) {
-                    InstallResult.CANCELLED -> UpdateState.Available(release)
+                    InstallResult.CANCELLED -> UpdateState.Ready(release)
                     InstallResult.SIGNATURE_MISMATCH -> UpdateState.Failed(UiText.Res(R.string.update_error_signature), release)
                     InstallResult.FAILED -> UpdateState.Failed(UiText.Res(R.string.update_error_install), release)
                 }
@@ -73,19 +95,36 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         if (!isSupported || job?.isActive == true) return
         job = viewModelScope.launch {
             _state.value = UpdateState.Checking
-            _state.value = try {
-                val release = client.latestRelease()
-                if (release != null && AppVersion.isNewer(release.version, installedVersion)) {
-                    UpdateState.Available(release)
-                } else {
-                    UpdateState.UpToDate
-                }
+            val release = try {
+                client.latestRelease()?.takeIf { AppVersion.isNewer(it.version, installedVersion) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                UpdateState.Failed(e.toUiText())
+                _state.value = UpdateState.Failed(e.toUiText())
+                return@launch
+            }
+            clean(keep = release?.version)
+            if (release == null) {
+                _state.value = UpdateState.UpToDate
+                return@launch
+            }
+            // Downloaded ahead: a failure here is silent, the version stays offered
+            _state.value = try {
+                prepare(release)
+                UpdateState.Ready(release)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Background download of the update failed: ${e.javaClass.simpleName}")
+                UpdateState.Available(release)
             }
         }
+    }
+
+    /** Turns down the offer of [release]: not shown at startup any more (a newer version will be). */
+    fun ignore(release: AppRelease) {
+        prefs.edit { putString(KEY_IGNORED, release.version) }
+        _ignoredVersion.value = release.version
     }
 
     fun install(release: AppRelease) {
@@ -97,29 +136,54 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         }
         job = viewModelScope.launch {
             try {
-                _state.value = UpdateState.Downloading(release, 0f)
-                apkFile.delete()
-                client.download(release, apkFile) { progress ->
-                    _state.value = UpdateState.Downloading(release, progress)
-                }
+                val apk = prepare(release)
                 _state.value = UpdateState.Installing(release)
-                withContext(Dispatchers.IO) {
-                    if (!UpdateInstaller.isNewerBuildOfThisApp(app, apkFile)) {
-                        throw IllegalStateException("Downloaded APK is not a newer build of this app")
-                    }
-                    UpdateInstaller.install(app, apkFile)
-                }
+                withContext(Dispatchers.IO) { UpdateInstaller.install(app, apk) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IllegalStateException) {
                 _state.value = UpdateState.Failed(UiText.Res(R.string.update_error_package), release)
             } catch (e: Exception) {
                 _state.value = UpdateState.Failed(e.toUiText(), release)
-            } finally {
-                // Copied into the installer session (or useless after a failure)
-                withContext(Dispatchers.IO + NonCancellable) { apkFile.delete() }
             }
         }
+    }
+
+    /**
+     * The APK of [release], downloaded unless it already is, and checked: this app, a newer build
+     * (the system then checks its signature). Kept in the cache until a later start finds it installed.
+     */
+    private suspend fun prepare(release: AppRelease): File {
+        val name = UpdateFiles.fileName(release.version) ?: throw IllegalStateException("Unexpected version name")
+        val apk = File(updatesDir, name)
+        val app = getApplication<Application>()
+        if (withContext(Dispatchers.IO) { apk.isFile && UpdateInstaller.isNewerBuildOfThisApp(app, apk) }) return apk
+        val partial = File(updatesDir, "$name.part")
+        try {
+            withContext(Dispatchers.IO) {
+                updatesDir.mkdirs()
+                apk.delete()
+                partial.delete()
+            }
+            _state.value = UpdateState.Downloading(release, 0f)
+            client.download(release, partial) { progress -> _state.value = UpdateState.Downloading(release, progress) }
+            withContext(Dispatchers.IO) {
+                // Checked under its final name: the system parses an archive named .apk
+                if (!partial.renameTo(apk) || !UpdateInstaller.isNewerBuildOfThisApp(app, apk)) {
+                    apk.delete()
+                    throw IllegalStateException("Downloaded APK is not a newer build of this app")
+                }
+            }
+            return apk
+        } finally {
+            withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) { partial.delete() }
+        }
+    }
+
+    /** Deletes the APKs already installed (or replaced by [keep]), and the leftovers of interrupted downloads. */
+    private suspend fun clean(keep: String?) = withContext(Dispatchers.IO) {
+        val names = updatesDir.list()?.toList().orEmpty()
+        UpdateFiles.stale(names, installedVersion, keep).forEach { File(updatesDir, it).delete() }
     }
 
     /** "Install unknown apps" screen of this app; missing on some TV builds, where the installer asks itself. */
@@ -133,5 +197,11 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         } catch (_: ActivityNotFoundException) {
             false
         }
+    }
+
+    private companion object {
+        const val TAG = "Update"
+        const val PREFS_NAME = "updates"
+        const val KEY_IGNORED = "ignored_version"
     }
 }

@@ -4,7 +4,6 @@ import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.toUiText
 import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.data.UiText
-import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,8 +42,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -415,8 +412,6 @@ private fun DialogPanel(
     width: Dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    var confirmArmed by remember { mutableStateOf(false) }
-
     BoxWithConstraints {
         val shape = RoundedCornerShape(20.dp)
         Column(
@@ -426,24 +421,7 @@ private fun DialogPanel(
                 .clip(shape)
                 .background(SurfaceDark)
                 .border(1.dp, TextPrimary.copy(alpha = 0.08f), shape)
-                .onPreviewKeyEvent { event ->
-                    val keyCode = event.nativeKeyEvent.keyCode
-                    if (keyCode != KeyEvent.KEYCODE_DPAD_CENTER && keyCode != KeyEvent.KEYCODE_ENTER &&
-                        keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER
-                    ) return@onPreviewKeyEvent false
-                    when {
-                        event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0 -> {
-                            confirmArmed = true
-                            false
-                        }
-                        !confirmArmed -> true
-                        event.type == KeyEventType.KeyUp -> {
-                            confirmArmed = false
-                            false
-                        }
-                        else -> false
-                    }
-                }
+                .ignoreHeldConfirm()
                 .padding(22.dp),
             content = content
         )

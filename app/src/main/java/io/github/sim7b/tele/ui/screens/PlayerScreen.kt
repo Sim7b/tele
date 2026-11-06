@@ -61,6 +61,7 @@ import io.github.sim7b.tele.ui.components.Device
 import io.github.sim7b.tele.ui.components.GuideActions
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.RoundIconButton
+import io.github.sim7b.tele.ui.components.applyTeleStyle
 import io.github.sim7b.tele.ui.components.playerGestures
 import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.vod.VodChip
@@ -320,6 +321,7 @@ fun PlayerScreen(
                     // Prevents the Android TV screensaver from covering the live stream
                     keepScreenOn = true
                     isFocusable = false
+                    subtitleView?.applyTeleStyle()
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT

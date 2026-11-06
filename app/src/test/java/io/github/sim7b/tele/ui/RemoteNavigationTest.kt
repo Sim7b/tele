@@ -2,6 +2,26 @@ package io.github.sim7b.tele.ui
 
 import android.app.Application
 import androidx.compose.ui.input.key.Key
+import android.view.KeyEvent as NativeKeyEvent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.test.performKeyPress
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.onLast
+import androidx.tv.material3.Button
+import androidx.tv.material3.Text
+import io.github.sim7b.tele.data.storage.SecretBox
+import io.github.sim7b.tele.data.storage.SettingsRepository
+import io.github.sim7b.tele.ui.components.ignoreHeldConfirm
+import io.github.sim7b.tele.ui.components.requestFocusWithRetry
+import io.github.sim7b.tele.ui.screens.SettingsScreen
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import org.robolectric.RuntimeEnvironment
+import javax.crypto.KeyGenerator
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyDescendant
@@ -121,5 +141,87 @@ class RemoteNavigationTest {
         compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.waitForIdle()
         assertEquals(VodSelection(all = false, keys = setOf("MOVIE:1"), known = setOf("MOVIE:1", "MOVIE:2")), chosen)
+    }
+
+    @Test
+    fun `a menu opened by a long press ignores the held OK until a new press`() {
+        var clicks = 0
+        compose.setContent {
+            val focus = remember { FocusRequester() }
+            LaunchedEffect(Unit) { focus.requestFocusWithRetry() }
+            Box(modifier = Modifier.ignoreHeldConfirm()) {
+                Button(onClick = { clicks++ }, modifier = Modifier.focusRequester(focus)) { Text("Open") }
+            }
+        }
+        compose.waitForIdle()
+        val root = compose.onAllNodes(isRoot())[0]
+        // The repeats and the release of the long press that opened it
+        root.performKeyPress(KeyEvent(NativeKeyEvent(0, 0, NativeKeyEvent.ACTION_DOWN, NativeKeyEvent.KEYCODE_DPAD_CENTER, 5)))
+        root.performKeyPress(KeyEvent(NativeKeyEvent(NativeKeyEvent.ACTION_UP, NativeKeyEvent.KEYCODE_DPAD_CENTER)))
+        compose.waitForIdle()
+        assertEquals(0, clicks)
+        // A new press
+        root.performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.waitForIdle()
+        assertEquals(1, clicks)
+    }
+
+    @Test
+    @Config(qualifiers = "w960dp-h540dp-land-television")
+    fun `in the settings a row opens its choices on the current value, Back comes back to the row`() {
+        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        SettingsRepository.secretsFactory = { SecretBox({ key }, cbcTransformation = "AES/CBC/PKCS5Padding") }
+        try {
+            val app = RuntimeEnvironment.getApplication()
+            val repository = SettingsRepository(app)
+            val current = app.getString(repository.qualityPreference.value.labelRes)
+            compose.setContent {
+                SettingsScreen(repository = repository, onTestConnection = { Result.failure(Exception()) }, onBack = {})
+            }
+            compose.waitForIdle()
+            compose.onNode(isFocused() and hasAnyDescendant(hasText("Sources")), useUnmergedTree = true).assertExists()
+
+            // Down to Playback, → to its first setting
+            repeat(2) { compose.onAllNodes(isRoot())[0].performKeyInput { pressKey(Key.DirectionDown) } }
+            compose.onAllNodes(isRoot())[0].performKeyInput { pressKey(Key.DirectionRight) }
+            compose.waitForIdle()
+            compose.onNode(isFocused() and hasAnyDescendant(hasText("Stream quality")), useUnmergedTree = true).assertExists()
+
+            // OK: the panel, on the current value
+            compose.onAllNodes(isRoot())[0].performKeyInput { pressKey(Key.DirectionCenter) }
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(isFocused() and hasAnyDescendant(hasText(current)), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            }
+
+            // Back: the row again
+            compose.onAllNodes(isRoot()).onLast().performKeyInput { pressKey(Key.Back) }
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Stream quality")), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            SettingsRepository.secretsFactory = { SecretBox.androidKeystore() }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w960dp-h540dp-land-television")
+    fun `the settings opened from the movies and series start on their first setting`() {
+        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        SettingsRepository.secretsFactory = { SecretBox({ key }, cbcTransformation = "AES/CBC/PKCS5Padding") }
+        try {
+            val repository = SettingsRepository(RuntimeEnvironment.getApplication())
+            compose.setContent {
+                SettingsScreen(repository = repository, onTestConnection = { Result.failure(Exception()) }, startOnVod = true, onBack = {})
+            }
+            // The switch of the movies and series, whichever its state
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Movies and series button", substring = true)), useUnmergedTree = true)
+                        .fetchSemanticsNodes().isNotEmpty() ||
+                    compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Live TV only")), useUnmergedTree = true)
+                        .fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            SettingsRepository.secretsFactory = { SecretBox.androidKeystore() }
+        }
     }
 }
