@@ -116,19 +116,21 @@ fun GuideScreen(
     val now = rememberNow()
     val zone = remember { ZoneId.systemDefault() }
 
-    val categories = remember(channels, favorites.isEmpty(), recents.isEmpty(), categoryOrder) {
-        listOfNotNull(FAVORITES.takeIf { favorites.isNotEmpty() }, RECENTS.takeIf { recents.isNotEmpty() }, ALL_CHANNELS) +
+    val lists = actions.listCategories
+    val categories = remember(channels, favorites.isEmpty(), recents.isEmpty(), categoryOrder, lists) {
+        listOfNotNull(FAVORITES.takeIf { favorites.isNotEmpty() }, RECENTS.takeIf { recents.isNotEmpty() }) + lists.keys + ALL_CHANNELS +
             Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
     }
     fun rowsOf(key: String): List<Channel> = when (key) {
         FAVORITES -> favorites
         RECENTS -> recents
         ALL_CHANNELS -> channels
+        in lists -> lists.getValue(key).channels
         else -> channels.filter { it.group == key }
     }
     var categoryKey by rememberSaveable { mutableStateOf(ALL_CHANNELS) }
     if (categoryKey !in categories) categoryKey = ALL_CHANNELS
-    val rows = remember(categoryKey, channels, favorites, recents) { rowsOf(categoryKey) }
+    val rows = remember(categoryKey, channels, favorites, recents, lists) { rowsOf(categoryKey) }
     // With replay channels, the grid also goes back over the past day
     val hasReplay = remember(channels, actions.replay != null) { actions.replay != null && channels.any { it.catchupDays > 0 } }
     var menuProgram by remember { mutableStateOf<Pair<Channel, GuideProgram>?>(null) }
@@ -270,6 +272,7 @@ fun GuideScreen(
                     FAVORITES -> stringResource(R.string.home_favorites)
                     RECENTS -> stringResource(R.string.panel_recent_channels)
                     ALL_CHANNELS -> stringResource(R.string.panel_all_channels)
+                    in lists -> lists.getValue(categoryKey).name
                     else -> groupLabel(categoryKey)
                 },
                 count = rows.size,

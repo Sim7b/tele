@@ -112,6 +112,14 @@
     </plurals>
     <string name="settings_unhide_all">Show all again</string>
 
+    <string name="settings_channel_lists_title">Lists of channels</string>
+    <string name="settings_channel_lists_description">Made from the menu of a channel (hold OK): each list is a category of the home, the channel panel and the guide</string>
+    <string name="settings_channel_list_rename">Rename</string>
+    <string name="settings_channel_list_delete">Delete</string>
+    <plurals name="channel_count">
+        <item quantity="one">%d channel</item>
+        <item quantity="other">%d channels</item>
+    </plurals>
     <string name="settings_categories_title">Categories</string>
     <string name="settings_categories_description">Categories shown on the home screen, in the channel panel and when zapping. Your favorites stay visible.</string>
     <string name="settings_category_hidden">Hidden</string>
@@ -238,6 +246,11 @@
     <string name="card_add_favorite">Add to favorites</string>
     <string name="card_remove_favorite">Remove from favorites</string>
     <string name="card_hide_channel">Hide channel</string>
+    <string name="channel_list_new">New list…</string>
+    <string name="channel_list_create">Create the list</string>
+    <string name="channel_list_name_hint">Name of the list (Sport, Kids…)</string>
+    <string name="channel_list_add">Add to %1$s</string>
+    <string name="channel_list_remove">Remove from %1$s</string>
     <string name="card_move_in_favorites">Move within favorites</string>
     <string name="card_hide_category">Hide this category</string>
     <plurals name="card_category_channel_count">

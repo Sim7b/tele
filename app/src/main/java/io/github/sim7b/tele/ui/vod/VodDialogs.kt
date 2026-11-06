@@ -258,7 +258,14 @@ internal fun CollectionPickerDialog(
 
 /** Name of a collection, typed with the TV keyboard. */
 @Composable
-internal fun NameDialog(title: String, initial: String, confirm: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun NameDialog(
+    title: String,
+    initial: String,
+    confirm: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+    hint: String = stringResource(R.string.vod_collection_name_hint)
+) {
     var name by remember { mutableStateOf(initial) }
     var focused by remember { mutableStateOf(false) }
     val fieldFocus = remember { FocusRequester() }
@@ -290,7 +297,7 @@ internal fun NameDialog(title: String, initial: String, confirm: String, onConfi
                         .border(2.dp, if (focused) accent else SurfaceCard, shape)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    if (name.isEmpty()) Text(text = stringResource(R.string.vod_collection_name_hint), fontSize = 17.sp, color = TextSecondary.copy(alpha = 0.6f))
+                    if (name.isEmpty()) Text(text = hint, fontSize = 17.sp, color = TextSecondary.copy(alpha = 0.6f))
                     inner()
                 }
             }

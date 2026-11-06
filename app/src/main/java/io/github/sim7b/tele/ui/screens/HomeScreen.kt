@@ -41,6 +41,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.tv.material3.*
 import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
+import io.github.sim7b.tele.data.model.ChannelList
+import io.github.sim7b.tele.data.model.ChannelListView
 import io.github.sim7b.tele.data.model.HomeLists
 import io.github.sim7b.tele.ui.vod.VodChip
 import io.github.sim7b.tele.data.model.StreamSlots
@@ -69,6 +71,7 @@ import java.time.format.DateTimeFormatter
 
 /** Sentinel of the "all categories" chip; its label comes from the resources. */
 private const val ALL_CATEGORIES = "__all__"
+private const val LIST_PREFIX = "__list__:"
 
 private const val FAVORITE_KEY_PREFIX = "fav:"
 private const val LIST_KEY_PREFIX = "list:"
@@ -120,7 +123,12 @@ fun HomeScreen(
     previewSurface: @Composable () -> Unit = {},
     // Phone / tablet: Chromecast button of the header
     castButton: @Composable () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Lists of channels made by the user: categories of their own, and their rows in the channel menu
+    channelLists: List<ChannelListView> = emptyList(),
+    savedLists: List<ChannelList> = emptyList(),
+    onToggleInList: (listId: String, Channel) -> Unit = { _, _ -> },
+    onCreateList: (name: String, Channel) -> Unit = { _, _ -> }
 ) {
     val compact = LocalScreen.current.compact
     val favoriteColumns = if (compact) COMPACT_COLUMNS else FAVORITE_COLUMNS
@@ -173,8 +181,10 @@ fun HomeScreen(
     }
 
     // Categories
-    val categories = remember(channels, categoryOrder) {
-        listOf(ALL_CATEGORIES) + Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
+    // Lists of channels first, after all the channels (they are not moved with the categories)
+    val listsByKey = remember(channelLists) { channelLists.filter { it.channels.isNotEmpty() }.associateBy { LIST_PREFIX + it.id } }
+    val categories = remember(channels, categoryOrder, listsByKey) {
+        listOf(ALL_CATEGORIES) + listsByKey.keys + Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
     }
 
     // Category "move" mode (from its long-press menu): the chip follows ← →, OK or Back confirms
@@ -191,8 +201,12 @@ fun HomeScreen(
     val effectiveCategory = selectedCategory.takeIf { it in categories } ?: ALL_CATEGORIES
 
     // Filtered channels
-    val filteredChannels = remember(channels, effectiveCategory) {
-        if (effectiveCategory == ALL_CATEGORIES) channels else channels.filter { it.group == effectiveCategory }
+    val filteredChannels = remember(channels, effectiveCategory, listsByKey) {
+        when {
+            effectiveCategory == ALL_CATEGORIES -> channels
+            effectiveCategory in listsByKey -> listsByKey.getValue(effectiveCategory).channels
+            else -> channels.filter { it.group == effectiveCategory }
+        }
     }
     // Rows of the grid computed once per list change (and not on every grid recomposition)
     val channelRows = remember(filteredChannels, channelColumns) { filteredChannels.chunked(channelColumns) }
@@ -290,7 +304,7 @@ fun HomeScreen(
                         }
                     } else if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
                         val step = if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else +1
-                        onReorderCategories(Categories.moved(categories.drop(1), moving, step))
+                        onReorderCategories(Categories.moved(categories.drop(1 + listsByKey.size), moving, step))
                     }
                     return@onPreviewKeyEvent true
                 }
@@ -546,20 +560,24 @@ fun HomeScreen(
                         ) {
                             items(categories) { category ->
                                 DiscreteCategoryChip(
-                                    text = if (category == ALL_CATEGORIES) stringResource(R.string.home_category_all) else groupLabel(category),
+                                    text = when {
+                                        category == ALL_CATEGORIES -> stringResource(R.string.home_category_all)
+                                        category in listsByKey -> listsByKey.getValue(category).name
+                                        else -> groupLabel(category)
+                                    },
                                     isSelected = category == effectiveCategory,
                                     onClick = {
                                         // During a move only a tap gets here: the chip goes to the tapped place, a tap on it ends the move
                                         val moving = movingCategory
                                         when {
                                             moving == null -> selectedCategory = category
-                                            category == moving || category == ALL_CATEGORIES -> movingCategory = null
+                                            category == moving || category == ALL_CATEGORIES || category in listsByKey -> movingCategory = null
                                             else -> onReorderCategories(
-                                                Categories.moved(categories.drop(1), moving, categories.indexOf(category) - categories.indexOf(moving))
+                                                Categories.moved(categories.drop(1 + listsByKey.size), moving, categories.indexOf(category) - categories.indexOf(moving))
                                             )
                                         }
                                     },
-                                    onLongClick = if (category == ALL_CATEGORIES) null else ({ categoryMenu = category }),
+                                    onLongClick = if (category == ALL_CATEGORIES || category in listsByKey) null else ({ categoryMenu = category }),
                                     modifier = when (category) {
                                         movingCategory -> Modifier.focusRequester(categoryMoveFocus)
                                         effectiveCategory -> Modifier.focusRequester(categoryFocus)
@@ -622,6 +640,9 @@ fun HomeScreen(
                 onSelectStream = { stream -> onSelectStream(ch, stream) },
                 onMove = if (canMove) ({ movingChannelId = ch.id }) else null,
                 automaticDescription = automaticStreamDescription(ch),
+                lists = savedLists,
+                onToggleInList = { listId -> onToggleInList(listId, ch) },
+                onCreateList = { name -> onCreateList(name, ch) },
                 onDismiss = {
                     actionMenuChannel = null
                     // Give the focus back to the grid (the original card may have disappeared if the channel was hidden)

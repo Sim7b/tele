@@ -112,6 +112,15 @@
     </plurals>
     <string name="settings_unhide_all">Tout réafficher</string>
 
+    <string name="settings_channel_lists_title">Listes de chaînes</string>
+    <string name="settings_channel_lists_description">Créées depuis le menu d\'une chaîne (OK maintenu) : chaque liste est une catégorie de l\'accueil, du panneau des chaînes et du guide</string>
+    <string name="settings_channel_list_rename">Renommer</string>
+    <string name="settings_channel_list_delete">Supprimer</string>
+    <plurals name="channel_count">
+        <item quantity="one">%d chaîne</item>
+        <item quantity="many">%d chaînes</item>
+        <item quantity="other">%d chaînes</item>
+    </plurals>
     <string name="settings_categories_title">Catégories</string>
     <string name="settings_categories_description">Catégories affichées sur l\'accueil, dans le volet des chaînes et au zapping. Vos favoris restent visibles.</string>
     <string name="settings_category_hidden">Masquée</string>
@@ -236,6 +245,11 @@
     <string name="card_add_favorite">Ajouter aux favoris</string>
     <string name="card_remove_favorite">Retirer des favoris</string>
     <string name="card_hide_channel">Masquer la chaîne</string>
+    <string name="channel_list_new">Nouvelle liste…</string>
+    <string name="channel_list_create">Créer la liste</string>
+    <string name="channel_list_name_hint">Nom de la liste (Sport, Enfants…)</string>
+    <string name="channel_list_add">Ajouter à %1$s</string>
+    <string name="channel_list_remove">Retirer de %1$s</string>
     <string name="card_move_in_favorites">Déplacer dans les favoris</string>
     <string name="card_hide_category">Masquer cette catégorie</string>
     <plurals name="card_category_channel_count">

@@ -327,6 +327,14 @@ class MainActivity : ComponentActivity() {
             val visibleChannels = homeLists.visible
             val favoriteChannels = homeLists.favorites
             val categoryCounts = homeLists.categoryCounts
+            // Lists of channels made by the user (with their channels found), and the channel menu actions on them
+            val channelListViews by viewModel.channelLists.collectAsState()
+            val savedChannelLists by configRepository.channelLists.collectAsState()
+            fun toggleInList(listId: String, channel: Channel) {
+                // A grouped channel may be in the list by one of its versions
+                val id = savedChannelLists.firstOrNull { it.id == listId }?.channelIds?.firstOrNull { it in channel.allIds } ?: channel.id
+                configRepository.toggleInChannelList(listId, id)
+            }
 
             // Guide: recent channels (last watched first), reminders, replays and the menu of a channel
             val recentIds by viewModel.guideStore.recentChannels.collectAsState()
@@ -365,7 +373,11 @@ class MainActivity : ComponentActivity() {
                 hideChannel = { channel -> hideChannel(channel.id) },
                 loadStreams = { channel -> viewModel.loadStreams(channel) },
                 selectStream = { channel, stream -> viewModel.selectStream(channel, stream) },
-                automaticStreamDescription = automaticStreamDescription
+                automaticStreamDescription = automaticStreamDescription,
+                channelLists = channelListViews,
+                savedLists = savedChannelLists,
+                toggleInList = ::toggleInList,
+                createList = { name, channel -> configRepository.createChannelList(name, channel.id) }
             )
             // A program with a reminder starts: shown once, on any screen (after the welcome)
             var dueReminder by remember { mutableStateOf<Reminder?>(null) }
@@ -420,6 +432,10 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     channels = visibleChannels,
                                     favorites = favoriteChannels,
+                                    channelLists = channelListViews,
+                                    savedLists = savedChannelLists,
+                                    onToggleInList = ::toggleInList,
+                                    onCreateList = { name, channel -> configRepository.createChannelList(name, channel.id) },
                                     hasSource = enabledConfigs.isNotEmpty(),
                                     favoriteIds = favoriteIds,
                                     isLoading = isLoadingChannels,
