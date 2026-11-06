@@ -132,11 +132,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val homeLists: StateFlow<HomeLists> = combine(
         _displayChannels,
         configRepository.hiddenIds,
-        configRepository.hiddenGroups,
+        combine(configRepository.hiddenGroups, configRepository.parental.hiddenGroupsFlow()) { hidden, locked -> hidden to locked },
         configRepository.favoriteIds,
         configRepository.categoryOrder
-    ) { display, hiddenIds, hiddenGroups, favoriteIds, categoryOrder ->
-        withContext(Dispatchers.Default) { HomeLists.build(display, hiddenIds, hiddenGroups, favoriteIds, categoryOrder) }
+    ) { display, hiddenIds, (hiddenGroups, lockedGroups), favoriteIds, categoryOrder ->
+        withContext(Dispatchers.Default) { HomeLists.build(display, hiddenIds, hiddenGroups, favoriteIds, categoryOrder, lockedGroups) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeLists.EMPTY)
     // Lists of channels made by the user, with their channels (among the ones not hidden)
     val channelLists: StateFlow<List<ChannelListView>> = combine(homeLists, configRepository.channelLists) { lists, saved ->

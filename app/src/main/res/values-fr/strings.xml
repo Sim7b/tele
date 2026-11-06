@@ -185,6 +185,7 @@
     <string name="home_no_channels_hint">Vérifiez vos paramètres ou réaffichez les chaînes masquées.</string>
     <string name="home_open_settings">Ouvrir les paramètres</string>
     <string name="home_retry">Réessayer</string>
+    <string name="home_resume">Reprendre</string>
     <string name="home_favorites">Favoris</string>
     <string name="home_featured">À la une</string>
     <string name="home_move_hint">"◀ ▶ ▲ ▼  Déplacer      OK  Valider"</string>
@@ -405,6 +406,25 @@
     <string name="settings_nav_appearance">Apparence</string>
     <string name="settings_nav_appearance_hint">Fond, couleur, densité</string>
     <string name="settings_nav_system">Système</string>
+    <string name="settings_nav_parental">Contrôle parental</string>
+    <string name="settings_nav_parental_hint">Code, catégories verrouillées</string>
+    <string name="parental_set_pin">Définir un code</string>
+    <string name="parental_description">Un code à 4 chiffres verrouille les catégories choisies, et les films et séries si vous le souhaitez : masqués partout tant que le code n\'est pas saisi</string>
+    <string name="parental_unlock">Saisir le code</string>
+    <string name="parental_locked_description">Verrouillé : saisissez le code pour afficher le contenu verrouillé et modifier ces réglages, jusqu\'à la sortie de l\'appli</string>
+    <string name="parental_categories">Catégories verrouillées</string>
+    <string name="parental_categories_description">Masquées de l\'accueil, du panneau des chaînes, du guide, de la recherche et du zapping tant que c\'est verrouillé</string>
+    <string name="parental_vod">Verrouiller les films et séries</string>
+    <string name="parental_vod_description">Le code est demandé pour les ouvrir ; masqués de la recherche et de l\'accueil</string>
+    <string name="parental_change_pin">Changer le code</string>
+    <string name="parental_lock_now">Verrouiller maintenant</string>
+    <string name="parental_remove">Supprimer le code et les verrous</string>
+    <string name="parental_enter_pin">Code parental</string>
+    <string name="parental_new_pin">Nouveau code (4 chiffres)</string>
+    <string name="parental_confirm_pin">Le même code à nouveau</string>
+    <string name="parental_wrong_pin">Code incorrect</string>
+    <string name="parental_pin_mismatch">Les deux codes diffèrent : saisissez-en un nouveau</string>
+    <string name="parental_wait">Trop d\'essais : réessayez dans %1$d s</string>
     <string name="settings_nav_system_hint">Mises à jour, aide</string>
 
     <!-- Playback options (right arrow in the player) -->
@@ -420,6 +440,11 @@
     <string name="options_channels">%1$d canaux</string>
     <string name="options_track">Piste %1$d</string>
     <string name="options_speed">Vitesse</string>
+    <string name="inset_watch">Regarder en incrustation</string>
+    <string name="inset_title">Incrustation</string>
+    <string name="inset_swap">Échanger avec %1$s</string>
+    <string name="inset_close">Fermer l\'incrustation</string>
+    <string name="inset_failed">%1$s : pas de connexion libre</string>
     <string name="options_stats">Statistiques</string>
     <string name="options_stats_show">Afficher les statistiques de lecture</string>
     <string name="stats_video">Vidéo</string>
@@ -642,6 +667,7 @@
     <string name="vod_search_titles">Titres</string>
     <string name="vod_search_with">Avec %1$s</string>
     <string name="vod_add_to">Ajouter à…</string>
+    <string name="vod_trailer">Bande-annonce</string>
     <string name="vod_collections_title">Ajouter à une collection</string>
     <string name="vod_collection_new">Nouvelle collection</string>
     <string name="vod_collection_name_hint">Nom de la collection</string>

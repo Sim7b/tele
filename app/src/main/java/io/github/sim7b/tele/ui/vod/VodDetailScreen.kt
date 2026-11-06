@@ -109,7 +109,9 @@ fun VodDetailScreen(
     modifier: Modifier = Modifier,
     // Episode marked watched (true) or unwatched, by its progress key
     onSetEpisodeWatched: (episodeKey: String, watched: Boolean) -> Unit = { _, _ -> },
-    subtitles: VodSubtitles? = null
+    subtitles: VodSubtitles? = null,
+    // Trailer (its YouTube id) opened in the YouTube app
+    onPlayTrailer: (String) -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
     val compact = LocalScreen.current.compact
@@ -243,6 +245,9 @@ fun VodDetailScreen(
                                 icon = if (inSomeCollection) Icons.Filled.Check else Icons.Filled.Add,
                                 onClick = { pickingCollections = true }
                             )
+                            details?.trailerKey?.let { key ->
+                                VodButton(label = stringResource(R.string.vod_trailer), icon = Icons.Filled.PlayArrow, onClick = { onPlayTrailer(key) })
+                            }
                             if (title.kind == VodKind.MOVIE && subtitles?.canSearch == true) {
                                 VodButton(
                                     label = stringResource(R.string.subtitles_button),

@@ -87,6 +87,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
@@ -112,6 +113,7 @@ import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.SectionLabel
 import io.github.sim7b.tele.ui.components.dialogWidth
+import io.github.sim7b.tele.ui.components.PinDialog
 import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.components.screenMargin
@@ -132,6 +134,7 @@ private enum class SettingsPage(@param:StringRes val labelRes: Int, @param:Strin
     PLAYBACK(R.string.settings_nav_playback, R.string.settings_nav_playback_hint, Icons.Filled.PlayArrow),
     APPEARANCE(R.string.settings_nav_appearance, R.string.settings_nav_appearance_hint, Icons.Filled.Create),
     VOD(R.string.settings_nav_vod, R.string.settings_nav_vod_hint, Icons.Filled.AccountBox),
+    PARENTAL(R.string.settings_nav_parental, R.string.settings_nav_parental_hint, Icons.Filled.Lock),
     SYSTEM(R.string.settings_nav_system, R.string.settings_nav_system_hint, Icons.Filled.Info)
 }
 
@@ -174,6 +177,17 @@ fun SettingsScreen(
     val vodDisplay by repository.vodDisplay.collectAsState()
     val vodSelections by repository.vodSelections.collectAsState()
     val channelLists by repository.channelLists.collectAsState()
+    // Parental control: code, what it locks, code entered
+    val parental = repository.parental
+    val parentalHasPin by parental.hasPin.collectAsState()
+    val parentalUnlocked by parental.unlocked.collectAsState()
+    val lockedGroups by parental.lockedGroups.collectAsState()
+    val vodLocked by parental.vodLocked.collectAsState()
+    var pinStep by remember { mutableStateOf<PinStep?>(null) }
+    var firstPin by remember { mutableStateOf<String?>(null) }
+    var pinError by remember { mutableStateOf<String?>(null) }
+    // The rows of the section change with the code: the focus goes back to its first one
+    var parentalRefocus by remember { mutableIntStateOf(0) }
     var renamingList by remember { mutableStateOf<ChannelList?>(null) }
     var editingKey by remember { mutableStateOf<ApiKeyService?>(null) }
     val openSubtitlesKey by repository.openSubtitlesKey.collectAsState()
@@ -229,6 +243,9 @@ fun SettingsScreen(
     val rowFocus = remember { HashMap<String, FocusRequester>() }
     // First row of the open section: → from the menu lands on it (then on the row last focused there)
     val contentStart = remember { FocusRequester() }
+    LaunchedEffect(parentalRefocus) {
+        if (parentalRefocus > 0) contentStart.requestFocusWithRetry()
+    }
     LaunchedEffect(Unit) {
         if (!startOnVod || !contentStart.requestFocusWithRetry()) pageFocus.getValue(page).requestFocusWithRetry()
     }
@@ -238,7 +255,7 @@ fun SettingsScreen(
         lastRow = next.toString()
         panel = next
     }
-    val nothingOpen = panel == null && editingKey == null && renamingList == null && !showUnmatched
+    val nothingOpen = panel == null && editingKey == null && renamingList == null && !showUnmatched && pinStep == null
     LaunchedEffect(nothingOpen) {
         val row = lastRow ?: return@LaunchedEffect
         if (!nothingOpen) return@LaunchedEffect
@@ -652,6 +669,73 @@ fun SettingsScreen(
                                 }
                             }
 
+                            SettingsPage.PARENTAL -> {
+                                when {
+                                    !parentalHasPin -> item {
+                                        SettingRow(
+                                            label = stringResource(R.string.parental_set_pin),
+                                            description = stringResource(R.string.parental_description),
+                                            icon = Icons.Filled.Lock,
+                                            onClick = { pinStep = PinStep.NEW },
+                                            modifier = Modifier.focusRequester(contentStart)
+                                        )
+                                    }
+                                    !parentalUnlocked -> item {
+                                        SettingRow(
+                                            label = stringResource(R.string.parental_unlock),
+                                            description = stringResource(R.string.parental_locked_description),
+                                            icon = Icons.Filled.Lock,
+                                            onClick = { pinStep = PinStep.UNLOCK },
+                                            modifier = Modifier.focusRequester(contentStart)
+                                        )
+                                    }
+                                    else -> {
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.parental_categories),
+                                                value = "${lockedGroups.size}",
+                                                onClick = { open(SettingsPanel.ParentalCategories) },
+                                                modifier = Modifier.focusRequester(focusOf(SettingsPanel.ParentalCategories)).focusRequester(contentStart)
+                                            )
+                                        }
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.parental_vod),
+                                                description = stringResource(R.string.parental_vod_description),
+                                                toggle = vodLocked,
+                                                onClick = { parental.setVodLocked(!vodLocked) }
+                                            )
+                                        }
+                                        item {
+                                            SettingRow(label = stringResource(R.string.parental_change_pin), icon = Icons.Filled.Edit, onClick = { pinStep = PinStep.NEW })
+                                        }
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.parental_lock_now),
+                                                icon = Icons.Filled.Lock,
+                                                chevron = false,
+                                                onClick = {
+                                                    parental.lock()
+                                                    parentalRefocus++
+                                                }
+                                            )
+                                        }
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.parental_remove),
+                                                icon = Icons.Filled.Delete,
+                                                chevron = false,
+                                                destructive = true,
+                                                onClick = {
+                                                    parental.clear()
+                                                    parentalRefocus++
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             SettingsPage.SYSTEM -> {
                                 item {
                                     UpdateSection(
@@ -682,6 +766,23 @@ fun SettingsScreen(
         panel?.let { current ->
             val close = { panel = null }
             when (current) {
+                SettingsPanel.ParentalCategories -> ChoicePanel(
+                    title = stringResource(R.string.parental_categories),
+                    description = stringResource(R.string.parental_categories_description),
+                    style = ChoiceStyle.MULTIPLE,
+                    choices = categories.map { (group, count) ->
+                        val locked = group in lockedGroups
+                        Choice(
+                            label = groupLabel(group),
+                            trailing = count.toString(),
+                            selected = locked,
+                            onClick = { parental.setGroupLocked(group, !locked) }
+                        )
+                    },
+                    onSelectAll = { parental.setGroupsLocked(categories.map { it.first }, locked = true) },
+                    onSelectNone = { parental.setGroupsLocked(categories.map { it.first }, locked = false) },
+                    onDismiss = close
+                )
                 SettingsPanel.Bouquet -> ChoicePanel(
                     title = stringResource(R.string.settings_bouquet_title),
                     description = stringResource(R.string.settings_bouquet_description),
@@ -904,6 +1005,51 @@ fun SettingsScreen(
                 }
             )
         }
+        pinStep?.let { step ->
+            val wrongPin = stringResource(R.string.parental_wrong_pin)
+            val mismatch = stringResource(R.string.parental_pin_mismatch)
+            fun close() {
+                pinStep = null
+                firstPin = null
+                pinError = null
+            }
+            PinDialog(
+                title = stringResource(
+                    when (step) {
+                        PinStep.UNLOCK -> R.string.parental_enter_pin
+                        PinStep.NEW -> R.string.parental_new_pin
+                        PinStep.CONFIRM -> R.string.parental_confirm_pin
+                    }
+                ),
+                error = pinError,
+                onSubmit = { pin ->
+                    when (step) {
+                        PinStep.UNLOCK -> if (parental.unlock(pin)) {
+                            close()
+                            parentalRefocus++
+                        } else {
+                            val wait = parental.waitMs()
+                            pinError = if (wait > 0) resources.getString(R.string.parental_wait, (wait + 999) / 1000) else wrongPin
+                        }
+                        PinStep.NEW -> {
+                            firstPin = pin
+                            pinError = null
+                            pinStep = PinStep.CONFIRM
+                        }
+                        PinStep.CONFIRM -> if (pin == firstPin) {
+                            parental.setPin(pin)
+                            close()
+                            parentalRefocus++
+                        } else {
+                            firstPin = null
+                            pinError = mismatch
+                            pinStep = PinStep.NEW
+                        }
+                    }
+                },
+                onDismiss = ::close
+            )
+        }
         renamingList?.let { list ->
             NameDialog(
                 title = stringResource(R.string.settings_channel_list_rename),
@@ -950,6 +1096,7 @@ fun SettingsScreen(
 /** The choices opened from a row of the settings. */
 private sealed interface SettingsPanel {
     data object Bouquet : SettingsPanel
+    data object ParentalCategories : SettingsPanel
     data object CategoryModes : SettingsPanel
     data object Categories : SettingsPanel
     data object Hidden : SettingsPanel
@@ -968,6 +1115,9 @@ private sealed interface SettingsPanel {
 
 /** Filters the Movies and Series tabs open with. */
 private enum class DefaultField { COUNTRY, AUDIO, SUBTITLES, SORT }
+
+/** Entry of the parental code: to unlock, or a new one then its confirmation. */
+private enum class PinStep { UNLOCK, NEW, CONFIRM }
 
 private const val UNMATCHED_ROW = "unmatched"
 

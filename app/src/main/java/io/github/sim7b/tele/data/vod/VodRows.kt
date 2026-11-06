@@ -46,13 +46,7 @@ object VodRows {
             else rankings[ranking].orEmpty().mapNotNull { matcher.match(it) }.distinctBy { it.key }.take(size)
         val rows = ArrayList<VodRow>()
 
-        // Started and not finished, the latest first; a series once, from its latest episode
-        val started = progress.values
-            .filter { !it.finished && it.positionMs > 0 }
-            .sortedByDescending { it.updatedAt }
-            .mapNotNull { byKey[it.titleKey] }
-            .distinctBy { it.key }
-        rows += VodRow(VodRow.Kind.CONTINUE, started.take(ROW_SIZE))
+        rows += VodRow(VodRow.Kind.CONTINUE, continuing(byKey, progress).map { it.first })
         rows += VodRow(VodRow.Kind.TRENDING, ranked(Ranking.TRENDING, TRENDING_SIZE), ranked = true)
         rows += VodRow(VodRow.Kind.MY_LIST, myList.mapNotNull { byKey[it] }.take(ROW_SIZE))
         collections.forEach { collection ->
@@ -72,6 +66,18 @@ object VodRows {
         }
         return rows.filter { it.titles.isNotEmpty() && it.kind !in hidden }
     }
+
+    /**
+     * Started and not finished, the latest first; a series once, from its latest episode, with the
+     * progress of that episode.
+     */
+    fun continuing(byKey: Map<String, VodTitle>, progress: Map<String, VodProgress>, limit: Int = ROW_SIZE): List<Pair<VodTitle, VodProgress>> =
+        progress.values
+            .filter { !it.finished && it.positionMs > 0 }
+            .sortedByDescending { it.updatedAt }
+            .mapNotNull { state -> byKey[state.titleKey]?.let { it to state } }
+            .distinctBy { it.first.key }
+            .take(limit)
 
     /** Latest additions; without dates (M3U), the order of the playlist. */
     private fun recent(titles: List<VodTitle>): List<VodTitle> =

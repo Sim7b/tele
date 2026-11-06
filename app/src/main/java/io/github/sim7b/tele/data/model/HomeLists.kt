@@ -26,9 +26,12 @@ class HomeLists(
             hiddenIds: Set<String>,
             hiddenGroups: Set<String>,
             favoriteIds: List<String>,
-            categoryOrder: List<String>
+            categoryOrder: List<String>,
+            // Locked by the parental control: left out of every list, favorites included
+            lockedGroups: Set<String> = emptySet()
         ): HomeLists {
-            val unhidden = display.filterNot { channel -> channel.allIds.all { it in hiddenIds } }
+            val allowed = if (lockedGroups.isEmpty()) display else display.filterNot { it.group in lockedGroups }
+            val unhidden = allowed.filterNot { channel -> channel.allIds.all { it in hiddenIds } }
             val visible = unhidden.filterNot { it.group in hiddenGroups }
             val counts = unhidden.groupingBy { it.group }.eachCount()
             return HomeLists(

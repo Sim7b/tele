@@ -107,5 +107,7 @@ data class VodDetails(
     val director: String? = null,
     val cast: List<String> = emptyList(),
     val versions: List<VodVersion> = emptyList(),
-    val seasons: List<VodSeason> = emptyList()
+    val seasons: List<VodSeason> = emptyList(),
+    // YouTube id of its trailer, with a TMDB key
+    val trailerKey: String? = null
 )

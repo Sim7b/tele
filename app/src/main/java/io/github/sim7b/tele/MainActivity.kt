@@ -1,7 +1,10 @@
 package io.github.sim7b.tele
 
 import android.content.ComponentCallbacks2
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import androidx.core.net.toUri
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -85,6 +88,10 @@ import io.github.sim7b.tele.update.release
 import io.github.sim7b.tele.update.UpdateViewModel
 import io.github.sim7b.tele.data.update.UpdateFiles
 import io.github.sim7b.tele.ui.components.UpdateReadyDialog
+import io.github.sim7b.tele.ui.components.PinDialog
+import io.github.sim7b.tele.ui.components.withInset
+import io.github.sim7b.tele.playback.InsetPlayer
+import androidx.compose.ui.platform.LocalResources
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -120,6 +127,7 @@ sealed class CurrentScreen {
 }
 
 private const val WELCOME_MIN_MS = 1_800L
+private const val HOME_RESUME_SIZE = 12
 private const val WELCOME_MAX_MS = 15_000L
 // After the live TV is loaded: the movies and series library is prepared without slowing the startup
 private const val VOD_PRELOAD_DELAY_MS = 15_000L
@@ -134,6 +142,8 @@ private const val REMINDER_CHECK_MS = 15_000L
 class MainActivity : ComponentActivity() {
 
     private lateinit var playerManager: TvPlayerManager
+    // Second channel in a corner of the player
+    private val insetPlayer by lazy { InsetPlayer(applicationContext) }
     private val viewModel: MainViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
     // Phone / tablet: a player is shown (system bars hidden)
@@ -166,6 +176,13 @@ class MainActivity : ComponentActivity() {
             // Movies and series module (its library and positions are read in its own screens only:
             // their updates must not recompose the live TV ones)
             val vodEnabled by configRepository.vodEnabled.collectAsState()
+            // Movies and series locked by the parental code: asked to open them, left out of the search and the home
+            val vodHidden by remember { configRepository.parental.vodHiddenFlow() }.collectAsState(initial = configRepository.parental.vodHiddenNow())
+            // Action waiting for the parental code (opening the movies and series)
+            var pinFor by remember { mutableStateOf<(() -> Unit)?>(null) }
+            var pinError by remember { mutableStateOf<String?>(null) }
+            // Channel shown in a corner of the player (muted)
+            var insetChannel by remember { mutableStateOf<Channel?>(null) }
             val pictureFormat by configRepository.pictureFormat.collectAsState()
             val categoryOrder by configRepository.categoryOrder.collectAsState()
             // Audio language chosen in the playback options: preferred for every channel
@@ -437,6 +454,12 @@ class MainActivity : ComponentActivity() {
                 ) {
                     when (val screen = currentScreen) {
                         is CurrentScreen.Home -> {
+                            // Movies and series started, above the favorites (when the module is enabled)
+                            val homeProgress by configRepository.vodStore.progress.collectAsState()
+                            val homeLibrary by viewModel.vod.library.collectAsState()
+                            val homeResume = remember(homeProgress, homeLibrary.byKey, vodEnabled, vodHidden) {
+                                if (vodEnabled && !vodHidden) VodRows.continuing(homeLibrary.byKey, homeProgress, limit = HOME_RESUME_SIZE) else emptyList()
+                            }
                             saveableStateHolder.SaveableStateProvider("home") {
                                 HomeScreen(
                                     channels = visibleChannels,
@@ -445,6 +468,8 @@ class MainActivity : ComponentActivity() {
                                     savedLists = savedChannelLists,
                                     onToggleInList = ::toggleInList,
                                     onCreateList = { name, channel -> configRepository.createChannelList(name, channel.id) },
+                                    resume = homeResume,
+                                    onOpenResume = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) },
                                     hasSource = enabledConfigs.isNotEmpty(),
                                     favoriteIds = favoriteIds,
                                     isLoading = isLoadingChannels,
@@ -486,7 +511,9 @@ class MainActivity : ComponentActivity() {
                                     onRefresh = {
                                         viewModel.refresh()
                                     },
-                                    onOpenVod = if (vodEnabled) ({ currentScreen = CurrentScreen.Vod }) else null,
+                                    onOpenVod = if (vodEnabled) ({
+                                        if (vodHidden) pinFor = { currentScreen = CurrentScreen.Vod } else currentScreen = CurrentScreen.Vod
+                                    }) else null,
                                     onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
                                     // Not on a phone / tablet: the focus does not follow the eyes there, a tap opens the channel
                                     previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide && !Device.isTouch },
@@ -535,7 +562,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     schedules = searchSchedules,
                                     actions = guideActions(returnTo = CurrentScreen.Search(startWithVoice = false)),
-                                    vodTitles = if (vodEnabled) searchLibrary.titles else emptyList(),
+                                    vodTitles = if (vodEnabled && !vodHidden) searchLibrary.titles else emptyList(),
                                     onTitleSelected = { title ->
                                         currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Search(startWithVoice = false))
                                     },
@@ -706,7 +733,8 @@ class MainActivity : ComponentActivity() {
                                     onSetEpisodeWatched = { key, watched ->
                                         vodStore { if (watched) markWatched(key, title.key) else clearProgress(key) }
                                     },
-                                    subtitles = vodSubtitles
+                                    subtitles = vodSubtitles,
+                                    onPlayTrailer = { key -> openTrailer(this@MainActivity, key) }
                                 )
                             }
                         }
@@ -780,8 +808,29 @@ class MainActivity : ComponentActivity() {
                                 programsOf = { ch -> GuideTimeline.programsOf(ch, schedules) },
                                 favorites = favoriteChannels,
                                 recents = recentChannels,
-                                guideActions = guideActions(returnTo = screen)
+                                guideActions = guideActions(returnTo = screen).withInset { picked -> if (picked.id != liveChannel.id) insetChannel = picked },
+                                inset = insetChannel,
+                                insetPlayer = insetPlayer,
+                                onSwapInset = {
+                                    insetChannel?.let { other ->
+                                        insetChannel = liveChannel
+                                        currentScreen = CurrentScreen.Player(other, screen.returnTo)
+                                    }
+                                },
+                                onCloseInset = { insetChannel = null }
                             )
+                            // The corner channel plays while it is set; leaving the player closes it
+                            LaunchedEffect(insetChannel) {
+                                val inset = insetChannel ?: return@LaunchedEffect insetPlayer.stop()
+                                val url = viewModel.automaticStreamUrls(inset).firstOrNull() ?: inset.activeStreamUrl
+                                insetPlayer.play(url, configsById[inset.sourceId]?.customUserAgent, streamAuths)
+                            }
+                            DisposableEffect(Unit) {
+                                onDispose {
+                                    insetChannel = null
+                                    insetPlayer.stop()
+                                }
+                            }
                         }
                     }
 
@@ -797,6 +846,38 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onDismiss = { dueReminder = null }
+                        )
+                    }
+
+                    // Locked again (the app was left) while on the movies and series: back to the live TV home
+                    LaunchedEffect(vodHidden) {
+                        val onVod = currentScreen.let {
+                            it is CurrentScreen.Vod || it is CurrentScreen.VodSearch || it is CurrentScreen.VodDetail ||
+                                it is CurrentScreen.VodPlayer || it is CurrentScreen.VodCategories
+                        }
+                        if (vodHidden && onVod) currentScreen = CurrentScreen.Home
+                    }
+                    pinFor?.let { action ->
+                        val wrongPin = stringResource(R.string.parental_wrong_pin)
+                        val resources = LocalResources.current
+                        PinDialog(
+                            title = stringResource(R.string.parental_enter_pin),
+                            error = pinError,
+                            onSubmit = { pin ->
+                                val parental = configRepository.parental
+                                if (parental.unlock(pin)) {
+                                    pinFor = null
+                                    pinError = null
+                                    action()
+                                } else {
+                                    val wait = parental.waitMs()
+                                    pinError = if (wait > 0) resources.getString(R.string.parental_wait, (wait + 999) / 1000) else wrongPin
+                                }
+                            },
+                            onDismiss = {
+                                pinFor = null
+                                pinError = null
+                            }
                         )
                     }
 
@@ -872,6 +953,15 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         // App in the background (Home key, standby): no preview left playing on the home screen
         playerManager.stopPreview()
+        // The parental control locks again: the code was only entered for this sitting
+        viewModel.configRepository.parental.lock()
+        // No corner channel holding a provider connection in the background
+        insetPlayer.pause()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        insetPlayer.resume()
     }
 
     // The system lacks memory: the movies and series library (tens of MB) goes first, read again from the
@@ -885,5 +975,25 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         playerManager.release()
+        insetPlayer.stop()
+    }
+}
+
+/**
+ * Trailer of a title in the YouTube app (the TV one handles vnd.youtube:), else in a browser. Nothing
+ * happens without either.
+ */
+private fun openTrailer(context: Context, youtubeKey: String) {
+    val intents = listOf(
+        Intent(Intent.ACTION_VIEW, "vnd.youtube:$youtubeKey".toUri()),
+        Intent(Intent.ACTION_VIEW, "https://www.youtube.com/watch?v=$youtubeKey".toUri())
+    )
+    for (intent in intents) {
+        try {
+            context.startActivity(intent)
+            return
+        } catch (_: ActivityNotFoundException) {
+            // Next way
+        }
     }
 }
