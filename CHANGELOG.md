@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.18](https://github.com/Sim7b/tele/compare/v0.3.17...v0.3.18) (2026-11-06)
+
+### Features
+
+* **player:** pause live TV, frame rate matching, volume leveling, Play next row and voice requests ([7c2eae9](https://github.com/Sim7b/tele/commit/7c2eae9b635a82afd41e7d8b9a2b822182921361))
+
+### Bug Fixes
+
+* **cast:** Dispatcharr channels sent as fragmented MP4 or HLS ([6f24be3](https://github.com/Sim7b/tele/commit/6f24be30abe03695b2142b9dc8b9292447198edb))
+
 ## [0.3.17](https://github.com/Sim7b/tele/compare/v0.3.16...v0.3.17) (2026-11-06)
 
 ### Features
