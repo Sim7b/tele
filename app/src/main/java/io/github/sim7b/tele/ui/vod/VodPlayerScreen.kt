@@ -81,6 +81,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.data.storage.VodTrackPrefs
@@ -142,7 +143,9 @@ fun VodPlayerScreen(
     onCreditsLearned: (Long) -> Unit = {},
     pictureFormat: PictureFormat = PictureFormat.FIT,
     onPictureFormatChange: (PictureFormat) -> Unit = {},
-    subtitles: VodSubtitles? = null
+    subtitles: VodSubtitles? = null,
+    // Another file of the movie or episode chosen while it plays: played from the same position
+    onSwitchFile: (VodPlayRequest) -> Unit = {}
 ) {
     val isLoading by playerManager.isLoading.collectAsState()
     val error by playerManager.error.collectAsState()
@@ -169,6 +172,7 @@ fun VodPlayerScreen(
     var controlsToken by remember { mutableIntStateOf(0) }
     var showOptions by remember { mutableStateOf(false) }
     var showSubtitleSearch by remember { mutableStateOf(false) }
+    var pickingFile by remember { mutableStateOf(false) }
     // Position chosen with the arrows, applied when the key is released
     var seekTarget by remember(request) { mutableStateOf<Long?>(null) }
     // Progress bar alone, while seeking with the controls hidden
@@ -617,7 +621,11 @@ fun VodPlayerScreen(
             PlaybackOptionsPanel(
                 tracks = tracks,
                 pictureFormat = pictureFormat,
-                onChooseStream = null,
+                onChooseStream = if (request.files.size > 1 && castDevice == null) ({
+                    showOptions = false
+                    pickingFile = true
+                }) else null,
+                chooseStreamLabel = stringResource(R.string.vod_file_choose_title),
                 onSelectAudio = { choice ->
                     playerManager.selectAudio(choice)
                     savePrefs(choice, tracks.subtitles.firstOrNull { it.selected }, tracks.subtitlesOn)
@@ -686,6 +694,37 @@ fun VodPlayerScreen(
                 }
             }
         }
+    }
+
+    // Another file of the movie or episode (playback options): played from where it is
+    if (pickingFile) {
+        val playing = request.files.firstOrNull { it.url == request.url } ?: request.files.first()
+        FilePickerDialog(
+            files = request.files,
+            selected = playing,
+            estimated = VodLanguages(),
+            onSelect = { file ->
+                pickingFile = false
+                refocusToken++
+                if (file.url != request.url) {
+                    val position = player.currentPosition.coerceAtLeast(0)
+                    report(request)
+                    leaving = true
+                    onSwitchFile(
+                        request.copy(
+                            url = file.url,
+                            sourceId = file.sourceId,
+                            fallbacks = request.files.filter { it !== file }.map { it.url },
+                            startMs = position
+                        )
+                    )
+                }
+            },
+            onDismiss = {
+                pickingFile = false
+                refocusToken++
+            }
+        )
     }
 }
 

@@ -24,6 +24,60 @@ class VodCategoriesTest {
     }
 
     @Test
+    fun `categories without a country are studios and platforms, or none`() {
+        val estimator = VodLanguageGuess.Estimator()
+        assertEquals(VodCategories.STUDIOS, VodCategories.hint("NETFLIX", estimator).country)
+        assertEquals(VodCategories.STUDIOS, VodCategories.hint("Disney+ Séries", estimator).country)
+        assertEquals(VodCategories.STUDIOS, VodCategories.hint("|MARVEL| COLLECTION", estimator).country)
+        assertEquals(VodCategories.NO_COUNTRY, VodCategories.hint("4K UHD", estimator).country)
+        assertEquals(VodCategories.NO_COUNTRY, VodCategories.hint("Films d'action", estimator).country)
+        // A country first: the platform of a country stays with it
+        assertEquals("FR", VodCategories.hint("FR | NETFLIX", estimator).country)
+        // A word that only contains one: not a studio
+        assertFalse(VodCategories.isStudio("MAXIMUM"))
+        // Chosen with a country, the studios come along
+        val categories = listOf(VodCategory(VodKind.MOVIE, "1", "FR | FILMS"), VodCategory(VodKind.MOVIE, "2", "NETFLIX"), VodCategory(VodKind.MOVIE, "3", "4K"))
+        val hints = categories.associate { it.key to VodCategories.hint(it.name, estimator) }
+        assertEquals(setOf("MOVIE:1", "MOVIE:2"), VodCategories.matching(categories, hints, setOf("FR", VodCategories.STUDIOS), emptySet(), emptySet()))
+    }
+
+    @Test
+    fun `adult, anime and religious categories are told by their names`() {
+        assertEquals(setOf(VodCategories.ADULT), VodCategories.themes("FR | XXX"))
+        assertEquals(setOf(VodCategories.ADULT), VodCategories.themes("Adultes 18+"))
+        assertEquals(setOf(VodCategories.ADULT), VodCategories.themes("+18 PORN"))
+        assertEquals(setOf(VodCategories.ANIME), VodCategories.themes("FR | ANIMÉS"))
+        assertEquals(setOf(VodCategories.ANIME), VodCategories.themes("MANGA VOSTFR"))
+        assertEquals(setOf(VodCategories.RELIGIOUS), VodCategories.themes("Films religieux"))
+        assertEquals(setOf(VodCategories.RELIGIOUS), VodCategories.themes("BIBLE | FILMS"))
+        // Neither words inside others, nor a year
+        assertTrue(VodCategories.themes("ANIMATION 2018").isEmpty())
+        assertTrue(VodCategories.themes("FR | FILMS 1918").isEmpty())
+    }
+
+    @Test
+    fun `adult categories only come with their theme, the themes add their categories`() {
+        val estimator = VodLanguageGuess.Estimator()
+        val categories = listOf(
+            VodCategory(VodKind.MOVIE, "1", "FR | FILMS"),
+            VodCategory(VodKind.MOVIE, "2", "FR | XXX"),
+            VodCategory(VodKind.SERIES, "3", "ANIME"),
+            VodCategory(VodKind.MOVIE, "4", "EN | MOVIES")
+        )
+        val hints = categories.associate { it.key to VodCategories.hint(it.name, estimator) }
+        fun keys(countries: Set<String> = emptySet(), themes: Set<String> = emptySet()) =
+            VodCategories.matching(categories, hints, countries, emptySet(), emptySet(), themes).map { it.substringAfter(':') }
+        // Nothing chosen: everything but the adult ones
+        assertEquals(listOf("1", "3", "4"), keys())
+        assertEquals(listOf("1"), keys(countries = setOf("FR")))
+        // France and anime: both; anime only: anime only
+        assertEquals(listOf("1", "3"), keys(countries = setOf("FR"), themes = setOf(VodCategories.ANIME)))
+        assertEquals(listOf("3"), keys(themes = setOf(VodCategories.ANIME)))
+        // Adult chosen: the adult ones come too
+        assertEquals(listOf("1", "2"), keys(countries = setOf("FR"), themes = setOf(VodCategories.ADULT)))
+    }
+
+    @Test
     fun `the choice keeps the categories matching every criterion given`() {
         val estimator = VodLanguageGuess.Estimator()
         val categories = listOf(

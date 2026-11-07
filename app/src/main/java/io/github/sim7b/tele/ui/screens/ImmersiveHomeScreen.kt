@@ -196,7 +196,7 @@ fun ImmersiveHomeScreen(
     modifier: Modifier = Modifier,
     categoryOrder: List<String> = emptyList(),
     updateAvailable: Boolean = false,
-    onOpenVod: (() -> Unit)? = null,
+    onOpenVod: ((VodKind) -> Unit)? = null,
     onOpenGuide: (() -> Unit)? = null,
     onOpenRecordings: (() -> Unit)? = null,
     previewDelayMs: Long? = null,
@@ -986,7 +986,7 @@ private fun Modifier.glass(shape: Shape): Modifier = this
 @Composable
 private fun GlassTabs(
     onGuide: (() -> Unit)?,
-    onVod: (() -> Unit)?,
+    onVod: ((VodKind) -> Unit)?,
     onRecordings: (() -> Unit)?,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
@@ -1001,7 +1001,10 @@ private fun GlassTabs(
     ) {
         GlassTab(label = stringResource(R.string.side_menu_home), selected = true, onClick = {})
         onGuide?.let { GlassTab(label = stringResource(R.string.home_open_guide), onClick = it) }
-        onVod?.let { GlassTab(label = stringResource(R.string.home_open_vod), onClick = it) }
+        onVod?.let { openVod ->
+            GlassTab(label = stringResource(R.string.vod_tab_movies), onClick = { openVod(VodKind.MOVIE) })
+            GlassTab(label = stringResource(R.string.vod_tab_series), onClick = { openVod(VodKind.SERIES) })
+        }
         onRecordings?.let { GlassTab(label = stringResource(R.string.recordings_screen_title), onClick = it) }
         GlassTab(icon = Icons.Filled.Search, label = stringResource(R.string.home_search), onClick = onSearch)
         GlassTab(icon = Icons.Filled.Settings, label = stringResource(if (updateAvailable) R.string.home_settings_update else R.string.home_settings), dot = updateAvailable, onClick = onSettings)
@@ -1113,7 +1116,7 @@ private fun SideMenu(
     focus: FocusRequester,
     onHome: () -> Unit,
     onGuide: (() -> Unit)?,
-    onVod: (() -> Unit)?,
+    onVod: ((VodKind) -> Unit)?,
     onRecordings: (() -> Unit)?,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
@@ -1140,7 +1143,10 @@ private fun SideMenu(
     ) {
         item { MenuRow(label = stringResource(R.string.side_menu_home), icon = Icons.Filled.Home, onClick = onHome, modifier = Modifier.focusRequester(focus)) }
         onGuide?.let { item { MenuRow(label = stringResource(R.string.home_open_guide), icon = Icons.Filled.DateRange, onClick = it) } }
-        onVod?.let { item { MenuRow(label = stringResource(R.string.home_open_vod), icon = Icons.Filled.PlayArrow, onClick = it) } }
+        onVod?.let { openVod ->
+            item { MenuRow(label = stringResource(R.string.vod_tab_movies), icon = Icons.Filled.PlayArrow, onClick = { openVod(VodKind.MOVIE) }) }
+            item { MenuRow(label = stringResource(R.string.vod_tab_series), icon = Icons.Filled.PlayArrow, onClick = { openVod(VodKind.SERIES) }) }
+        }
         onRecordings?.let { item { MenuRow(label = stringResource(R.string.recordings_screen_title), leading = { RecordDot() }, onClick = it) } }
         item { MenuRow(label = stringResource(R.string.home_search), icon = Icons.Filled.Search, onClick = onSearch) }
         item { MenuRow(label = stringResource(R.string.home_settings), icon = Icons.Filled.Settings, onClick = onSettings) }

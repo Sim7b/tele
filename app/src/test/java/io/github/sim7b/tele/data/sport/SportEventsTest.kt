@@ -21,7 +21,7 @@ class SportEventsTest {
     @Test
     fun `the followed names are cleaned`() {
         assertEquals(listOf("PSG", "Stade Toulousain", "Ligue 1"), SportEvents.clean(" PSG, Stade Toulousain\nLigue 1 ; psg ,, "))
-        assertEquals(SportEvents.MAX_FOLLOWED, SportEvents.clean((1..50).joinToString(",") { "Team $it" }).size)
+        assertEquals(SportEvents.MAX_FOLLOWED, SportEvents.clean((1..120).joinToString(",") { "Team $it" }).size)
     }
 
     @Test

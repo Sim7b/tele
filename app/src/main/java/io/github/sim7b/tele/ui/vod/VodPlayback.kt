@@ -31,7 +31,9 @@ data class VodPlayRequest(
     // Ids of the title (of the series for an episode), to look its subtitles up
     val year: Int? = null,
     val tmdbId: String? = null,
-    val imdbId: String? = null
+    val imdbId: String? = null,
+    // Every file of the movie or episode, to choose another one while it plays
+    val files: List<VodVersion> = emptyList()
 ) {
     /** Key of its position and of its downloaded subtitles. */
     val itemKey: String get() = VodRows.progressKey(titleKey, episodeKey)
@@ -78,8 +80,20 @@ internal fun playRequest(
         imageUrl = episode?.stillUrl ?: title.backdropUrl,
         year = title.year,
         tmdbId = title.tmdbId,
-        imdbId = title.imdbId
+        imdbId = title.imdbId,
+        files = files
     )
+}
+
+/**
+ * The file of [files] that matches the one chosen for another episode ([preferred]): same source and quality,
+ * the same languages first. Null when none matches (the first file is played).
+ */
+internal fun matchingVersion(files: List<VodVersion>, preferred: VodVersion?): VodVersion? {
+    if (preferred == null) return null
+    files.firstOrNull { it.url == preferred.url }?.let { return it }
+    val sameKind = files.filter { it.sourceId == preferred.sourceId && it.qualityLabel == preferred.qualityLabel }
+    return sameKind.firstOrNull { it.languageTags == preferred.languageTags } ?: sameKind.firstOrNull()
 }
 
 internal fun episodeLabelPlain(episode: VodEpisode): String =
@@ -105,7 +119,9 @@ internal fun nextPlayRequest(current: VodPlayRequest, details: VodDetails?, prog
     val episodes = details?.seasons?.flatMap { it.episodes }.orEmpty()
     val next = episodeAfter(episodes, key) ?: return null
     val start = progress[VodRows.progressKey(current.titleKey, next.key)]?.takeIf { !it.finished }?.positionMs ?: 0L
-    return playRequest(details!!.title, current.titleKey, next, next.versions, null, start)
+    // The same kind of file as the one played (source, quality, languages)
+    val played = current.files.firstOrNull { it.url == current.url }
+    return playRequest(details!!.title, current.titleKey, next, next.versions, matchingVersion(next.versions, played), start)
 }
 
 /**

@@ -198,6 +198,15 @@
     <string name="settings_followed_sport">Sport suivi</string>
     <string name="settings_followed_sport_hint">Équipes et compétitions, séparées par des virgules : PSG, Stade Toulousain, Ligue 1</string>
     <string name="settings_followed_sport_none">Aucun</string>
+    <string name="sport_free_words">Vos propres mots-clés</string>
+    <string name="sport_follow_all">Suivre « %1$s » (en entier)</string>
+    <string name="sport_followed">Suivi</string>
+    <string name="sport_followed_inside">En partie suivi</string>
+    <plurals name="sport_items">
+        <item quantity="one">%d choix</item>
+        <item quantity="many">%d choix</item>
+        <item quantity="other">%d choix</item>
+    </plurals>
     <string name="settings_trakt_description">Les films et épisodes vus jusqu\'au bout ajoutés à votre historique Trakt, votre watchlist sur l\'accueil immersif. Créez une application sur trakt.tv (redirect URI : urn:ietf:wg:oauth:2.0:oob), puis reliez votre compte.</string>
     <string name="settings_trakt_id">Client ID Trakt</string>
     <string name="settings_trakt_secret">Client secret Trakt</string>
@@ -593,10 +602,7 @@
     <string name="transfer_error_invalid">La configuration reçue est illisible.</string>
     <!-- Movies and series -->
     <string name="error_vod_unavailable">Films et séries indisponibles sur ce serveur</string>
-    <string name="home_open_vod">Films et séries</string>
-    <string name="vod_title">Films et séries</string>
     <string name="vod_back_to_tv">TV en direct</string>
-    <string name="vod_tab_home">Accueil</string>
     <string name="vod_tab_movies">Films</string>
     <string name="vod_tab_series">Séries</string>
     <string name="vod_refresh">Actualiser</string>
@@ -637,6 +643,11 @@
     <string name="vod_add_to_list">Ma liste</string>
     <string name="vod_in_list">Dans ma liste</string>
     <string name="vod_version">Version</string>
+    <string name="vod_file_button">Fichier · %1$s</string>
+    <string name="vod_file_choose_title">Choisir le fichier</string>
+    <string name="vod_menu_choose_file">Lire un autre fichier</string>
+    <string name="vod_file_audio">Audio : %1$s</string>
+    <string name="vod_file_subtitles">Sous-titres : %1$s</string>
     <string name="vod_audio">Audio</string>
     <string name="vod_subtitles">Sous-titres</string>
     <string name="vod_not_specified">Non précisé par le fournisseur</string>
@@ -798,6 +809,12 @@
     <string name="vod_categories_cancel">Annuler</string>
     <string name="vod_categories_skip">Ne rien charger de cette source</string>
     <string name="vod_categories_countries">Pays</string>
+    <string name="vod_categories_studios">Studios et plateformes</string>
+    <string name="vod_categories_no_country">Sans pays</string>
+    <string name="vod_categories_themes">Thèmes</string>
+    <string name="vod_theme_anime">Animés</string>
+    <string name="vod_theme_religious">Religieux</string>
+    <string name="vod_theme_adult">Adultes (18+)</string>
     <plurals name="vod_categories_load">
         <item quantity="one">Charger %d catégorie</item>
         <item quantity="many">Charger %d catégories</item>
