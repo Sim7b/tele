@@ -720,7 +720,8 @@ class SettingsRepository(context: Context) {
 
     /**
      * Whole configuration, credentials included, to send to another TV (encrypted by the transfer):
-     * sources, favorites, hidden channels and categories, category names and order, chosen streams, settings.
+     * sources, favorites, hidden channels and categories, category names and order, chosen streams, settings, and
+ * the movies and series state (positions, my list, collections).
      */
     fun exportSettings(): JSONObject = JSONObject().apply {
         put(EXPORT_VERSION_KEY, EXPORT_VERSION)
@@ -755,6 +756,8 @@ class SettingsRepository(context: Context) {
                 put(channelId, JSONObject().put("name", stream.name).put("url", stream.url).put("id", stream.id).put("provider", stream.provider))
             }
         })
+        // Movies and series: positions, my list, collections, languages chosen
+        put("vod", vodStore.exportJson())
     }
 
     /**
@@ -763,6 +766,7 @@ class SettingsRepository(context: Context) {
      */
     fun importSettings(json: JSONObject) {
         require(json.optInt(EXPORT_VERSION_KEY) == EXPORT_VERSION) { "Unsupported configuration version" }
+        json.optJSONObject("vod")?.let { vodStore.importJson(it) }
         fun strings(name: String): List<String>? = json.optJSONArray(name)?.let { array ->
             (0 until array.length()).mapNotNull { array.optString(it).takeIf { value -> value.isNotEmpty() } }
         }

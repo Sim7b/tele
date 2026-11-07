@@ -138,6 +138,8 @@ fun VodPlayerScreen(
     onTrackPrefsChange: (VodTrackPrefs) -> Unit = {},
     // Series: end of the intro learned when the user skips it by hand
     onIntroLearned: (Long) -> Unit = {},
+    // Series: length of the end credits learned when the next episode is started by hand in them
+    onCreditsLearned: (Long) -> Unit = {},
     pictureFormat: PictureFormat = PictureFormat.FIT,
     onPictureFormatChange: (PictureFormat) -> Unit = {},
     subtitles: VodSubtitles? = null
@@ -181,6 +183,8 @@ fun VodPlayerScreen(
     var learnedIntro by remember(request.titleKey) { mutableStateOf(trackPrefs?.introEndMs) }
     // Learned in this episode: the jumps right after it adjust it
     var learnedThisTime by remember(request.episodeKey) { mutableStateOf<Long?>(null) }
+    // Length of the end credits of the series: from then on, the next episode is offered
+    var learnedCreditsMs by remember(request.titleKey) { mutableStateOf(trackPrefs?.creditsMs) }
 
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -231,6 +235,13 @@ fun VodPlayerScreen(
         val upcoming = currentNext ?: return
         if (leaving) return
         leaving = true
+        // Started by hand in the credits, before they were known: their length, for the next episodes
+        if (request.episodeKey != null && !inCredits(player.currentPosition, durationMs, learnedCreditsMs)) {
+            learnedCredits(player.currentPosition, durationMs)?.let { credits ->
+                learnedCreditsMs = credits
+                onCreditsLearned(credits)
+            }
+        }
         currentPlayNext(upcoming)
     }
 
@@ -295,7 +306,7 @@ fun VodPlayerScreen(
         }
     }
 
-    val upNext = next != null && !upNextDismissed && error == null && seekTarget == null && inCredits(positionMs, durationMs)
+    val upNext = next != null && !upNextDismissed && error == null && seekTarget == null && inCredits(positionMs, durationMs, learnedCreditsMs)
     // Opening minutes of an episode: OK skips the intro
     val introTarget = if (request.episodeKey != null && !upNext && error == null && seekTarget == null && castDevice == null) {
         introSkipTarget(positionMs, durationMs, learnedIntro)

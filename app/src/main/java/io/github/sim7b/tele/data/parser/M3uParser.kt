@@ -13,7 +13,11 @@ data class M3uEntry(
     val tvgName: String?,
     val logo: String?,
     val group: String?,
-    val number: Int?
+    val number: Int?,
+    // Replay announced by the playlist (catchup, catchup-days, catchup-source)
+    val catchupMode: String? = null,
+    val catchupDays: Int = 0,
+    val catchupSource: String? = null
 )
 
 /**
@@ -86,7 +90,10 @@ object M3uParser {
                                 logo = attributes["tvg-logo"]?.takeIf { it.isNotBlank() },
                                 // Multiple categories ("News;Sports"): the first one is enough for grouping
                                 group = (attributes["group-title"] ?: extGroup)?.substringBefore(";")?.trim()?.takeIf { it.isNotBlank() },
-                                number = (attributes["tvg-chno"] ?: attributes["channel-number"])?.trim()?.toIntOrNull()
+                                number = (attributes["tvg-chno"] ?: attributes["channel-number"])?.trim()?.toIntOrNull(),
+                                catchupMode = catchupMode(attributes),
+                                catchupDays = if (catchupMode(attributes) != null) catchupDays(attributes) else 0,
+                                catchupSource = attributes["catchup-source"]?.takeIf { it.isNotBlank() }
                             )
                         )
                     }
@@ -98,6 +105,26 @@ object M3uParser {
         }
         return M3uPlaylist(entries, epgUrls.distinct())
     }
+
+    /**
+     * How the playlist makes the replay URLs of a channel ("catchup", or the older "timeshift" / "tvg-rec" with a
+     * number of days, which mean "shift"): lowercase, null without replay.
+     */
+    private fun catchupMode(attributes: Map<String, String>): String? {
+        val mode = (attributes["catchup"] ?: attributes["catchup-type"])?.trim()?.lowercase()?.takeIf { it.isNotEmpty() && it != "disabled" }
+        if (mode != null) return if (mode == "timeshift") "shift" else mode
+        return "shift".takeIf { (attributes["timeshift"] ?: attributes["tvg-rec"])?.trim()?.toIntOrNull()?.let { it > 0 } == true }
+    }
+
+    /** Days of replay announced (catchup-days, timeshift, tvg-rec), [DEFAULT_CATCHUP_DAYS] when not said. */
+    private fun catchupDays(attributes: Map<String, String>): Int {
+        val days = listOf("catchup-days", "timeshift", "tvg-rec").firstNotNullOfOrNull { attributes[it]?.trim()?.toIntOrNull() }
+        return (days ?: DEFAULT_CATCHUP_DAYS).coerceIn(0, MAX_CATCHUP_DAYS)
+    }
+
+    // As the usual players do when the playlist gives no number of days
+    private const val DEFAULT_CATCHUP_DAYS = 5
+    private const val MAX_CATCHUP_DAYS = 31
 
     private fun parseAttributes(text: String): Map<String, String> =
         ATTRIBUTE_REGEX.findAll(text).associate { it.groupValues[1].lowercase() to it.groupValues[2].trim() }

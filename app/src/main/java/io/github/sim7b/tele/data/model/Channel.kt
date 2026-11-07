@@ -50,9 +50,12 @@ data class Channel(
     val sourceId: String = "",
     // Ids of the provider channels grouped into this one ("TF1 HD" + "TF1 FHD"); empty for a single channel
     val memberIds: List<String> = emptyList(),
-    // Replay (Xtream catch-up): days of past programs the provider keeps, and the time zone of its server
+    // Replay (catch-up): days of past programs the provider keeps, and the time zone of its server (Xtream)
     val catchupDays: Int = 0,
-    val catchupZone: String? = null
+    val catchupZone: String? = null,
+    // M3U replay: how the replay URL is made ("default", "append", "shift", "flussonic", "xc") and its template
+    val catchupMode: String? = null,
+    val catchupSource: String? = null
 ) {
     /** Ids of every version of the channel (favorites, hidden channels may refer to any of them). */
     val allIds: List<String>

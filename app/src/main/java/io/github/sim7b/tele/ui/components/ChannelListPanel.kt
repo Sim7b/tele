@@ -494,6 +494,9 @@ fun ChannelListPanel(
             onWatchLive = { onSelectChannel(channel) },
             onToggleReminder = { actions.toggleReminder(channel, program) },
             onReplay = { actions.replay?.invoke(channel, program) },
+            canRecord = actions.canRecord(channel, program, now),
+            isRecorded = actions.isRecorded(channel, program),
+            onToggleRecording = { actions.toggleRecording?.invoke(channel, program) },
             onDismiss = {
                 menuProgram = null
                 interactions++
@@ -844,6 +847,7 @@ private fun ScheduleColumn(
                 }
                 val replay = channel != null && actions.canReplay(channel, program, now)
                 val reminder = channel != null && actions.hasReminder(channel, program)
+                val recording = channel != null && actions.isRecorded(channel, program)
                 if (interactive) {
                     val interactionSource = remember { MutableInteractionSource() }
                     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -862,10 +866,10 @@ private fun ScheduleColumn(
                             focusedContainerColor = Color.White.copy(alpha = 0.13f)
                         )
                     ) {
-                        ScheduleEntry(program, now, expanded = isFocused, replay = replay, reminder = reminder)
+                        ScheduleEntry(program, now, expanded = isFocused, replay = replay, reminder = reminder, recording = recording)
                     }
                 } else {
-                    ScheduleEntry(program, now, expanded = index == 0, replay = replay, reminder = reminder)
+                    ScheduleEntry(program, now, expanded = index == 0, replay = replay, reminder = reminder, recording = recording)
                 }
             }
         }
@@ -873,7 +877,7 @@ private fun ScheduleColumn(
 }
 
 @Composable
-private fun ScheduleEntry(program: GuideProgram, now: Long, expanded: Boolean, replay: Boolean, reminder: Boolean) {
+private fun ScheduleEntry(program: GuideProgram, now: Long, expanded: Boolean, replay: Boolean, reminder: Boolean, recording: Boolean = false) {
     Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
         if (expanded) {
             ProgramDetails(
@@ -883,7 +887,7 @@ private fun ScheduleEntry(program: GuideProgram, now: Long, expanded: Boolean, r
                 secondary = Color.White.copy(alpha = 0.55f),
                 titleSize = 15,
                 descriptionLines = 6,
-                badges = programBadges(replay, reminder)
+                badges = programBadges(replay, reminder, recording)
             )
         } else {
             Row(verticalAlignment = Alignment.Top) {

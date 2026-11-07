@@ -48,7 +48,7 @@ import javax.crypto.AEADBadTagException
 
 /** Frame of the transfer dialogs: title, content, Close row. */
 @Composable
-private fun TransferDialogFrame(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+internal fun TransferDialogFrame(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
@@ -263,7 +263,7 @@ fun ReceiveConfigDialog(repository: SettingsRepository, onDismiss: () -> Unit) {
 
 /** Text field typed with the TV keyboard; its OK / Done key validates. */
 @Composable
-private fun TransferTextField(
+internal fun TransferTextField(
     placeholder: String,
     keyboardType: KeyboardType,
     focusRequester: FocusRequester,

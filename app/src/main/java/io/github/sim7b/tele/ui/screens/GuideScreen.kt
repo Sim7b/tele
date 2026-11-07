@@ -312,7 +312,7 @@ fun GuideScreen(
                         descriptionLines = 2,
                         titleSize = 19,
                         modifier = Modifier.fillMaxWidth(if (compact) 1f else 0.8f),
-                        badges = channel?.let { programBadges(actions.canReplay(it, focusedProgram, now), actions.hasReminder(it, focusedProgram)) }.orEmpty()
+                        badges = channel?.let { programBadges(actions.canReplay(it, focusedProgram, now), actions.hasReminder(it, focusedProgram), actions.isRecorded(it, focusedProgram)) }.orEmpty()
                     )
                 } else if (channel != null) {
                     Column {
@@ -448,6 +448,9 @@ fun GuideScreen(
             onWatchLive = { onWatch(channel) },
             onToggleReminder = { actions.toggleReminder(channel, program) },
             onReplay = { actions.replay?.invoke(channel, program) },
+            canRecord = actions.canRecord(channel, program, now),
+            isRecorded = actions.isRecorded(channel, program),
+            onToggleRecording = { actions.toggleRecording?.invoke(channel, program) },
             onDismiss = {
                 menuProgram = null
                 scope.launch { gridFocus.requestFocusWithRetry() }
