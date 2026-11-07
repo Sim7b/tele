@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.23](https://github.com/Sim7b/tele/compare/v0.3.22...v0.3.23) (2026-11-07)
+
+### Features
+
+* **vod:** movies and series sections, file choice, category themes and a sports catalog ([87c2333](https://github.com/Sim7b/tele/commit/87c2333ec2eb5de9f207a647a91d56f5efe3a0bf))
+
 ## [0.3.22](https://github.com/Sim7b/tele/compare/v0.3.21...v0.3.22) (2026-11-07)
 
 ### Features
