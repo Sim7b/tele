@@ -42,6 +42,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import io.github.sim7b.tele.ui.components.MenuRow
+import io.github.sim7b.tele.ui.components.RecordDot
+import io.github.sim7b.tele.ui.components.groupLabel
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -160,11 +184,19 @@ fun ImmersiveHomeScreen(
 ) {
     var spotlight by remember { mutableStateOf<Spotlight?>(null) }
     var menuChannel by remember { mutableStateOf<Channel?>(null) }
+    // Row holding the focus (0: the first one, the header shown)
+    var focusedRow by remember { mutableIntStateOf(0) }
     var lastFocusedKey by rememberSaveable { mutableStateOf<String?>(null) }
     val firstFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val now = System.currentTimeMillis()
+    // Side menu (left at the start of a row): the other screens, then every row to jump to it
+    var railOpen by remember { mutableStateOf(false) }
+    val railFocus = remember { FocusRequester() }
+    val rowFocus = remember { HashMap<String, FocusRequester>() }
+    fun rowRequester(key: String) = rowFocus.getOrPut(key) { FocusRequester() }
+    val focusManager = LocalFocusManager.current
 
     // Live picture of the focused channel once it stayed focused for the delay
     var previewKey by remember { mutableStateOf<String?>(null) }
@@ -198,7 +230,7 @@ fun ImmersiveHomeScreen(
             key = key,
             title = program?.title ?: channel.name,
             overline = channel.name,
-            details = program?.let { listOfNotNull("${it.startTime} – ${it.endTime}", it.category, it.nextTitle?.let { next -> "${it.nextStartTime ?: ""} ${next}".trim() }).joinToString("  ·  ") },
+            details = program?.let { listOfNotNull("${it.startTime} â ${it.endTime}", it.category, it.nextTitle?.let { next -> "${it.nextStartTime ?: ""} ${next}".trim() }).joinToString("  Â·  ") },
             description = program?.description,
             imageUrl = program?.posterUrl,
             imageTitle = program?.title,
@@ -217,9 +249,9 @@ fun ImmersiveHomeScreen(
             title = program.title,
             overline = event.channel.name,
             details = listOfNotNull(
-                "${EpgResolver.formatClock(program.startMillis)} – ${EpgResolver.formatClock(program.endMillis)}",
+                "${EpgResolver.formatClock(program.startMillis)} â ${EpgResolver.formatClock(program.endMillis)}",
                 program.category
-            ).joinToString("  ·  "),
+            ).joinToString("  Â·  "),
             description = program.description,
             imageUrl = program.posterUrl,
             imageTitle = program.title,
@@ -234,7 +266,7 @@ fun ImmersiveHomeScreen(
         key = "vod:${title.key}",
         title = title.title,
         overline = null,
-        details = listOfNotNull(title.year?.toString(), title.genres.take(3).joinToString(", ").takeIf { it.isNotEmpty() }).joinToString("  ·  "),
+        details = listOfNotNull(title.year?.toString(), title.genres.take(3).joinToString(", ").takeIf { it.isNotEmpty() }).joinToString("  Â·  "),
         description = title.plot,
         imageUrl = title.backdropUrl ?: title.posterUrl,
         imageTitle = null,
@@ -257,7 +289,31 @@ fun ImmersiveHomeScreen(
         if (favorites.isNotEmpty() || channels.isNotEmpty()) firstFocus.requestFocusWithRetry()
     }
 
-    Box(modifier = modifier.fillMaxSize().background(LocalAppColors.current.background)) {
+    // The rows, in the order shown: key and name (for the side menu)
+    val rowEntries = buildList {
+        if (favorites.isNotEmpty()) add("favorites" to stringResource(R.string.home_favorites))
+        if (HomeRow.RESUME in rows && resume.isNotEmpty()) add("resume" to stringResource(R.string.home_resume))
+        if (HomeRow.SPORT in rows && sport.isNotEmpty()) add("sport" to stringResource(R.string.home_row_sport))
+        if (HomeRow.TRAKT in rows && watchlist.isNotEmpty()) add("trakt" to stringResource(R.string.home_row_trakt))
+        categoryRows.forEach { (key, content) -> add(key to groupLabel(content.first)) }
+    }
+    LaunchedEffect(railOpen) { if (railOpen) railFocus.requestFocusWithRetry() }
+    BackHandler(enabled = railOpen) {
+        railOpen = false
+        scope.launch { firstFocus.requestFocusWithRetry() }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(LocalAppColors.current.background)
+            .onPreviewKeyEvent { event ->
+                // Left with nothing more on the left: the side menu
+                if (railOpen || menuChannel != null || event.type != KeyEventType.KeyDown || event.key != Key.DirectionLeft) return@onPreviewKeyEvent false
+                if (!focusManager.moveFocus(FocusDirection.Left)) railOpen = true
+                true
+            }
+    ) {
         // Artwork of the focused item, then its live picture
         Crossfade(targetState = spotlight?.key, label = "spotlight") { key ->
             val shown = spotlight?.takeIf { it.key == key }
@@ -266,6 +322,9 @@ fun ImmersiveHomeScreen(
         AnimatedVisibility(visible = previewKey != null && previewKey == spotlight?.key, enter = fadeIn(), exit = fadeOut()) {
             Box(modifier = Modifier.fillMaxSize()) { previewSurface() }
         }
+        // Below the first row: the header goes, the details move up in its place
+        val headerAlpha by animateFloatAsState(if (focusedRow == 0) 1f else 0f, label = "header")
+        val detailsTop by animateDpAsState(if (focusedRow == 0) 104.dp else 40.dp, label = "details")
         // Scrims: the texts on the left, the rows at the bottom stay readable over any picture
         Box(
             modifier = Modifier.fillMaxSize().background(
@@ -274,15 +333,16 @@ fun ImmersiveHomeScreen(
         )
         Box(
             modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0.35f to Color.Transparent, 0.62f to Color.Black.copy(alpha = 0.75f), 1f to LocalAppColors.current.background)
+                Brush.verticalGradient(0.4f to Color.Transparent, 0.7f to Color.Black.copy(alpha = 0.55f), 1f to Color.Black.copy(alpha = 0.85f))
             )
         )
 
-        // Header: time, the other screens, search, settings
+        // Header: time, the other screens, search, settings; gone once below the first row (back with it)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
+                .graphicsLayer { alpha = headerAlpha }
                 .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 24.dp)
         ) {
             HeaderClock()
@@ -308,9 +368,10 @@ fun ImmersiveHomeScreen(
         spotlight?.let { shown ->
             SpotlightDetails(
                 shown,
+                live = previewKey != null && previewKey == shown.key,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = screenMargin(48.dp), top = 104.dp)
+                    .padding(start = screenMargin(48.dp), top = detailsTop)
                     .widthIn(max = 620.dp)
             )
         }
@@ -321,12 +382,19 @@ fun ImmersiveHomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .fillMaxHeight(0.42f),
-            contentPadding = PaddingValues(bottom = 24.dp),
+                .fillMaxHeight(0.42f)
+                .fadingTop(RowsFade),
+            contentPadding = PaddingValues(top = RowsFade, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             var rowIndex = 0
-            fun Modifier.bringUp(index: Int): Modifier = onFocusChanged { if (it.hasFocus) scope.launch { listState.animateScrollToItem(index) } }
+            fun Modifier.bringUp(index: Int): Modifier = focusRequester(rowRequester(rowEntries.getOrNull(index)?.first.orEmpty()))
+                .onFocusChanged {
+                    if (it.hasFocus) {
+                        focusedRow = index
+                        scope.launch { listState.animateScrollToItem(index) }
+                    }
+                }
 
             if (favorites.isNotEmpty()) {
                 val index = rowIndex++
@@ -399,6 +467,38 @@ fun ImmersiveHomeScreen(
                 }
             }
         }
+
+        AnimatedVisibility(
+            visible = railOpen,
+            enter = fadeIn() + slideInHorizontally { -it / 3 },
+            exit = fadeOut() + slideOutHorizontally { -it / 3 },
+            modifier = Modifier.align(Alignment.CenterStart)
+        ) {
+            SideMenu(
+                rows = rowEntries,
+                focus = railFocus,
+                onHome = {
+                    railOpen = false
+                    scope.launch { firstFocus.requestFocusWithRetry() }
+                },
+                onGuide = onOpenGuide,
+                onVod = onOpenVod,
+                onRecordings = onOpenRecordings,
+                onSearch = { onOpenSearch(false) },
+                onSettings = onOpenSettings,
+                onRow = { index, key ->
+                    railOpen = false
+                    scope.launch {
+                        listState.scrollToItem(index)
+                        rowRequester(key).requestFocusWithRetry()
+                    }
+                },
+                onClose = {
+                    railOpen = false
+                    scope.launch { firstFocus.requestFocusWithRetry() }
+                }
+            )
+        }
     }
 
     menuChannel?.let { channel ->
@@ -457,10 +557,15 @@ private fun ChannelRow(
 /** Artwork of the focused item over the whole screen: the program's, else the channel logo on a plain background. */
 @Composable
 private fun SpotlightBackdrop(shown: Spotlight) {
+    // The largest picture known: the TMDB backdrop of the program (with a TMDB key), else the guide's, else TVMaze's
     val image by produceState(initialValue = shown.imageUrl, shown.key) {
         value = shown.imageUrl
-        val title = shown.imageTitle
-        if (value.isNullOrBlank() && title != null) value = ProgramPosterRepository.getPosterUrl(title)
+        val title = shown.imageTitle ?: return@produceState
+        ProgramPosterRepository.getBackdropUrl(title)?.let {
+            value = it
+            return@produceState
+        }
+        if (value.isNullOrBlank()) value = ProgramPosterRepository.getPosterUrl(title)
     }
     Box(modifier = Modifier.fillMaxSize().background(SurfaceDark)) {
         if (!image.isNullOrBlank()) {
@@ -480,10 +585,11 @@ private fun SpotlightBackdrop(shown: Spotlight) {
     }
 }
 
+/** The focused item: channel, title, hours, progress, summary; over its live picture ([live]), the title and the summary only. */
 @Composable
-private fun SpotlightDetails(shown: Spotlight, modifier: Modifier = Modifier) {
+private fun SpotlightDetails(shown: Spotlight, live: Boolean = false, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
-        if (shown.overline != null) {
+        if (shown.overline != null && !live) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (shown.live) {
                     Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(LiveRed))
@@ -496,11 +602,11 @@ private fun SpotlightDetails(shown: Spotlight, modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(6.dp))
         }
         Text(text = shown.title, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        shown.details?.takeIf { it.isNotBlank() }?.let {
+        shown.details?.takeIf { it.isNotBlank() && !live }?.let {
             Spacer(modifier = Modifier.height(6.dp))
             Text(text = it, fontSize = 13.sp, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        shown.progress?.let {
+        shown.progress?.takeIf { !live }?.let {
             Spacer(modifier = Modifier.height(8.dp))
             ProgressLine(progress = it, height = 3.dp, trackColor = Color.White.copy(alpha = 0.2f), modifier = Modifier.width(260.dp))
         }
@@ -578,3 +684,68 @@ private fun programWhenLabel(start: Long, now: Long): String {
 }
 
 private val ImmersiveCardWidth = 260.dp
+
+// Height over which the rows fade into the picture at the top of their area
+private val RowsFade = 36.dp
+
+/** The top [height] of the content fades out: rows scrolled up melt into the picture instead of being cut. */
+private fun Modifier.fadingTop(height: androidx.compose.ui.unit.Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val fade = height.toPx()
+        drawRect(
+            brush = Brush.verticalGradient(0f to Color.Transparent, fade / size.height to Color.Black),
+            blendMode = BlendMode.DstIn
+        )
+    }
+
+/**
+ * Side menu of the immersive home, opened by Left at the start of a row: the home, the other screens, then
+ * each row (Right or Back closes it).
+ */
+@Composable
+private fun SideMenu(
+    rows: List<Pair<String, String>>,
+    focus: FocusRequester,
+    onHome: () -> Unit,
+    onGuide: (() -> Unit)?,
+    onVod: (() -> Unit)?,
+    onRecordings: (() -> Unit)?,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    onRow: (index: Int, key: String) -> Unit,
+    onClose: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(SideMenuWidth)
+            .background(Brush.horizontalGradient(0f to SurfaceDark, 0.85f to SurfaceDark.copy(alpha = 0.97f), 1f to SurfaceDark.copy(alpha = 0.9f)))
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight) {
+                    onClose()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentPadding = PaddingValues(start = 24.dp, end = 16.dp, top = 32.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        item { MenuRow(label = stringResource(R.string.side_menu_home), icon = Icons.Filled.Home, onClick = onHome, modifier = Modifier.focusRequester(focus)) }
+        onGuide?.let { item { MenuRow(label = stringResource(R.string.home_open_guide), icon = Icons.Filled.DateRange, onClick = it) } }
+        onVod?.let { item { MenuRow(label = stringResource(R.string.home_open_vod), icon = Icons.Filled.PlayArrow, onClick = it) } }
+        onRecordings?.let { item { MenuRow(label = stringResource(R.string.recordings_screen_title), leading = { RecordDot() }, onClick = it) } }
+        item { MenuRow(label = stringResource(R.string.home_search), icon = Icons.Filled.Search, onClick = onSearch) }
+        item { MenuRow(label = stringResource(R.string.home_settings), icon = Icons.Filled.Settings, onClick = onSettings) }
+        if (rows.isNotEmpty()) item {
+            SectionLabel(text = stringResource(R.string.side_menu_rows), modifier = Modifier.padding(start = 14.dp, top = 18.dp, bottom = 6.dp))
+        }
+        itemsIndexed(rows, key = { _, row -> row.first }) { index, (key, name) ->
+            MenuRow(label = name, onClick = { onRow(index, key) })
+        }
+    }
+}
+
+private val SideMenuWidth = 320.dp

@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
@@ -111,8 +112,61 @@ object ProgramPosterRepository {
 
         // 2. Fall back to the standard image when no 16:9 background is available
         val imageObj = json.optJSONObject("image")
-        return imageObj?.optString("medium", "")?.takeIf { it.isNotBlank() }
-            ?: imageObj?.optString("original", "")?.takeIf { it.isNotBlank() }
+        // The original (the medium one is a 210 px thumbnail, blurred once enlarged)
+        return imageObj?.optString("original", "")?.takeIf { it.isNotBlank() }
+            ?: imageObj?.optString("medium", "")?.takeIf { it.isNotBlank() }
+    }
+
+    /** TMDB API key of the settings (null: TVMaze only); only sent to api.themoviedb.org. */
+    @Volatile
+    var tmdbKey: String? = null
+
+    private val backdropCache = object : LinkedHashMap<String, String>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > MAX_CACHED_TITLES
+    }
+
+    /**
+     * A large landscape artwork of a program, for the whole screen: the TMDB backdrop of the movie or the series
+     * of that name (1280 px, with a TMDB key), else null. Missing ones are remembered too.
+     */
+    suspend fun getBackdropUrl(rawTitle: String): String? = withContext(Dispatchers.IO) {
+        val key = tmdbKey?.takeIf { it.isNotBlank() } ?: return@withContext null
+        val cleanTitle = cleanProgramTitle(rawTitle)
+        if (cleanTitle.isBlank()) return@withContext null
+        synchronized(backdropCache) { backdropCache[cleanTitle] }?.let { return@withContext it.ifBlank { null } }
+        val url = "https://api.themoviedb.org/3/search/multi".toHttpUrl().newBuilder()
+            .addQueryParameter("api_key", key)
+            .addQueryParameter("query", cleanTitle)
+            .addQueryParameter("language", java.util.Locale.getDefault().language)
+            .addQueryParameter("include_adult", "false")
+            .build()
+        try {
+            client.newCall(Request.Builder().url(url).header("User-Agent", HttpClients.DEFAULT_USER_AGENT).get().build()).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val found = tmdbBackdrop(JSONObject(HttpClients.jsonString(response.body)), cleanTitle)
+                synchronized(backdropCache) { backdropCache[cleanTitle] = found ?: "" }
+                found
+            }
+        } catch (e: Exception) {
+            // Network error: tried again next time
+            null
+        }
+    }
+
+    /** Backdrop of the first movie or series of [json] (TMDB search) named [cleanTitle], in 1280 px. */
+    internal fun tmdbBackdrop(json: JSONObject, cleanTitle: String): String? {
+        val wanted = EpgResolver.normalizeName(cleanTitle)
+        val results = json.optJSONArray("results") ?: return null
+        for (i in 0 until minOf(results.length(), 10)) {
+            val item = results.optJSONObject(i) ?: continue
+            val type = item.optString("media_type")
+            if (type != "movie" && type != "tv") continue
+            val names = listOf("title", "name", "original_title", "original_name").map { item.optString(it) }.filter { it.isNotBlank() }
+            if (names.none { EpgResolver.normalizeName(it) == wanted }) continue
+            val path = item.optString("backdrop_path").takeIf { it.startsWith("/") && it.length < 100 } ?: continue
+            return "https://image.tmdb.org/t/p/w1280$path"
+        }
+        return null
     }
 
     private fun cleanProgramTitle(title: String): String {

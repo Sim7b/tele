@@ -188,6 +188,8 @@
     <string name="home_row_sport">Sport</string>
     <string name="home_row_trakt">Trakt watchlist</string>
     <string name="home_row_categories">Categories</string>
+    <string name="side_menu_home">Home</string>
+    <string name="side_menu_rows">Go to</string>
     <string name="settings_followed_sport">Followed sport</string>
     <string name="settings_followed_sport_hint">Teams and competitions, separated by commas: PSG, Stade Toulousain, Ligue 1</string>
     <string name="settings_followed_sport_none">None</string>
