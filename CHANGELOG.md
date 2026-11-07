@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.19](https://github.com/Sim7b/tele/compare/v0.3.18...v0.3.19) (2026-11-07)
+
+### Features
+
+* recordings, M3U replay, reminder notifications, stream failover, file backup and time-aware search ([5d5beb2](https://github.com/Sim7b/tele/commit/5d5beb2442b9ec83669cf01e538717a6c107307b))
+
 ## [0.3.18](https://github.com/Sim7b/tele/compare/v0.3.17...v0.3.18) (2026-11-06)
 
 ### Features
