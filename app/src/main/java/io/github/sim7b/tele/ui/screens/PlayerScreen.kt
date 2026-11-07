@@ -28,6 +28,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -135,9 +139,20 @@ fun PlayerScreen(
     val errorMessage by playerManager.error.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
     val reconnection by playerManager.reconnection.collectAsState()
+    // The channel went over to another of its streams by itself: said a moment on the picture
+    val streamSwitches by playerManager.streamSwitches.collectAsState()
+    var switchNotice by remember { mutableStateOf(false) }
+    LaunchedEffect(streamSwitches) {
+        if (streamSwitches == 0) return@LaunchedEffect
+        switchNotice = true
+        delay(STREAM_SWITCH_NOTICE_MS)
+        switchNotice = false
+    }
     val showStats by playerManager.showStats.collectAsState()
     // Live channel kept on the device: paused, how far behind live (read every second)
     var timeshift by remember { mutableStateOf<TimeshiftState?>(null) }
+    // The current OK press paused or resumed the live channel (undone if it turns into a long press)
+    var toggledByPress by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
             timeshift = playerManager.timeshiftState()
@@ -287,13 +302,24 @@ fun PlayerScreen(
                     }
                     // OK: shows the banner (retries after an error); long press: stream choice
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                        if (repeatCount == 0) toggledByPress = false
                         when {
-                            repeatCount == 1 -> showStreamPicker = true
+                            repeatCount == 1 -> {
+                                // A long press: not a pause, the press that started it is undone
+                                if (toggledByPress) {
+                                    playerManager.timeshiftPlayPause()
+                                    timeshift = playerManager.timeshiftState()
+                                    toggledByPress = false
+                                }
+                                showStreamPicker = true
+                            }
                             repeatCount == 0 && errorMessage != null -> playerManager.retry()
-                            // Paused live channel: OK resumes it
-                            repeatCount == 0 && timeshift?.paused == true -> {
+                            // Paused live channel: OK resumes it; banner shown: OK pauses (the banner says so)
+                            repeatCount == 0 && (timeshift?.paused == true || (showOverlay && timeshift != null)) -> {
                                 playerManager.timeshiftPlayPause()
                                 timeshift = playerManager.timeshiftState()
+                                toggledByPress = true
+                                revealOverlay()
                             }
                             repeatCount == 0 -> revealOverlay()
                         }
@@ -477,6 +503,20 @@ fun PlayerScreen(
             }
         }
 
+        if (switchNotice && errorMessage == null && reconnection == null) {
+            Text(
+                text = stringResource(R.string.player_stream_switched),
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 32.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            )
+        }
+
         // Information banner (OSD)
         AnimatedVisibility(
             visible = showOverlay && !showChannelPanel && !showOptionsPanel,
@@ -484,7 +524,7 @@ fun PlayerScreen(
             exit = fadeOut() + slideOutVertically { it / 6 },
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
-            PlayerOverlay(channel = channel, streamInfo = streamInfo)
+            PlayerOverlay(channel = channel, streamInfo = streamInfo, paused = timeshift?.paused)
         }
 
         // Phone / tablet: with the banner, the buttons of the keys (Back, channel panel, options)
@@ -505,6 +545,12 @@ fun PlayerScreen(
                     onOptions = {
                         showOverlay = false
                         showOptionsPanel = true
+                    },
+                    paused = timeshift?.paused,
+                    onPlayPause = {
+                        playerManager.timeshiftPlayPause()
+                        timeshift = playerManager.timeshiftState()
+                        revealOverlay()
                     }
                 )
             }
@@ -556,7 +602,11 @@ fun PlayerScreen(
             InsetVideo(channel = inset, player = insetPlayer, modifier = Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 24.dp))
         }
 
-        // Playback options (right arrow): stream, audio, subtitles, picture format
+        // Playback options (right arrow): stream, audio, subtitles, picture format, recording of the program on air
+        val onAir = remember(showOptionsPanel, channel) {
+            val now = System.currentTimeMillis()
+            if (showOptionsPanel) programsOf(channel).firstOrNull { it.startMillis <= now && it.endMillis > now } else null
+        }
         AnimatedVisibility(
             visible = showOptionsPanel,
             enter = fadeIn() + slideInHorizontally { it / 4 },
@@ -605,7 +655,10 @@ fun PlayerScreen(
                 onTimeshiftLive = {
                     playerManager.timeshiftToLive()
                     timeshift = playerManager.timeshiftState()
-                }
+                },
+                recordTitle = onAir?.takeIf { guideActions.canRecord(channel, it, System.currentTimeMillis()) }?.title,
+                recording = onAir?.let { guideActions.isRecorded(channel, it) } == true,
+                onToggleRecording = { onAir?.let { guideActions.toggleRecording?.invoke(channel, it) } }
             )
         }
     }
@@ -626,7 +679,15 @@ fun PlayerScreen(
 
 /** Phone / tablet: Back on the left, the channel panel and the playback options on the right. */
 @Composable
-private fun PlayerTopBar(playerManager: TvPlayerManager, onBack: () -> Unit, onChannels: () -> Unit, onOptions: () -> Unit) {
+private fun PlayerTopBar(
+    playerManager: TvPlayerManager,
+    onBack: () -> Unit,
+    onChannels: () -> Unit,
+    onOptions: () -> Unit,
+    // Live channel kept on the device: paused or not (null: no pause)
+    paused: Boolean? = null,
+    onPlayPause: () -> Unit = {}
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -637,6 +698,13 @@ private fun PlayerTopBar(playerManager: TvPlayerManager, onBack: () -> Unit, onC
     ) {
         RoundIconButton(icon = Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), onClick = onBack)
         Spacer(modifier = Modifier.weight(1f))
+        if (paused != null) {
+            RoundIconButton(
+                icon = if (paused) Icons.Filled.PlayArrow else PauseIcon,
+                contentDescription = stringResource(if (paused) R.string.timeshift_resume else R.string.timeshift_pause),
+                onClick = onPlayPause
+            )
+        }
         CastButton(playerManager)
         RoundIconButton(icon = Icons.Filled.List, contentDescription = stringResource(R.string.panel_title), onClick = onChannels)
         RoundIconButton(icon = Icons.Filled.Settings, contentDescription = stringResource(R.string.options_title), onClick = onOptions)
@@ -645,7 +713,7 @@ private fun PlayerTopBar(playerManager: TvPlayerManager, onBack: () -> Unit, onC
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
+private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo, paused: Boolean? = null) {
     val program = channel.currentProgram
     // Phone: narrower banner, without the technical column
     val compact = LocalScreen.current.compact
@@ -751,6 +819,23 @@ private fun PlayerOverlay(channel: Channel, streamInfo: StreamInfo) {
 
             // Actual technical information and active stream
             Column(horizontalAlignment = Alignment.End) {
+                // The pause of the live channel, done with OK while the banner shows
+                if (paused != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
+                        androidx.compose.material3.Icon(
+                            imageVector = if (paused) Icons.Filled.PlayArrow else PauseIcon,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(if (paused) R.string.player_ok_resume else R.string.player_ok_pause),
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     val badgeColor = Color.White.copy(alpha = 0.75f)
                     streamInfo.resolution?.let { Tag(text = it, color = badgeColor) }
@@ -843,3 +928,11 @@ private fun TimeshiftBadge(state: TimeshiftState, modifier: Modifier = Modifier)
 
 private const val TIMESHIFT_STEP_MS = 30_000L
 private const val TIMESHIFT_POLL_MS = 1_000L
+private const val STREAM_SWITCH_NOTICE_MS = 3_000L
+
+// Material "Pause" icon (not in material-icons-core)
+internal val PauseIcon: ImageVector by lazy {
+    ImageVector.Builder(name = "Pause", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(pathData = addPathNodes("M6,19h4L10,5L6,5v14zM14,5v14h4L18,5h-4z"), fill = SolidColor(Color.Black))
+        .build()
+}

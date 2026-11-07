@@ -137,8 +137,25 @@ internal fun videoFormatLabel(width: Int?, height: Int?): String? {
 }
 
 /** The next episode card shows in the last [UP_NEXT_LEAD_MS] of an episode (its credits, roughly). */
-internal fun inCredits(positionMs: Long, durationMs: Long): Boolean =
-    durationMs > UP_NEXT_LEAD_MS * 4 && durationMs - positionMs in 0..UP_NEXT_LEAD_MS
+/**
+ * In the end credits of an episode: its last [creditsMs] (learned for the series, see [learnedCredits]), else
+ * its last [UP_NEXT_LEAD_MS].
+ */
+internal fun inCredits(positionMs: Long, durationMs: Long, creditsMs: Long? = null): Boolean {
+    val lead = creditsMs?.coerceIn(UP_NEXT_LEAD_MS, CREDITS_MAX_MS) ?: UP_NEXT_LEAD_MS
+    return durationMs > lead * 4 && durationMs - positionMs in 0..lead
+}
+
+/**
+ * Length of the end credits told by the next episode started by hand at [positionMs]: the time left, when it
+ * is longer than the usual lead and short enough to be credits (not an episode left halfway). Null otherwise.
+ */
+internal fun learnedCredits(positionMs: Long, durationMs: Long): Long? {
+    val left = durationMs - positionMs
+    return left.takeIf { durationMs >= INTRO_MIN_DURATION_MS && it in UP_NEXT_LEAD_MS + 1..CREDITS_MAX_MS }
+}
+
+private const val CREDITS_MAX_MS = 6 * 60_000L
 
 internal const val UP_NEXT_LEAD_MS = 30_000L
 

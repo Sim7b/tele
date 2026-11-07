@@ -163,10 +163,10 @@ fun SearchScreen(
         delay(SEARCH_DEBOUNCE_MS)
         value = withContext(Dispatchers.Default) { ChannelSearch.searchIndex(index, query) }
     }
-    // Programs of the guide on air or to come (indexed again every few minutes: the ones over go)
+    // Programs of the guide on air, to come, or past with a replay (indexed again every few minutes: the ones over go)
     val now = rememberNow(PROGRAM_INDEX_MS)
     val programIndex by produceState(initialValue = emptyList<ProgramSearch.Entry>(), channels, schedules, now) {
-        value = withContext(Dispatchers.Default) { ProgramSearch.index(channels, schedules, now) }
+        value = withContext(Dispatchers.Default) { ProgramSearch.index(channels, schedules, now) { channel, program -> actions.canReplay(channel, program, now) } }
     }
     val programs by produceState(initialValue = emptyList<ProgramSearch.Hit>(), programIndex, query) {
         delay(SEARCH_DEBOUNCE_MS)
@@ -285,18 +285,26 @@ fun SearchScreen(
                     }
                     items(programs, key = { programKey(it) }) { hit ->
                         val program = hit.program
-                        val onAir = program.startMillis <= now
+                        // Past (found because it can be replayed), on air, or to come
+                        val past = program.endMillis <= now
+                        val onAir = !past && program.startMillis <= now
                         val reminder = actions.hasReminder(hit.channel, program)
                         val details = listOfNotNull(
                             hit.channel.name,
                             programHours(program, now, withDay = true),
                             programWhen(program, now).takeIf { onAir }
-                        ) + programBadges(replay = false, reminder = reminder)
+                        ) + programBadges(replay = past, reminder = reminder, recording = actions.isRecorded(hit.channel, program))
                         MenuRow(
                             label = program.title,
                             subtitle = details.joinToString("  ·  "),
-                            icon = if (onAir) Icons.Filled.PlayArrow else Icons.Filled.Notifications,
-                            onClick = { if (onAir) onChannelSelected(hit.channel) else actions.toggleReminder(hit.channel, program) },
+                            icon = if (past || onAir) Icons.Filled.PlayArrow else Icons.Filled.Notifications,
+                            onClick = {
+                                when {
+                                    past -> actions.replay?.invoke(hit.channel, program)
+                                    onAir -> onChannelSelected(hit.channel)
+                                    else -> actions.toggleReminder(hit.channel, program)
+                                }
+                            },
                             modifier = Modifier.result(programKey(hit))
                         )
                     }

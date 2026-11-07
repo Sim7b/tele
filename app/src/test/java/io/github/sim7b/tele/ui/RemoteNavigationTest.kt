@@ -42,6 +42,10 @@ import io.github.sim7b.tele.data.model.SourceType
 import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.vod.VodCategoryPicker
+import io.github.sim7b.tele.ui.vod.VodTitleActions
+import io.github.sim7b.tele.ui.vod.nextResumeKey
+import io.github.sim7b.tele.data.vod.VodTitle
+import io.github.sim7b.tele.data.storage.VodProgress
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -118,6 +122,73 @@ class RemoteNavigationTest {
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         compose.waitForIdle()
         compose.onNode(isFocused() and hasAnyDescendant(hasText("All")), useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `a long press on a movie of the home resume row opens its actions`() {
+        val channels = (1..4).map { channel("$it", "Channel $it") }
+        val movie = VodTitle("m1", VodKind.MOVIE, "Movie One", 2020, null, null, null, emptyList(), null, null, null, null, emptyList())
+        var removed: String? = null
+        val actions = VodTitleActions(
+            toggleMyList = {},
+            toggleInCollection = { _, _ -> },
+            createCollectionWith = { _, _ -> },
+            removeFromContinue = { removed = it },
+            setWatched = { _, _ -> }
+        )
+        compose.setContent {
+            HomeScreen(
+                channels = channels,
+                favorites = channels,
+                hasSource = true,
+                favoriteIds = channels.map { it.id },
+                isLoading = false,
+                onChannelSelected = {},
+                onToggleFavorite = {},
+                onHideChannel = {},
+                loadStreams = { Result.success(emptyList()) },
+                onSelectStream = { _, _ -> },
+                onMoveFavorite = { _, _ -> },
+                onHideCategory = {},
+                automaticStreamDescription = { "" },
+                onOpenSettings = {},
+                onOpenSearch = {},
+                onRefresh = {},
+                resume = listOf(movie to VodProgress("m1", "m1", 60_000, 600_000, 1)),
+                resumeActions = actions
+            )
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        // Up from the first favorite: the resume card
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionUp) }
+        compose.waitForIdle()
+        compose.onNode(isFocused() and hasAnyDescendant(hasText("Movie One")), useUnmergedTree = true).assertExists()
+        // OK held: its repeat flagged as a long press, then the release
+        val root = compose.onAllNodes(isRoot())[0]
+        root.performKeyPress(KeyEvent(NativeKeyEvent(0, 0, NativeKeyEvent.ACTION_DOWN, NativeKeyEvent.KEYCODE_DPAD_CENTER, 0)))
+        root.performKeyPress(
+            KeyEvent(NativeKeyEvent(0, 600, NativeKeyEvent.ACTION_DOWN, NativeKeyEvent.KEYCODE_DPAD_CENTER, 1, 0, 0, 0, NativeKeyEvent.FLAG_LONG_PRESS))
+        )
+        root.performKeyPress(KeyEvent(NativeKeyEvent(0, 700, NativeKeyEvent.ACTION_UP, NativeKeyEvent.KEYCODE_DPAD_CENTER, 0)))
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNode(hasText("Remove from “Continue watching”"), useUnmergedTree = true).assertExists()
+        // Down to the action, a new OK
+        val dialog = compose.onAllNodes(isRoot()).onLast()
+        repeat(2) { dialog.performKeyInput { pressKey(Key.DirectionDown) } }
+        compose.waitForIdle()
+        dialog.performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.waitForIdle()
+        assertEquals("m1", removed)
+    }
+
+    @Test
+    fun `a card taken out of the resume row gives the focus to the next one, else the one before`() {
+        assertEquals("c", nextResumeKey(listOf("a", "b", "c"), "b"))
+        assertEquals("b", nextResumeKey(listOf("a", "b", "c"), "c"))
+        assertEquals("a", nextResumeKey(listOf("a", "b"), "x"))
+        assertEquals(null, nextResumeKey(listOf("a"), "a"))
     }
 
     @Test

@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks2
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.net.toUri
 import android.os.Bundle
 import android.os.SystemClock
@@ -40,6 +41,20 @@ import io.github.sim7b.tele.data.epg.Catchup
 import io.github.sim7b.tele.data.epg.GuideTimeline
 import io.github.sim7b.tele.data.storage.Reminder
 import io.github.sim7b.tele.data.storage.Reminders
+import io.github.sim7b.tele.data.storage.ReminderAlarms
+import io.github.sim7b.tele.data.record.Recording
+import io.github.sim7b.tele.data.record.RecordingRules
+import io.github.sim7b.tele.data.record.RecordingScheduler
+import io.github.sim7b.tele.data.record.RecordingService
+import io.github.sim7b.tele.data.record.RecordingState
+import io.github.sim7b.tele.data.record.RecordingStore
+import io.github.sim7b.tele.ui.screens.RecordingsScreen
+import io.github.sim7b.tele.ui.screens.ExactAlarmsDialog
+import android.provider.Settings
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import io.github.sim7b.tele.ui.components.GuideActions
 import io.github.sim7b.tele.ui.components.ReminderDialog
 import io.github.sim7b.tele.data.model.Categories
@@ -109,6 +124,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 
 /** Displayed screen (simple navigation, without a navigation library). */
 sealed class CurrentScreen {
@@ -120,6 +136,9 @@ sealed class CurrentScreen {
 
     /** Guide grid of the channels, opened from the home screen. */
     object Guide : CurrentScreen()
+
+    /** Programs recorded on the device and the ones planned. */
+    object Recordings : CurrentScreen()
 
     /** Playback; Back returns to [returnTo] (the home screen, or the search the channel was opened from). */
     data class Player(val channel: Channel, val returnTo: CurrentScreen = Home) : CurrentScreen()
@@ -144,6 +163,8 @@ private const val WELCOME_MAX_MS = 15_000L
 private const val VOD_PRELOAD_DELAY_MS = 15_000L
 // Replays of TV programs go through the movie player, with this prefix on their key
 private const val REPLAY_KEY_PREFIX = "replay:"
+// After the replay one: a recording is played the same way (no position, track choice nor subtitles kept)
+private const val RECORDING_KEY_PREFIX = "recording:"
 private const val REMINDER_CHECK_MS = 15_000L
 
 /**
@@ -384,15 +405,29 @@ class MainActivity : ComponentActivity() {
                 val byId = visibleChannels.associateBy { it.id }
                 recentIds.mapNotNull { byId[it] }
             }
+            // Recordings on the device: planned from the guide or the player, written by RecordingService
+            val recordings by recordingStore.recordings.collectAsState()
+            LaunchedEffect(recordings) {
+                withContext(Dispatchers.IO) { RecordingScheduler.schedule(applicationContext, recordings) }
+                // One on air not being written (asked for now, or its alarm refused while the app was closed)
+                if (RecordingRules.due(recordings, System.currentTimeMillis()).any { it.state == RecordingState.SCHEDULED }) {
+                    RecordingService.start(applicationContext)
+                }
+            }
+            var askExactAlarms by remember { mutableStateOf(false) }
+            val recordingIds = remember(recordings) { recordings.mapTo(HashSet()) { it.id } }
             val reminders by viewModel.guideStore.reminders.collectAsState()
+            // The alarm of the next one, for when the app is not on screen
+            LaunchedEffect(reminders) { withContext(Dispatchers.IO) { ReminderAlarms.schedule(applicationContext, reminders) } }
             fun guideActions(returnTo: CurrentScreen) = GuideActions(
                 reminders = reminders,
                 toggleReminder = { channel, program ->
+                    if (Reminders.pending(reminders, System.currentTimeMillis()).none { Reminders.matches(it, channel.id, program.startMillis) }) askNotificationsIfNeeded()
                     viewModel.guideStore.toggleReminder(Reminder(channel.id, channel.name, program.title, program.startMillis, program.endMillis))
                 },
                 replay = { channel, program ->
-                    // Xtream timeshift of the program, played like a movie (seek, pause)
-                    Catchup.xtreamReplayUrl(channel.streamUrl, program.startMillis, program.endMillis, channel.catchupZone)?.let { url ->
+                    // Replay of the program (Xtream timeshift, M3U catch-up), played like a movie (seek, pause)
+                    Catchup.replayUrl(channel, program.startMillis, program.endMillis, System.currentTimeMillis())?.let { url ->
                         currentScreen = CurrentScreen.VodPlayer(
                             VodPlayRequest(
                                 titleKey = "$REPLAY_KEY_PREFIX${channel.id}:${program.startMillis}",
@@ -419,7 +454,27 @@ class MainActivity : ComponentActivity() {
                 channelLists = channelListViews,
                 savedLists = savedChannelLists,
                 toggleInList = ::toggleInList,
-                createList = { name, channel -> configRepository.createChannelList(name, channel.id) }
+                createList = { name, channel -> configRepository.createChannelList(name, channel.id) },
+                recordings = recordingIds,
+                toggleRecording = { channel, program ->
+                    val recording = Recording(
+                        id = RecordingRules.idOf(channel.id, program.startMillis),
+                        channelId = channel.id,
+                        channelName = channel.name,
+                        sourceId = channel.sourceId,
+                        title = program.title,
+                        startMillis = program.startMillis,
+                        endMillis = program.endMillis,
+                        url = channel.selectedStreamUrl ?: channel.streamUrl,
+                        imageUrl = program.posterUrl ?: channel.logoUrl,
+                        description = program.description
+                    )
+                    val adding = recordings.none { it.id == recording.id }
+                    lifecycleScope.launch(Dispatchers.IO) { recordingStore.toggle(recording) }
+                    // Planned for later: an exact alarm is needed to start on time while the app is closed
+                    if (adding && program.startMillis > System.currentTimeMillis() && !RecordingScheduler.exactAllowed(applicationContext)) askExactAlarms = true
+                    if (adding) askNotificationsIfNeeded()
+                }
             )
             // A program with a reminder starts: shown once, on any screen (after the welcome)
             var dueReminder by remember { mutableStateOf<Reminder?>(null) }
@@ -429,6 +484,7 @@ class MainActivity : ComponentActivity() {
                     val due = Reminders.due(reminders, System.currentTimeMillis())
                     if (due != null) {
                         dueReminder = due
+                        ReminderAlarms.cancel(applicationContext, due)
                         viewModel.guideStore.dismiss(due)
                         break
                     }
@@ -475,6 +531,8 @@ class MainActivity : ComponentActivity() {
                             // Movies and series started, above the favorites (when the module is enabled)
                             val homeProgress by configRepository.vodStore.progress.collectAsState()
                             val homeLibrary by viewModel.vod.library.collectAsState()
+                            val homeMyList by configRepository.vodStore.myList.collectAsState()
+                            val homeCollections by configRepository.vodStore.collections.collectAsState()
                             val homeResume = remember(homeProgress, homeLibrary.byKey, vodEnabled, vodHidden) {
                                 if (vodEnabled && !vodHidden) VodRows.continuing(homeLibrary.byKey, homeProgress, limit = HOME_RESUME_SIZE) else emptyList()
                             }
@@ -488,6 +546,9 @@ class MainActivity : ComponentActivity() {
                                     onCreateList = { name, channel -> configRepository.createChannelList(name, channel.id) },
                                     resume = homeResume,
                                     onOpenResume = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) },
+                                    resumeActions = vodActions,
+                                    vodMyList = homeMyList,
+                                    vodCollections = homeCollections,
                                     hasSource = enabledConfigs.isNotEmpty(),
                                     favoriteIds = favoriteIds,
                                     isLoading = isLoadingChannels,
@@ -533,6 +594,7 @@ class MainActivity : ComponentActivity() {
                                         if (vodHidden) pinFor = { currentScreen = CurrentScreen.Vod } else currentScreen = CurrentScreen.Vod
                                     }) else null,
                                     onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
+                                    onOpenRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
                                     // Not on a phone / tablet: the focus does not follow the eyes there, a tap opens the channel
                                     previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide && !Device.isTouch },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
@@ -561,6 +623,30 @@ class MainActivity : ComponentActivity() {
                                     // Movies and series turned off there: the live TV home
                                     currentScreen = if (screen.returnTo == CurrentScreen.Vod && !vodEnabled) CurrentScreen.Home else screen.returnTo
                                 }
+                            )
+                        }
+                        is CurrentScreen.Recordings -> {
+                            RecordingsScreen(
+                                recordings = recordings,
+                                onPlay = { recording ->
+                                    currentScreen = CurrentScreen.VodPlayer(
+                                        VodPlayRequest(
+                                            titleKey = "$REPLAY_KEY_PREFIX$RECORDING_KEY_PREFIX${recording.id}",
+                                            episodeKey = null,
+                                            label = recording.title,
+                                            sourceId = recording.sourceId,
+                                            url = recordingStore.file(recording).toUri().toString(),
+                                            fallbacks = emptyList(),
+                                            startMs = 0L,
+                                            plot = recording.description,
+                                            posterUrl = recording.imageUrl,
+                                            imageUrl = recording.imageUrl
+                                        ),
+                                        returnTo = CurrentScreen.Recordings
+                                    )
+                                },
+                                onDelete = { recording -> lifecycleScope.launch(Dispatchers.IO) { recordingStore.delete(recording.id) } },
+                                onBack = { currentScreen = CurrentScreen.Home }
                             )
                         }
                         is CurrentScreen.Search -> {
@@ -786,9 +872,12 @@ class MainActivity : ComponentActivity() {
                                 next = next,
                                 onPlayNext = { upcoming -> currentScreen = CurrentScreen.VodPlayer(upcoming, screen.returnTo) },
                                 trackPrefs = if (isReplay) null else vodTrackPrefs[request.titleKey],
-                                onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs.copy(introEndMs = trackPrefs.value[request.titleKey]?.introEndMs)) } },
+                                onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs.copy(introEndMs = trackPrefs.value[request.titleKey]?.introEndMs, creditsMs = trackPrefs.value[request.titleKey]?.creditsMs)) } },
                                 onIntroLearned = { end ->
                                     if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, (trackPrefs.value[request.titleKey] ?: VodTrackPrefs()).copy(introEndMs = end)) }
+                                },
+                                onCreditsLearned = { credits ->
+                                    if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, (trackPrefs.value[request.titleKey] ?: VodTrackPrefs()).copy(creditsMs = credits)) }
                                 },
                                 pictureFormat = pictureFormat,
                                 onPictureFormatChange = { configRepository.setPictureFormat(it) },
@@ -853,6 +942,16 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    if (askExactAlarms) {
+                        ExactAlarmsDialog(
+                            onOpen = {
+                                askExactAlarms = false
+                                openExactAlarmsSettings()
+                            },
+                            onDismiss = { askExactAlarms = false }
+                        )
+                    }
+
                     dueReminder?.let { reminder ->
                         val channel = unhiddenChannels.firstOrNull { it.id == reminder.channelId }
                         ReminderDialog(
@@ -898,6 +997,13 @@ class MainActivity : ComponentActivity() {
                                 if (requestLibrary.byKey[request.titleKey] == null && requestLibrary.titles.isEmpty()) return@LaunchedEffect
                                 showWelcome = false
                                 openVod { currentScreen = CurrentScreen.VodDetail(request.titleKey, returnTo = CurrentScreen.Home) }
+                            }
+                            is AppRequest.OpenChannel -> {
+                                if (unhiddenChannels.isEmpty()) return@LaunchedEffect
+                                showWelcome = false
+                                unhiddenChannels.firstOrNull { request.channelId in it.allIds }?.let { channel ->
+                                    currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Home)
+                                }
                             }
                             is AppRequest.Play -> {
                                 if (unhiddenChannels.isEmpty()) return@LaunchedEffect
@@ -1062,6 +1168,27 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
+    private val recordingStore by lazy { RecordingStore.get(this) }
+
+    // Android 13+: the reminders need the notifications, asked for when the first one is set
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /** The system page where the user allows Télé the exact alarms (Android 12+), when the TV has it. */
+    private fun openExactAlarmsSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, "package:$packageName".toUri()))
+        } catch (e: ActivityNotFoundException) {
+            Log.w("MainActivity", "No exact alarms settings on this device")
+        }
+    }
+
+    private fun askNotificationsIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
     private fun handleIntent(intent: Intent?) {
         intent ?: return
         AppIntents.parse(intent.action, intent.dataString, intent.getStringExtra(SearchManager.QUERY))?.let { appRequests.value = it }
@@ -1075,10 +1202,13 @@ class MainActivity : ComponentActivity() {
         viewModel.configRepository.parental.lock()
         // No corner channel holding a provider connection in the background
         insetPlayer.pause()
+        // Off screen: the reminders are notified by the system
+        ReminderAlarms.appVisible = false
     }
 
     override fun onStart() {
         super.onStart()
+        ReminderAlarms.appVisible = true
         insetPlayer.resume()
     }
 

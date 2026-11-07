@@ -39,7 +39,9 @@ data class VodTrackPrefs(
     val subtitles: String? = null,
     val subtitlesOn: Boolean = false,
     // Series: end of the intro, learned when skipped by hand
-    val introEndMs: Long? = null
+    val introEndMs: Long? = null,
+    // Series: length of the end credits, learned when the next episode is started by hand in them
+    val creditsMs: Long? = null
 )
 
 /** A collection made by the user ("Family night"), shown as a row of the home: titles in the order added. */
@@ -70,7 +72,23 @@ class VodStore(private val file: File) {
     fun load() {
         if (!file.exists()) return
         try {
-            val root = JSONObject(file.readText())
+            apply(JSONObject(file.readText()))
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read the movies and series state: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Whole state (positions, my list, collections, languages), for a backup or another TV. */
+    fun exportJson(): JSONObject = synchronized(lock) { toJson() }
+
+    /** Replaces the state with the one of a backup ([exportJson]); broken entries are skipped. */
+    fun importJson(root: JSONObject) {
+        apply(root)
+        synchronized(lock) { write() }
+    }
+
+    private fun apply(root: JSONObject) {
+        run {
             val progress = HashMap<String, VodProgress>()
             root.optJSONArray("progress")?.let { array ->
                 for (i in 0 until array.length()) {
@@ -103,7 +121,8 @@ class VodStore(private val file: File) {
                         obj.optStringOrNull("audio"),
                         obj.optStringOrNull("subtitles"),
                         obj.optBoolean("subtitlesOn"),
-                        obj.optLong("introEndMs", 0L).takeIf { it > 0 }
+                        obj.optLong("introEndMs", 0L).takeIf { it > 0 },
+                        obj.optLong("creditsMs", 0L).takeIf { it > 0 }
                     )
                 }
             }
@@ -113,8 +132,6 @@ class VodStore(private val file: File) {
                 _collections.value = collections
                 _trackPrefs.value = trackPrefs
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Unable to read the movies and series state: ${e.javaClass.simpleName}")
         }
     }
 
@@ -205,8 +222,7 @@ class VodStore(private val file: File) {
         }
     }
 
-    private fun write() {
-        val root = JSONObject()
+    private fun toJson(): JSONObject = JSONObject()
             .put("progress", JSONArray().apply {
                 _progress.value.values.forEach { progress ->
                     put(
@@ -234,9 +250,13 @@ class VodStore(private val file: File) {
                             .putOpt("subtitles", prefs.subtitles)
                             .put("subtitlesOn", prefs.subtitlesOn)
                             .putOpt("introEndMs", prefs.introEndMs)
+                            .putOpt("creditsMs", prefs.creditsMs)
                     )
                 }
             })
+
+    private fun write() {
+        val root = toJson()
         val temp = File(file.parentFile, file.name + ".tmp")
         try {
             temp.writeText(root.toString())

@@ -96,6 +96,8 @@ class ChannelCache(private val file: File, private val secrets: SecretBox? = nul
         if (channel.catchupDays > 0) {
             put("catchupDays", channel.catchupDays)
             put("catchupZone", channel.catchupZone)
+            put("catchupMode", channel.catchupMode)
+            put("catchupSource", channel.catchupSource)
         }
         if (channel.availableStreams.isNotEmpty()) {
             put("streams", JSONArray().apply { channel.availableStreams.forEach { put(streamToJson(it)) } })
@@ -118,7 +120,9 @@ class ChannelCache(private val file: File, private val secrets: SecretBox? = nul
         serverId = obj.optStringOrNull("serverId"),
         number = obj.optInt("number", -1).takeIf { it > 0 },
         catchupDays = obj.optInt("catchupDays", 0).coerceIn(0, Catchup.MAX_DAYS),
-        catchupZone = obj.optStringOrNull("catchupZone")
+        catchupZone = obj.optStringOrNull("catchupZone"),
+        catchupMode = obj.optStringOrNull("catchupMode"),
+        catchupSource = obj.optStringOrNull("catchupSource")
     )
 
     private fun streamToJson(stream: StreamSource) = JSONObject().apply {

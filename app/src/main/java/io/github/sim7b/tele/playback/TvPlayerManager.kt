@@ -157,6 +157,8 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     private var externalSubtitles: List<ExternalSubtitle> = emptyList()
     private var pendingSubtitleId: String? = null
     private val retryRunnable = Runnable { prepareCurrent() }
+    // Stuck loading with no error (stream frozen at the provider): the next stream, else a new attempt
+    private val stallRunnable = Runnable { onStalled() }
     // Shown on the TV by the Chromecast
     private var castInfo: CastInfo? = null
     // Streams of the current channel before they were ordered for the Chromecast
@@ -212,6 +214,10 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
     private val _reconnection = MutableStateFlow<Reconnection?>(null)
     val reconnection: StateFlow<Reconnection?> = _reconnection.asStateFlow()
+
+    // Times the channel went over to another of its streams by itself (shown a moment on the picture)
+    private val _streamSwitches = MutableStateFlow(0)
+    val streamSwitches: StateFlow<Int> = _streamSwitches.asStateFlow()
 
     private val _tracks = MutableStateFlow(PlaybackTracks())
     val tracks: StateFlow<PlaybackTracks> = _tracks.asStateFlow()
@@ -462,6 +468,10 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         _isLoading.value = playbackState == Player.STATE_BUFFERING
+                        mainHandler.removeCallbacks(stallRunnable)
+                        if (playbackState == Player.STATE_BUFFERING) {
+                            mainHandler.postDelayed(stallRunnable, ReconnectPolicy.stallTimeoutMs(live = vodStartMs == null, hasPlayed = hasPlayed))
+                        }
                         if (playbackState == Player.STATE_READY) {
                             _error.value = null
                             updateStreamInfo()
@@ -544,18 +554,38 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
             mainHandler.removeCallbacks(retryRunnable)
             mainHandler.postDelayed(retryRunnable, delayMs)
         } else if (fallbackUrls.isNotEmpty()) {
-            // Next stream of the channel, with a fresh attempt budget
-            currentUrl = fallbackUrls.removeFirst()
-            retryCount = 0
-            noFreeConnectionRetried = false
-            hasPlayed = false
-            forceHls = false
-            _reconnection.value = null
-            prepareCurrent()
+            nextStream()
         } else {
             _isLoading.value = false
             _reconnection.value = null
             _error.value = describeError(playbackError, httpCode)
+        }
+    }
+
+    /** Next stream of the channel, with a fresh attempt budget; noticed on the picture when the channel was playing. */
+    private fun nextStream() {
+        if (hasPlayed) _streamSwitches.value++
+        currentUrl = fallbackUrls.removeFirst()
+        retryCount = 0
+        noFreeConnectionRetried = false
+        hasPlayed = false
+        forceHls = false
+        _reconnection.value = null
+        prepareCurrent()
+    }
+
+    /**
+     * Loading for too long without an error (provider stream frozen, timeshift fed no more): the next stream
+     * of the channel at once, else an attempt like after a network failure.
+     */
+    private fun onStalled() {
+        val player = exoPlayer ?: return
+        if (casting || currentUrl == null || player.playbackState != Player.STATE_BUFFERING || !player.playWhenReady) return
+        Log.i(PERF_TAG, "Stream stalled")
+        if (fallbackUrls.isNotEmpty()) {
+            nextStream()
+        } else {
+            handlePlaybackError(PlaybackException("Stream stalled", null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT))
         }
     }
 
@@ -711,6 +741,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         mainHandler.removeCallbacks(retryRunnable)
         _reconnection.value = null
         _streamInfo.value = StreamInfo()
+        mainHandler.removeCallbacks(stallRunnable)
         droppedFrames = 0
         if (casting) orderForCast()
         prepareCurrent()
@@ -810,6 +841,10 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         val mediaSource: MediaSource = if (subtitles.isNotEmpty()) {
             // Subtitle files on the device beside the stream: the default factory merges them, and reads
             // both the network (OkHttp, with the API key interceptor) and the local files
+            DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory), extractorsFactory)
+                .createMediaSource(mediaItem)
+        } else if (url.startsWith("file:")) {
+            // A recording on the device
             DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory), extractorsFactory)
                 .createMediaSource(mediaItem)
         } else if (hls) {
@@ -1008,6 +1043,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     fun stop() {
         closeTimeshift()
         mainHandler.removeCallbacks(retryRunnable)
+        mainHandler.removeCallbacks(stallRunnable)
         mainHandler.removeCallbacks(castTimeoutRunnable)
         // Leaving the player stops the stream on the Chromecast too (the session stays open)
         if (casting && currentUrl != null) {
@@ -1042,6 +1078,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
     fun release() {
         mainHandler.removeCallbacks(retryRunnable)
+        mainHandler.removeCallbacks(stallRunnable)
         mainHandler.removeCallbacks(castTimeoutRunnable)
         castClient?.unregisterCallback(castStatusCallback)
         castClient = null

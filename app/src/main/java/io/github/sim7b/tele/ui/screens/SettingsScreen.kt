@@ -223,6 +223,8 @@ fun SettingsScreen(
     var syncMessage by remember { mutableStateOf<String?>(null) }
     // Configuration transfer with another TV of the local network
     var showSendConfig by remember { mutableStateOf(false) }
+    var showBackupExport by remember { mutableStateOf(false) }
+    var showBackupImport by remember { mutableStateOf(false) }
     var showUnmatched by remember { mutableStateOf(false) }
     var showReceiveConfig by remember { mutableStateOf(false) }
 
@@ -446,6 +448,13 @@ fun SettingsScreen(
                                 }
                                 item {
                                     SettingRow(label = stringResource(R.string.settings_transfer_receive), icon = Icons.Filled.Add, onClick = { showReceiveConfig = true })
+                                }
+                                // Backup in a file (USB key, storage of the TV), encrypted with a code
+                                item {
+                                    SettingRow(label = stringResource(R.string.backup_export_title), icon = Icons.Filled.Share, onClick = { showBackupExport = true })
+                                }
+                                item {
+                                    SettingRow(label = stringResource(R.string.backup_import_title), icon = Icons.Filled.Add, onClick = { showBackupImport = true })
                                 }
                             }
 
@@ -1112,6 +1121,12 @@ fun SettingsScreen(
         }
         if (showReceiveConfig) {
             ReceiveConfigDialog(repository = repository, onDismiss = { showReceiveConfig = false })
+        }
+        if (showBackupExport) {
+            BackupExportDialog(repository = repository, onDismiss = { showBackupExport = false })
+        }
+        if (showBackupImport) {
+            BackupImportDialog(repository = repository, onDismiss = { showBackupImport = false })
         }
 
         if (editingConfig != null) {

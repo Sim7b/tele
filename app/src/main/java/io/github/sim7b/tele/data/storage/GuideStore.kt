@@ -48,6 +48,17 @@ object Reminders {
     fun due(reminders: List<Reminder>, now: Long): Reminder? =
         reminders.firstOrNull { it.startMillis - LEAD_MS <= now && it.startMillis + GRACE_MS > now }
 
+    /** Time of the next reminder alarm after [now] ([LEAD_MS] before its program), null when none is left. */
+    fun nextAlarmAt(reminders: List<Reminder>, now: Long): Long? =
+        reminders.map { it.startMillis - LEAD_MS }.filter { it > now }.minOrNull()
+
+    /**
+     * The reminders to notify at [now], when the previous alarm went at [lastFiredAt]: their time came since,
+     * and their program has not been on for long. Each one is notified once.
+     */
+    fun dueAll(reminders: List<Reminder>, lastFiredAt: Long, now: Long): List<Reminder> =
+        reminders.filter { it.startMillis - LEAD_MS in (lastFiredAt + 1)..now && it.startMillis + GRACE_MS > now }
+
     /** [channelId] first, then the other recent channels, without duplicates. */
     fun recent(channels: List<String>, channelId: String): List<String> =
         (listOf(channelId) + channels.filter { it != channelId }).take(MAX_RECENT_CHANNELS)

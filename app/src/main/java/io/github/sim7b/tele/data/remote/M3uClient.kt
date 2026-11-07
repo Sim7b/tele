@@ -75,7 +75,10 @@ object M3uClient {
                 logoUrl = entry.logo,
                 streamUrl = entry.url,
                 tvgId = entry.tvgId ?: entry.tvgName,
-                number = entry.number ?: (index + 1)
+                number = entry.number ?: (index + 1),
+                catchupDays = entry.catchupDays,
+                catchupMode = entry.catchupMode?.takeIf { entry.catchupDays > 0 },
+                catchupSource = entry.catchupSource
             )
         }
     }

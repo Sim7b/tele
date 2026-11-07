@@ -1,8 +1,10 @@
 package io.github.sim7b.tele.ui.screens
 
+import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.storage.VodProgress
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.ui.vod.ResumeRow
+import io.github.sim7b.tele.ui.vod.VodTitleActions
 import io.github.sim7b.tele.data.resolve
 import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.R
@@ -120,6 +122,8 @@ fun HomeScreen(
     onOpenVod: (() -> Unit)? = null,
     // Guide grid of the channels (with a guide only)
     onOpenGuide: (() -> Unit)? = null,
+    // Programs recorded or planned (shown when there is one)
+    onOpenRecordings: (() -> Unit)? = null,
     // Muted preview of the focused card: focus time before it starts (null: no preview), start / stop (null), video surface
     previewDelayMs: Long? = null,
     onPreviewChannel: (Channel?) -> Unit = {},
@@ -134,7 +138,11 @@ fun HomeScreen(
     onCreateList: (name: String, Channel) -> Unit = { _, _ -> },
     // Movies and series started (shown above the favorites), their sheet opened on OK
     resume: List<Pair<VodTitle, VodProgress>> = emptyList(),
-    onOpenResume: (VodTitle) -> Unit = {}
+    onOpenResume: (VodTitle) -> Unit = {},
+    // Long press on them: the actions of the movies and series screen
+    resumeActions: VodTitleActions? = null,
+    vodMyList: List<String> = emptyList(),
+    vodCollections: List<VodCollection> = emptyList()
 ) {
     val compact = LocalScreen.current.compact
     val favoriteColumns = if (compact) COMPACT_COLUMNS else FAVORITE_COLUMNS
@@ -150,6 +158,12 @@ fun HomeScreen(
     val restoreFocusRequester = remember { FocusRequester() }
     val emptyStateFocusRequester = remember { FocusRequester() }
     var focusRestoreRequest by remember { mutableIntStateOf(0) }
+    // Last movie or series taken out of the resume row (long press): the row goes with the focused card
+    var hadResume by remember { mutableStateOf(resume.isNotEmpty()) }
+    LaunchedEffect(resume.isEmpty()) {
+        if (resume.isEmpty() && hadResume) focusRestoreRequest++
+        hadResume = resume.isNotEmpty()
+    }
 
     // Actual favorites at the top of the grid (the following tiles only fill up the 8 slots)
     val favoriteChannels = favorites
@@ -346,6 +360,7 @@ fun HomeScreen(
                 updateAvailable = updateAvailable,
                 onOpenGuide = onOpenGuide,
                 onOpenVod = onOpenVod,
+                onOpenRecordings = onOpenRecordings,
                 onOpenSearch = onOpenSearch,
                 onOpenSettings = onOpenSettings,
                 castButton = castButton
@@ -395,6 +410,11 @@ fun HomeScreen(
 
                 onOpenVod?.let { openVod ->
                     VodChip(label = stringResource(R.string.home_open_vod), selected = false, onClick = openVod)
+                    Spacer(modifier = Modifier.width(10.dp))
+                }
+
+                onOpenRecordings?.let { openRecordings ->
+                    VodChip(label = stringResource(R.string.recordings_screen_title), selected = false, onClick = openRecordings)
                     Spacer(modifier = Modifier.width(10.dp))
                 }
 
@@ -484,7 +504,15 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     if (resume.isNotEmpty()) {
-                        item(key = "resume") { ResumeRow(items = resume, onOpen = onOpenResume) }
+                        item(key = "resume") {
+                            ResumeRow(
+                                items = resume,
+                                onOpen = onOpenResume,
+                                actions = resumeActions,
+                                myList = vodMyList,
+                                collections = vodCollections
+                            )
+                        }
                     }
                     // SECTION 1: FAVORITES (2 rows x 4 columns)
                     item {
@@ -712,6 +740,7 @@ private fun CompactHomeHeader(
     updateAvailable: Boolean,
     onOpenGuide: (() -> Unit)?,
     onOpenVod: (() -> Unit)?,
+    onOpenRecordings: (() -> Unit)?,
     onOpenSearch: (voice: Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     castButton: @Composable () -> Unit
@@ -739,7 +768,7 @@ private fun CompactHomeHeader(
         val openGuide = onOpenGuide?.takeIf { hasContent }
         val syncing = isLoading && hasContent
         val error = loadError?.takeIf { hasContent }
-        if (openGuide != null || onOpenVod != null || syncing || error != null) {
+        if (openGuide != null || onOpenVod != null || onOpenRecordings != null || syncing || error != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -747,6 +776,7 @@ private fun CompactHomeHeader(
             ) {
                 openGuide?.let { VodChip(label = stringResource(R.string.home_open_guide), selected = false, onClick = it) }
                 onOpenVod?.let { VodChip(label = stringResource(R.string.home_open_vod), selected = false, onClick = it) }
+                onOpenRecordings?.let { VodChip(label = stringResource(R.string.recordings_screen_title), selected = false, onClick = it) }
                 if (syncing) {
                     CircularProgressIndicator(color = TextSecondary, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
                     Text(text = stringResource(R.string.home_syncing), fontSize = 12.sp, color = TextSecondary, maxLines = 1)

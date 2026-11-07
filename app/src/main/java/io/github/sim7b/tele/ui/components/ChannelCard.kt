@@ -408,7 +408,7 @@ fun DiscreteCategoryChip(
  * and would confirm the first item. They are ignored until a new press has started in the dialog.
  */
 @Composable
-private fun DialogPanel(
+internal fun DialogPanel(
     width: Dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -872,8 +872,8 @@ fun CategoryActionDialog(
 }
 
 /**
- * Menu of a coming (or past) program of the guide: reminder at its start, replay when the provider
- * keeps it, or the channel live.
+ * Menu of a coming (or past) program of the guide: reminder at its start, recording on the device, replay when
+ * the provider keeps it, or the channel live.
  */
 @Composable
 fun ProgramActionDialog(
@@ -885,7 +885,11 @@ fun ProgramActionDialog(
     onWatchLive: () -> Unit,
     onToggleReminder: () -> Unit,
     onReplay: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    // Recording of the program on the device (not offered: [canRecord] false)
+    canRecord: Boolean = false,
+    isRecorded: Boolean = false,
+    onToggleRecording: () -> Unit = {}
 ) {
     val firstItemFocus = remember { FocusRequester() }
     Dialog(
@@ -914,6 +918,17 @@ fun ProgramActionDialog(
                         onClick = {
                             onDismiss()
                             onReplay()
+                        },
+                        modifier = modifier
+                    )
+                }
+                if (canRecord) add { modifier ->
+                    MenuRow(
+                        label = stringResource(if (isRecorded) R.string.program_cancel_recording else R.string.program_record),
+                        leading = { RecordDot() },
+                        onClick = {
+                            onToggleRecording()
+                            onDismiss()
                         },
                         modifier = modifier
                     )
@@ -994,3 +1009,16 @@ fun ReminderDialog(
         }
     }
 }
+
+/** Red dot of the recordings (menus, badges of the guide). */
+@Composable
+fun RecordDot(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 10.dp) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(RecordRed)
+    )
+}
+
+val RecordRed = Color(0xFFE53935)

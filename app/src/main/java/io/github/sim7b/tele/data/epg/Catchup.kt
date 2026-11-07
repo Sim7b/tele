@@ -63,4 +63,109 @@ object Catchup {
             .build()
             .toString()
     }
+
+    /**
+     * Replay URL of a program of [channel] from [startMillis] to [endMillis], or null when its provider does
+     * not offer one: the M3U template of the channel ([Channel.catchupMode]), else the Xtream timeshift of its
+     * live URL.
+     */
+    fun replayUrl(channel: Channel, startMillis: Long, endMillis: Long, now: Long): String? = when (val mode = channel.catchupMode) {
+        null, "xc" -> xtreamReplayUrl(channel.streamUrl, startMillis, endMillis, channel.catchupZone)
+        else -> m3uReplayUrl(mode, channel.catchupSource, channel.streamUrl, startMillis, endMillis, now)
+    }
+
+    /**
+     * Replay URL of an M3U channel, following the conventions of the usual IPTV players:
+     * - "default": [source] is the whole URL, its placeholders filled;
+     * - "append": [source] is added to the live URL;
+     * - "shift": "utc" and "lutc" parameters added to the live URL;
+     * - "flussonic" / "fs": the archive path of a Flussonic server.
+     * Placeholders: see [fill]. Null when the URL cannot be made.
+     */
+    fun m3uReplayUrl(mode: String, source: String?, liveUrl: String, startMillis: Long, endMillis: Long, now: Long): String? {
+        if (endMillis <= startMillis) return null
+        val template = when (mode) {
+            "default" -> source ?: return null
+            "append" -> liveUrl + (source ?: return null)
+            "shift" -> liveUrl + (if ('?' in liveUrl) "&" else "?") + "utc={utc}&lutc={lutc}"
+            "flussonic", "flussonic-hls", "flussonic-ts", "fs" -> flussonicTemplate(liveUrl) ?: return null
+            else -> return null
+        }
+        return fill(template, startMillis, endMillis, now)?.takeIf { it.toHttpUrlOrNull() != null }
+    }
+
+    // .../index.m3u8 -> .../index-{utc}-{duration}.m3u8 ; .../mpegts -> .../timeshift_abs-{utc}.ts
+    private fun flussonicTemplate(liveUrl: String): String? {
+        val path = liveUrl.substringBefore('?')
+        val query = liveUrl.substring(path.length)
+        val name = path.substringAfterLast('/')
+        val base = path.substringBeforeLast('/')
+        return when {
+            name.endsWith(".m3u8") -> base + "/" + name.removeSuffix(".m3u8") + "-{utc}-{duration}.m3u8" + query
+            name == "mpegts" || name.endsWith(".ts") -> "$base/timeshift_abs-{utc}.ts$query"
+            else -> null
+        }
+    }
+
+    private val PLACEHOLDER = Regex("""\$?\{([A-Za-z]+)(?::([^}]*))?\}""")
+
+    /**
+     * [template] with its placeholders filled, null when one cannot be (broken date pattern):
+     * {utc} / {start} / {timestamp} and {utcend} / {end} (seconds), {lutc} / {now} (seconds), {duration}
+     * (seconds, {duration:60} in minutes), {offset} (seconds before now, {offset:60} in minutes),
+     * {Y} {m} {d} {H} {M} {S} (start, device time), {utc:YmdHMS} / {end:...} (in a date pattern, Java or one
+     * letter per field). Each also written ${...}.
+     */
+    internal fun fill(template: String, startMillis: Long, endMillis: Long, now: Long, zone: ZoneId = ZoneId.systemDefault()): String? {
+        val start = startMillis / 1000
+        val end = endMillis / 1000
+        val local = Instant.ofEpochMilli(startMillis).atZone(zone)
+        var broken = false
+        val filled = PLACEHOLDER.replace(template) { match ->
+            val name = match.groupValues[1]
+            val argument = match.groups[2]?.value
+            val divider = argument?.toLongOrNull()?.takeIf { it > 0 }
+            fun date(millis: Long): String = try {
+                Instant.ofEpochMilli(millis).atZone(zone).format(DateTimeFormatter.ofPattern(datePattern(argument.orEmpty())))
+            } catch (e: IllegalArgumentException) {
+                broken = true
+                ""
+            }
+            when (name) {
+                "utc", "start", "timestamp" -> if (argument != null && divider == null) date(startMillis) else start.toString()
+                "utcend", "end" -> if (argument != null && divider == null) date(endMillis) else end.toString()
+                "lutc", "now" -> (now / 1000).toString()
+                "duration" -> ((end - start) / (divider ?: 1)).toString()
+                "offset" -> ((now / 1000 - start).coerceAtLeast(0) / (divider ?: 1)).toString()
+                "Y" -> "%04d".format(local.year)
+                "m" -> "%02d".format(local.monthValue)
+                "d" -> "%02d".format(local.dayOfMonth)
+                "H" -> "%02d".format(local.hour)
+                "M" -> "%02d".format(local.minute)
+                "S" -> "%02d".format(local.second)
+                else -> match.value
+            }
+        }
+        return filled.takeIf { !broken }
+    }
+
+    // "YmdHMS" (one letter per field, as in the playlists) -> "yyyyMMddHHmmss"; a Java pattern is kept as it is
+    private fun datePattern(pattern: String): String {
+        if (pattern.isEmpty() || pattern.any { it !in "YmdHMS-:_. /" }) return pattern
+        return buildString {
+            pattern.forEach { char ->
+                append(
+                    when (char) {
+                        'Y' -> "yyyy"
+                        'm' -> "MM"
+                        'd' -> "dd"
+                        'H' -> "HH"
+                        'M' -> "mm"
+                        'S' -> "ss"
+                        else -> char.toString()
+                    }
+                )
+            }
+        }
+    }
 }

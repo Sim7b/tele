@@ -9,6 +9,7 @@ import io.github.sim7b.tele.data.model.ChannelList
 import io.github.sim7b.tele.data.model.ChannelListView
 import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.StreamSource
+import io.github.sim7b.tele.data.record.RecordingRules
 import io.github.sim7b.tele.data.storage.Reminder
 import io.github.sim7b.tele.data.storage.Reminders
 
@@ -33,7 +34,10 @@ class GuideActions(
     val toggleInList: (listId: String, Channel) -> Unit = { _, _ -> },
     val createList: (name: String, Channel) -> Unit = { _, _ -> },
     // During playback: the channel shown in a corner of the picture
-    val watchInInset: ((Channel) -> Unit)? = null
+    val watchInInset: ((Channel) -> Unit)? = null,
+    // Programs asked to be recorded (ids of RecordingRules), and the toggle (null: no recording)
+    val recordings: Set<String> = emptySet(),
+    val toggleRecording: ((Channel, GuideProgram) -> Unit)? = null
 ) {
     /** Lists holding channels, by their category key (after the favorites and the recent channels). */
     val listCategories: Map<String, ChannelListView> by lazy {
@@ -45,6 +49,13 @@ class GuideActions(
 
     fun canReplay(channel: Channel, program: GuideProgram, now: Long): Boolean =
         replay != null && Catchup.isReplayable(channel, program, now)
+
+    /** [program] can be recorded: not over, on a stream written as it comes (see [RecordingRules.canRecord]). */
+    fun canRecord(channel: Channel, program: GuideProgram, now: Long): Boolean =
+        toggleRecording != null && program.endMillis > now && RecordingRules.canRecord(channel.selectedStreamUrl ?: channel.streamUrl)
+
+    fun isRecorded(channel: Channel, program: GuideProgram): Boolean =
+        RecordingRules.idOf(channel.id, program.startMillis) in recordings
 
     fun reminderOf(channel: Channel, program: GuideProgram) =
         Reminder(channel.id, channel.name, program.title, program.startMillis, program.endMillis)
@@ -64,12 +75,13 @@ fun GuideActions.choiceFor(channel: Channel, program: GuideProgram?, now: Long):
     else -> ProgramChoice.WATCH
 }
 
-/** Marks of a program: replay available, reminder set. */
+/** Marks of a program: replay available, reminder set, recording asked for. */
 @Composable
-fun programBadges(replay: Boolean, reminder: Boolean): List<String> {
+fun programBadges(replay: Boolean, reminder: Boolean, recording: Boolean = false): List<String> {
     val replayTag = stringResource(R.string.program_replay_tag)
     val reminderTag = stringResource(R.string.program_reminder_tag)
-    return listOfNotNull(replayTag.takeIf { replay }, reminderTag.takeIf { reminder })
+    val recordingTag = stringResource(R.string.program_recording_tag)
+    return listOfNotNull(replayTag.takeIf { replay }, reminderTag.takeIf { reminder }, recordingTag.takeIf { recording })
 }
 
 /** The same actions, with the channel menu offering to show a channel in a corner of the picture. */
@@ -87,5 +99,7 @@ fun GuideActions.withInset(watchInInset: (Channel) -> Unit): GuideActions = Guid
     savedLists = savedLists,
     toggleInList = toggleInList,
     createList = createList,
-    watchInInset = watchInInset
+    watchInInset = watchInInset,
+    recordings = recordings,
+    toggleRecording = toggleRecording
 )

@@ -15,4 +15,11 @@ class ReconnectPolicyTest {
     fun `exponential backoff capped at 8 seconds`() {
         assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 8_000L, 8_000L), (0 until 6).map { ReconnectPolicy.delayMs(it) })
     }
+
+    @Test
+    fun `a stream stuck loading is given up sooner once it has played`() {
+        assertEquals(ReconnectPolicy.START_STALL_MS, ReconnectPolicy.stallTimeoutMs(live = true, hasPlayed = false))
+        assertEquals(ReconnectPolicy.PLAYING_STALL_MS, ReconnectPolicy.stallTimeoutMs(live = true, hasPlayed = true))
+        assertEquals(ReconnectPolicy.VOD_STALL_MS, ReconnectPolicy.stallTimeoutMs(live = false, hasPlayed = true))
+    }
 }

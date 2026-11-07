@@ -71,7 +71,11 @@ fun PlaybackOptionsPanel(
     timeshift: TimeshiftState? = null,
     onTimeshiftPlayPause: () -> Unit = {},
     onTimeshiftSeek: (deltaMs: Long) -> Unit = {},
-    onTimeshiftLive: () -> Unit = {}
+    onTimeshiftLive: () -> Unit = {},
+    // Program on air that can be recorded on the device (null: none), and whether it is
+    recordTitle: String? = null,
+    recording: Boolean = false,
+    onToggleRecording: () -> Unit = {}
 ) {
     val firstRow = remember { FocusRequester() }
     var interactions by remember { mutableIntStateOf(0) }
@@ -208,6 +212,17 @@ fun PlaybackOptionsPanel(
             items(PictureFormat.entries) { format ->
                 ChoiceRow(label = stringResource(format.labelRes), selected = format == pictureFormat) { onSelectPictureFormat(format) }
             }
+            if (recordTitle != null) {
+                item {
+                    OptionsHeader(R.string.recording_title)
+                    MenuRow(
+                        label = if (recording) stringResource(R.string.recording_stop) else stringResource(R.string.recording_start, recordTitle),
+                        leading = { RecordDot() },
+                        onClick = onToggleRecording
+                    )
+                }
+            }
+
             if (timeshift != null) {
                 item {
                     OptionsHeader(R.string.timeshift_title)

@@ -16,4 +16,18 @@ object ReconnectPolicy {
 
     /** Delay before the retry number [attempt] (0-based): 1 s, 2 s, 4 s, then 8 s. */
     fun delayMs(attempt: Int): Long = (1_000L shl attempt.coerceIn(0, 3)).coerceAtMost(MAX_DELAY_MS)
+
+    /**
+     * Loading time after which the stream is taken as frozen: a channel that played gets [PLAYING_STALL_MS],
+     * a start [START_STALL_MS] (Dispatcharr may first try several provider streams), a movie more.
+     */
+    fun stallTimeoutMs(live: Boolean, hasPlayed: Boolean): Long = when {
+        !hasPlayed -> START_STALL_MS
+        live -> PLAYING_STALL_MS
+        else -> VOD_STALL_MS
+    }
+
+    const val START_STALL_MS = 20_000L
+    const val PLAYING_STALL_MS = 12_000L
+    const val VOD_STALL_MS = 30_000L
 }

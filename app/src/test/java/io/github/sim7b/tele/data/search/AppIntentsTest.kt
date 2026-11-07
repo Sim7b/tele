@@ -26,6 +26,13 @@ class AppIntentsTest {
     }
 
     @Test
+    fun `a channel link of a reminder notification opens the channel`() {
+        val link = AppIntents.channelLink("m3u-ab12 & co")
+        assertEquals(AppRequest.OpenChannel("m3u-ab12 & co"), AppIntents.parse(AppIntents.ACTION_VIEW, link, null))
+        assertNull(AppIntents.parse(AppIntents.ACTION_VIEW, "tele://channel", null))
+    }
+
+    @Test
     fun `a voice request plays what was said`() {
         assertEquals(AppRequest.Play("France 2"), AppIntents.parse(AppIntents.ACTION_PLAY_FROM_SEARCH, null, "  France 2 "))
         assertEquals(AppRequest.Play("Arte"), AppIntents.parse(AppIntents.ACTION_SEARCH, null, "Arte"))

@@ -199,7 +199,10 @@
     <string name="player_playback_failed">Lecture impossible</string>
     <string name="player_other_stream_hint">Maintenez OK pour choisir un autre flux</string>
     <string name="player_retry_hint">Appuyez sur OK pour réessayer</string>
+    <string name="player_ok_pause">OK : pause</string>
+    <string name="player_ok_resume">OK : reprendre</string>
     <string name="player_reconnecting">Reconnexion… %1$d/%2$d</string>
+    <string name="player_stream_switched">Passage sur un autre flux de la chaîne</string>
     <string name="player_live">DIRECT</string>
     <string name="player_next_program">"Ensuite %1$s  ·  %2$s"</string>
     <string name="player_stream_name">Flux : %1$s</string>
@@ -228,6 +231,24 @@
     <string name="guide_no_channels">Aucune chaîne dans cette catégorie</string>
     <string name="program_replay_tag">REPLAY</string>
     <string name="program_reminder_tag">RAPPEL</string>
+    <string name="program_recording_tag">ENREG.</string>
+    <string name="program_record">Enregistrer</string>
+    <string name="program_cancel_recording">Annuler l\'enregistrement</string>
+    <string name="recording_title">Enregistrement</string>
+    <string name="recording_start">Enregistrer « %1$s »</string>
+    <string name="recording_stop">Annuler l\'enregistrement de ce programme</string>
+    <string name="recording_channel_name">Enregistrements</string>
+    <string name="recording_notification_title">Enregistrement en cours</string>
+    <string name="recordings_screen_title">Enregistrements</string>
+    <string name="recordings_empty">Aucun enregistrement pour l\'instant. Enregistrez un programme depuis le guide (OK sur un programme à venir), ou celui en cours depuis les options de lecture (→).</string>
+    <string name="recording_state_scheduled">Prévu · %1$s</string>
+    <string name="recording_state_recording">Enregistrement… · %1$s</string>
+    <string name="recording_state_failed">Échec</string>
+    <string name="recording_play">Lire</string>
+    <string name="recording_delete">Supprimer</string>
+    <string name="recording_exact_alarms">Pour démarrer à l\'heure quand Télé est fermée, les enregistrements ont besoin de « Alarmes et rappels » : autorisez-le pour Télé dans la fenêtre qui s\'ouvre.</string>
+    <string name="recording_exact_alarms_open">Autoriser</string>
+    <string name="recording_exact_alarms_later">Plus tard</string>
     <string name="program_replay">Revoir ce programme</string>
     <string name="program_remind">Me rappeler à %1$s</string>
     <string name="program_cancel_reminder">Annuler le rappel</string>
@@ -235,6 +256,8 @@
     <string name="reminder_title">Ça commence</string>
     <string name="reminder_message">%1$s à %2$s sur %3$s</string>
     <string name="reminder_watch">Regarder</string>
+    <string name="reminder_channel_name">Rappels de programmes</string>
+    <string name="reminder_notification_text">%1$s à %2$s</string>
     <string name="reminder_dismiss">Ignorer</string>
 
     <!-- Channel cards and stream picker -->
@@ -295,7 +318,7 @@
     <!-- Search -->
     <string name="home_search">Rechercher</string>
     <string name="search_placeholder">Chaîne, numéro ou programme</string>
-    <string name="search_hint">Tapez ou dites le nom d\'une chaîne ou d\'un programme</string>
+    <string name="search_hint">Tapez ou dites le nom d\'une chaîne, d\'un programme, d\'un film ou d\'une série. Ajoutez une heure pour les programmes : « film ce soir », « journal 20h », « sport demain », « maintenant »</string>
     <string name="search_no_results">Aucun résultat pour « %1$s »</string>
     <string name="search_voice">Recherche vocale</string>
     <string name="search_voice_prompt">Dites une chaîne ou un programme</string>
@@ -489,10 +512,20 @@
     <string name="home_move_category_hint">← → pour déplacer · OK pour valider</string>
 
     <!-- Configuration transfer between TVs -->
-    <string name="settings_transfer_title">Autre TV</string>
-    <string name="settings_transfer_description">Copier la configuration de cette TV (sources, favoris, catégories, réglages) vers une autre TV du même réseau, chiffrée avec un code</string>
+    <string name="settings_transfer_title">Autre TV, sauvegarde</string>
+    <string name="settings_transfer_description">Copier la configuration de cette TV (sources, favoris, catégories, réglages, films et séries en cours) vers une autre TV du même réseau, ou l\'enregistrer dans un fichier, chiffrée avec un code</string>
     <string name="settings_transfer_send">Envoyer vers une autre TV</string>
     <string name="settings_transfer_receive">Recevoir d\'une autre TV</string>
+    <string name="backup_export_title">Enregistrer dans un fichier</string>
+    <string name="backup_import_title">Restaurer depuis un fichier</string>
+    <string name="backup_export_instructions">Notez ce code : il sera demandé pour restaurer la sauvegarde. Sans lui, le fichier est illisible (il contient les identifiants de vos sources).</string>
+    <string name="backup_saved">Sauvegarde enregistrée. Gardez le code avec elle.</string>
+    <string name="backup_choose_file">Choisir le fichier…</string>
+    <string name="backup_import_instructions">Choisissez une sauvegarde faite par Télé (sur une clé USB ou le stockage de la TV). Ses sources sont ajoutées, les autres réglages remplacent ceux de cette TV.</string>
+    <string name="backup_code_instructions">Tapez le code affiché lors de la sauvegarde</string>
+    <string name="backup_error_write">Le fichier n\'a pas pu être écrit</string>
+    <string name="backup_error_invalid">Ce fichier n\'est pas une sauvegarde Télé</string>
+    <string name="backup_error_no_picker">Cette TV n\'a pas de sélecteur de fichiers : utilisez plutôt « Envoyer vers une autre TV »</string>
     <string name="transfer_send_title">Envoyer la configuration</string>
     <string name="transfer_send_instructions">Sur l\'autre TV, ouvrez Paramètres → Autre TV → Recevoir, choisissez cette TV, puis saisissez ce code :</string>
     <string name="transfer_waiting">En attente de l\'autre TV…</string>
