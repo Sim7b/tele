@@ -97,7 +97,7 @@ class RemoteNavigationTest {
 
     @Test
     @Config(qualifiers = "w960dp-h540dp-land-television")
-    fun `the immersive home starts on the first favorite, shows its program, and Down goes to the next row`() {
+    fun `the immersive home starts on the featured program, Down reaches the rows, Left opens the menu`() {
         val news = (1..3).map { channel("$it", "Channel $it").copy(currentProgram = EpgProgram(title = "Program $it", startTime = "20:00", endTime = "21:00")) }
         val movies = (4..9).map { channel("$it", "Channel $it").copy(group = "Movies") }
         var opened: Channel? = null
@@ -120,30 +120,34 @@ class RemoteNavigationTest {
         }
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
-        compose.onNode(isFocused() and hasAnyDescendant(hasText("Channel 1")), useUnmergedTree = true).assertExists()
-        // The focused program over the screen
-        compose.onAllNodes(hasText("Program 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty().let { assertEquals(true, it) }
-        repeat(8) { compose.onRoot().performKeyInput { pressKey(Key.DirectionRight) } }
+        // The featured program, its main button focused
+        compose.onNode(isFocused() and hasAnyDescendant(hasText("Watch")), useUnmergedTree = true).assertExists()
+        assertEquals(true, compose.onAllNodes(hasText("Program 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.waitForIdle()
-        compose.onNode(isFocused() and hasAnyDescendant(hasText("Channel 9")), useUnmergedTree = true).assertExists()
-        // Down: the first category row ("News")
+        assertEquals("1", opened?.id)
+
+        // Down: the rows (the favorites first)
+        opened = null
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
         compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.waitForIdle()
-        assertEquals("News", opened?.group)
+        assertEquals(true, opened != null)
 
-        // Left at the start of the row: the side menu, on the home; down to the "Movies" row, OK: its first channel
-        repeat(5) {
-            if (compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Home")), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
+        // Left at the start of the row: the side menu, on the home; down to the "Movies" row, OK, OK: one of its channels
+        repeat(10) {
+            if (compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Go to".uppercase())), useUnmergedTree = true).fetchSemanticsNodes().isEmpty() &&
+                compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Home")), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()
+            ) {
                 compose.onRoot().performKeyInput { pressKey(Key.DirectionLeft) }
                 compose.mainClock.advanceTimeBy(500)
                 compose.waitForIdle()
             }
         }
         compose.onNode(isFocused() and hasAnyDescendant(hasText("Home")), useUnmergedTree = true).assertExists()
-        repeat(10) {
+        repeat(12) {
             if (compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Movies")), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
                 compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
                 compose.waitForIdle()
@@ -152,8 +156,12 @@ class RemoteNavigationTest {
         compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
-        compose.onNode(isFocused() and hasAnyDescendant(hasText("Channel 4")), useUnmergedTree = true).assertExists()
+        opened = null
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.waitForIdle()
+        assertEquals("Movies", opened?.group)
     }
+
 
     @Test
     fun `the home starts on the first favorite and Down goes to the selected category (all the channels)`() {
