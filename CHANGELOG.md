@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.20](https://github.com/Sim7b/tele/compare/v0.3.19...v0.3.20) (2026-11-07)
+
+### Features
+
+* immersive home, followed sport, guide preview, Trakt and Dolby passthrough setting ([0452d3a](https://github.com/Sim7b/tele/commit/0452d3a74103e2f811df8a29eaaf3890d2c378eb))
+
 ## [0.3.19](https://github.com/Sim7b/tele/compare/v0.3.18...v0.3.19) (2026-11-07)
 
 ### Features
