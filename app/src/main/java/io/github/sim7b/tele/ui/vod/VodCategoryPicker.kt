@@ -40,7 +40,9 @@ private class PickerData(
     // Countries and languages found, the most frequent first
     val countries: List<String>,
     val audio: List<String>,
-    val subtitles: List<String>
+    val subtitles: List<String>,
+    // Themes found (anime, religious, adult)
+    val themes: List<String> = emptyList()
 )
 
 private const val COLUMNS = 4
@@ -82,6 +84,7 @@ fun VodCategoryPicker(
     var countries by remember(source.id) { mutableStateOf(emptySet<String>()) }
     var audio by remember(source.id) { mutableStateOf(emptySet<String>()) }
     var subtitles by remember(source.id) { mutableStateOf(emptySet<String>()) }
+    var themes by remember(source.id) { mutableStateOf(emptySet<String>()) }
     var checked by remember(source.id) { mutableStateOf(emptySet<String>()) }
     // Checked first, ordered again only when the choice by country or language changes (not on each toggle)
     var order by remember(source.id) { mutableStateOf(emptyList<VodCategory>()) }
@@ -111,7 +114,7 @@ fun VodCategoryPicker(
     }
     fun applyFilters() {
         val loaded = data ?: return
-        checked = VodCategories.matching(loaded.categories, loaded.hints, countries, audio, subtitles)
+        checked = VodCategories.matching(loaded.categories, loaded.hints, countries, audio, subtitles, themes)
         order = loaded.categories.sortedBy { it.key !in checked }
     }
 
@@ -189,7 +192,16 @@ fun VodCategoryPicker(
         }
         if (loaded.countries.isNotEmpty()) {
             item {
-                ChoiceRow(stringResource(R.string.vod_categories_countries), loaded.countries, countries, ::countryName) { code ->
+                val studiosLabel = stringResource(R.string.vod_categories_studios)
+                val noCountryLabel = stringResource(R.string.vod_categories_no_country)
+                val label: (String) -> String = { code ->
+                    when (code) {
+                        VodCategories.STUDIOS -> studiosLabel
+                        VodCategories.NO_COUNTRY -> noCountryLabel
+                        else -> countryName(code)
+                    }
+                }
+                ChoiceRow(stringResource(R.string.vod_categories_countries), loaded.countries, countries, label) { code ->
                     countries = if (code in countries) countries - code else countries + code
                     applyFilters()
                 }
@@ -207,6 +219,25 @@ fun VodCategoryPicker(
             item {
                 ChoiceRow(stringResource(R.string.vod_filter_subtitles), loaded.subtitles, subtitles, { languageName(it) ?: it }) { code ->
                     subtitles = if (code in subtitles) subtitles - code else subtitles + code
+                    applyFilters()
+                }
+            }
+        }
+        // Themes: anime, religious, adult (adult categories are only checked through this choice)
+        if (loaded.themes.isNotEmpty()) {
+            item {
+                val animeLabel = stringResource(R.string.vod_theme_anime)
+                val religiousLabel = stringResource(R.string.vod_theme_religious)
+                val adultLabel = stringResource(R.string.vod_theme_adult)
+                val label: (String) -> String = { code ->
+                    when (code) {
+                        VodCategories.ANIME -> animeLabel
+                        VodCategories.RELIGIOUS -> religiousLabel
+                        else -> adultLabel
+                    }
+                }
+                ChoiceRow(stringResource(R.string.vod_categories_themes), loaded.themes, themes, label) { code ->
+                    themes = if (code in themes) themes - code else themes + code
                     applyFilters()
                 }
             }
@@ -272,8 +303,11 @@ private fun pickerData(categories: List<VodCategory>): PickerData {
     return PickerData(
         categories = categories,
         hints = hints,
-        countries = ranked(hints.values.mapNotNull { it.country }),
+        // The studios / platforms and the categories without a country always offered (after the countries)
+        countries = ranked(hints.values.mapNotNull { it.country }.filter { !it.startsWith("#") }) +
+            listOf(VodCategories.STUDIOS, VodCategories.NO_COUNTRY).filter { code -> hints.values.any { it.country == code } },
         audio = ranked(hints.values.flatMap { it.languages.audio }),
-        subtitles = ranked(hints.values.flatMap { it.languages.subtitles })
+        subtitles = ranked(hints.values.flatMap { it.languages.subtitles }),
+        themes = VodCategories.THEMES.filter { theme -> hints.values.any { theme in it.themes } }
     )
 }

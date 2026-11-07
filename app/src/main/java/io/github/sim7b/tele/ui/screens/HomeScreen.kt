@@ -3,6 +3,7 @@ package io.github.sim7b.tele.ui.screens
 import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.storage.VodProgress
 import io.github.sim7b.tele.data.vod.VodTitle
+import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.ui.vod.ResumeRow
 import io.github.sim7b.tele.ui.vod.VodTitleActions
 import io.github.sim7b.tele.data.resolve
@@ -119,7 +120,7 @@ fun HomeScreen(
     onOpenSearch: (voice: Boolean) -> Unit,
     onRefresh: () -> Unit,
     // Movies and series module, when enabled in the settings
-    onOpenVod: (() -> Unit)? = null,
+    onOpenVod: ((VodKind) -> Unit)? = null,
     // Guide grid of the channels (with a guide only)
     onOpenGuide: (() -> Unit)? = null,
     // Programs recorded or planned (shown when there is one)
@@ -409,7 +410,9 @@ fun HomeScreen(
                 }
 
                 onOpenVod?.let { openVod ->
-                    VodChip(label = stringResource(R.string.home_open_vod), selected = false, onClick = openVod)
+                    VodChip(label = stringResource(R.string.vod_tab_movies), selected = false, onClick = { openVod(VodKind.MOVIE) })
+                    Spacer(modifier = Modifier.width(10.dp))
+                    VodChip(label = stringResource(R.string.vod_tab_series), selected = false, onClick = { openVod(VodKind.SERIES) })
                     Spacer(modifier = Modifier.width(10.dp))
                 }
 
@@ -739,7 +742,7 @@ private fun CompactHomeHeader(
     streamSlots: StreamSlots?,
     updateAvailable: Boolean,
     onOpenGuide: (() -> Unit)?,
-    onOpenVod: (() -> Unit)?,
+    onOpenVod: ((VodKind) -> Unit)?,
     onOpenRecordings: (() -> Unit)?,
     onOpenSearch: (voice: Boolean) -> Unit,
     onOpenSettings: () -> Unit,
@@ -775,7 +778,10 @@ private fun CompactHomeHeader(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
             ) {
                 openGuide?.let { VodChip(label = stringResource(R.string.home_open_guide), selected = false, onClick = it) }
-                onOpenVod?.let { VodChip(label = stringResource(R.string.home_open_vod), selected = false, onClick = it) }
+                onOpenVod?.let { openVod ->
+                    VodChip(label = stringResource(R.string.vod_tab_movies), selected = false, onClick = { openVod(VodKind.MOVIE) })
+                    VodChip(label = stringResource(R.string.vod_tab_series), selected = false, onClick = { openVod(VodKind.SERIES) })
+                }
                 onOpenRecordings?.let { VodChip(label = stringResource(R.string.recordings_screen_title), selected = false, onClick = it) }
                 if (syncing) {
                     CircularProgressIndicator(color = TextSecondary, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))

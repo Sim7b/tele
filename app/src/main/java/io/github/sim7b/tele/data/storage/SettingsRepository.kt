@@ -504,6 +504,9 @@ class SettingsRepository(context: Context) {
         prefs.edit { if (value == null) remove(key) else putString(key, secrets.encrypt(value.toString())) }
     }
 
+    /** The followed topics of the catalog ("@id") and words typed. */
+    fun setFollowedSport(entries: List<String>) = setFollowedSport(entries.joinToString("\n"))
+
     /** The followed teams and competitions, as typed (one per line or comma). */
     fun setFollowedSport(typed: String) {
         val cleaned = SportEvents.clean(typed)

@@ -72,6 +72,8 @@ import io.github.sim7b.tele.ui.components.AdaptiveButtonRow
 import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.MenuRow
+import io.github.sim7b.tele.ui.components.SelectionDot
+import androidx.compose.material.icons.filled.List
 import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.components.ProgressLine
@@ -123,6 +125,11 @@ fun VodDetailScreen(
     var versionIndex by rememberSaveable(title.key) { mutableIntStateOf(0) }
     val versions = details?.versions.orEmpty()
     val version = versions.getOrNull(versionIndex) ?: versions.firstOrNull()
+    // Series: the file chosen for an episode, the like of which is played for the others (same source and quality)
+    var preferredFile by remember(title.key) { mutableStateOf<VodVersion?>(null) }
+    // Choice of the file: of the movie, of the episode to play, or of an episode (its menu, then played at once)
+    var pickingFile by remember { mutableStateOf(false) }
+    var pickingEpisodeFile by remember { mutableStateOf<VodEpisode?>(null) }
     val seasons = details?.seasons.orEmpty()
     var seasonIndex by rememberSaveable(title.key) { mutableIntStateOf(-1) }
     var focusedEpisode by remember(title.key) { mutableStateOf<VodEpisode?>(null) }
@@ -159,10 +166,13 @@ fun VodDetailScreen(
         val playRequest = if (title.kind == VodKind.MOVIE) {
             request(null, versions, version, fromStart)
         } else {
-            nextEpisode?.let { request(it, it.versions, null, fromStart) }
+            nextEpisode?.let { request(it, it.versions, matchingVersion(it.versions, preferredFile), fromStart) }
         }
         playRequest?.let(onPlay)
     }
+    // The files offered by the "File" button: the movie's, or the episode to play
+    val buttonFiles = if (title.kind == VodKind.MOVIE) versions else nextEpisode?.versions.orEmpty()
+    val buttonFile = if (title.kind == VodKind.MOVIE) version else nextEpisode?.let { matchingVersion(it.versions, preferredFile) ?: it.versions.firstOrNull() }
 
     Box(
         modifier = modifier
@@ -240,6 +250,14 @@ fun VodDetailScreen(
                             if (resumeAt != null) {
                                 VodButton(label = stringResource(R.string.vod_restart), icon = Icons.Filled.Refresh, onClick = { play(fromStart = true) })
                             }
+                            // Several files: which one to play
+                            if (buttonFiles.size > 1 && buttonFile != null) {
+                                VodButton(
+                                    label = stringResource(R.string.vod_file_button, versionLabel(buttonFile)),
+                                    icon = Icons.Filled.List,
+                                    onClick = { pickingFile = true }
+                                )
+                            }
                             VodButton(
                                 label = stringResource(R.string.vod_add_to),
                                 icon = if (inSomeCollection) Icons.Filled.Check else Icons.Filled.Add,
@@ -273,7 +291,7 @@ fun VodDetailScreen(
                     if (versions.isEmpty()) {
                         Text(text = stringResource(R.string.vod_no_files), fontSize = 13.sp, color = TextSecondary)
                     } else {
-                        FileInfo(versions = versions, selected = versionIndex.coerceIn(0, versions.lastIndex), onSelect = { versionIndex = it }, estimated = title.languages, downloaded = downloaded)
+                        FileInfo(versions = versions, selected = versionIndex.coerceIn(0, versions.lastIndex), estimated = title.languages, downloaded = downloaded)
                     }
                 }
             }
@@ -299,7 +317,7 @@ fun VodDetailScreen(
                                 episode = episode,
                                 progress = progress[VodRows.progressKey(title.key, episode.key)],
                                 onFocused = { focusedEpisode = episode },
-                                onClick = { request(episode, episode.versions, null, fromStart = false)?.let(onPlay) },
+                                onClick = { request(episode, episode.versions, matchingVersion(episode.versions, preferredFile), fromStart = false)?.let(onPlay) },
                                 onLongClick = { episodeMenu = episode }
                             )
                         }
@@ -320,7 +338,13 @@ fun VodDetailScreen(
                             }
                             if (episode.versions.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(12.dp))
-                                FileInfo(versions = episode.versions, selected = 0, onSelect = null, estimated = title.languages, downloaded = downloaded)
+                                val chosen = matchingVersion(episode.versions, preferredFile)
+                                FileInfo(
+                                    versions = episode.versions,
+                                    selected = chosen?.let { episode.versions.indexOf(it) }?.takeIf { it >= 0 } ?: 0,
+                                    estimated = title.languages,
+                                    downloaded = downloaded
+                                )
                             }
                         }
                     }
@@ -354,6 +378,16 @@ fun VodDetailScreen(
                 },
                 modifier = Modifier.focusRequester(firstFocus)
             )
+            if (episode.versions.size > 1) {
+                MenuRow(
+                    label = stringResource(R.string.vod_menu_choose_file),
+                    icon = Icons.Filled.List,
+                    onClick = {
+                        episodeMenu = null
+                        pickingEpisodeFile = episode
+                    }
+                )
+            }
             if (subtitles?.canSearch == true) {
                 MenuRow(
                     label = stringResource(R.string.subtitles_search),
@@ -393,6 +427,33 @@ fun VodDetailScreen(
         }
     }
 
+    if (pickingFile && buttonFile != null) {
+        FilePickerDialog(
+            files = buttonFiles,
+            selected = buttonFile,
+            estimated = title.languages,
+            onSelect = { file ->
+                if (title.kind == VodKind.MOVIE) versionIndex = versions.indexOf(file).coerceAtLeast(0) else preferredFile = file
+                pickingFile = false
+            },
+            onDismiss = { pickingFile = false }
+        )
+    }
+    pickingEpisodeFile?.let { episode ->
+        FilePickerDialog(
+            files = episode.versions,
+            selected = matchingVersion(episode.versions, preferredFile) ?: episode.versions.first(),
+            estimated = title.languages,
+            onSelect = { file ->
+                // Kept for the next episodes, and this one played at once
+                preferredFile = file
+                pickingEpisodeFile = null
+                request(episode, episode.versions, file, fromStart = false)?.let(onPlay)
+            },
+            onDismiss = { pickingEpisodeFile = null }
+        )
+    }
+
     if (pickingCollections) {
         CollectionPickerDialog(
             collections = collections,
@@ -406,12 +467,11 @@ fun VodDetailScreen(
     }
 }
 
-/** Quality, audio and subtitles of a file, and the choice of the file when there are several. */
+/** Quality, audio and subtitles of the file to play (the "File" button chooses it when there are several). */
 @Composable
 private fun FileInfo(
     versions: List<VodVersion>,
     selected: Int,
-    onSelect: ((Int) -> Unit)?,
     estimated: VodLanguages = VodLanguages(),
     // Languages of the subtitles downloaded from OpenSubtitles
     downloaded: List<String> = emptyList()
@@ -419,15 +479,10 @@ private fun FileInfo(
     val version = versions[selected]
     val fileBlock: @Composable (Modifier) -> Unit = { modifier ->
         InfoBlock(title = stringResource(R.string.vod_version), modifier = modifier) {
-            if (onSelect != null && versions.size > 1) {
-                versions.forEachIndexed { index, file ->
-                    VodChip(label = versionLabel(file), selected = index == selected, onClick = { onSelect(index) }, modifier = Modifier.padding(bottom = 6.dp))
-                }
-            } else {
-                Text(text = versionLabel(version), fontSize = 13.sp, color = TextPrimary)
-                if (versions.size > 1) {
-                    Text(text = pluralStringResource(R.plurals.vod_versions, versions.size, versions.size), fontSize = 12.sp, color = TextSecondary)
-                }
+            Text(text = versionLabel(version), fontSize = 13.sp, color = TextPrimary)
+            Text(text = version.name, fontSize = 12.sp, color = TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (versions.size > 1) {
+                Text(text = pluralStringResource(R.plurals.vod_versions, versions.size, versions.size), fontSize = 12.sp, color = TextSecondary)
             }
         }
     }
@@ -482,8 +537,43 @@ private fun InfoBlock(title: String, modifier: Modifier = Modifier, content: @Co
     }
 }
 
+/**
+ * Choice of the file to play among [files]: each with its quality and source, its name as given by the provider,
+ * its audio languages and subtitles. OK chooses it.
+ */
+@Composable
+internal fun FilePickerDialog(
+    files: List<VodVersion>,
+    selected: VodVersion,
+    estimated: VodLanguages,
+    onSelect: (VodVersion) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val selectedFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { selectedFocus.requestFocusWithRetry() }
+    VodDialogFrame(title = stringResource(R.string.vod_file_choose_title), onDismiss = onDismiss) {
+        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+            items(files) { file ->
+                val details = listOfNotNull(
+                    file.name.takeIf { it.isNotBlank() && it != versionLabel(file) },
+                    audioLabels(file, estimated).take(3).joinToString(", ").ifBlank { null }?.let { stringResource(R.string.vod_file_audio, it) },
+                    subtitleLabels(file, estimated).take(3).joinToString(", ").ifBlank { null }?.let { stringResource(R.string.vod_file_subtitles, it) },
+                    file.bitrateKbps?.let { "%.1f Mb/s".format(it / 1000f) }
+                ).joinToString("  ·  ")
+                MenuRow(
+                    label = versionLabel(file),
+                    subtitle = details.ifBlank { null },
+                    leading = { focused -> SelectionDot(selected = file == selected, focused = focused) },
+                    onClick = { onSelect(file) },
+                    modifier = if (file == selected) Modifier.focusRequester(selectedFocus) else Modifier
+                )
+            }
+        }
+    }
+}
+
 /** "2160p HEVC HDR · Maison" / "4K · Liste". */
-private fun versionLabel(version: VodVersion): String =
+internal fun versionLabel(version: VodVersion): String =
     listOfNotNull(version.qualityLabel, version.sourceName.ifBlank { null }).joinToString(" · ").ifBlank { version.name }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

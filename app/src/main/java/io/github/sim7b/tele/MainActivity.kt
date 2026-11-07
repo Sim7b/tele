@@ -228,6 +228,9 @@ class MainActivity : ComponentActivity() {
             val vodHidden by remember { configRepository.parental.vodHiddenFlow() }.collectAsState(initial = configRepository.parental.vodHiddenNow())
             // Action waiting for the parental code (opening the movies and series)
             var pinFor by remember { mutableStateOf<(() -> Unit)?>(null) }
+            // Movies or series section opened from the live TV home (again on each opening)
+            var vodSection by rememberSaveable { mutableStateOf(VodKind.MOVIE) }
+            var vodSectionToken by remember { mutableIntStateOf(0) }
             var pinError by remember { mutableStateOf<String?>(null) }
             // Channel shown in a corner of the player (muted)
             var insetChannel by remember { mutableStateOf<Channel?>(null) }
@@ -253,6 +256,14 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
 
             var currentScreen by remember { mutableStateOf<CurrentScreen>(CurrentScreen.Home) }
+            fun openVodSection(kind: VodKind) {
+                val open = {
+                    vodSection = kind
+                    vodSectionToken++
+                    currentScreen = CurrentScreen.Vod
+                }
+                if (vodHidden) pinFor = open else open()
+            }
             // Last channel watched: the guide grid opens on it
             var lastWatchedId by rememberSaveable { mutableStateOf<String?>(null) }
             // Filters of the Movies and Series tabs, kept while browsing sheets; the defaults of the settings first
@@ -651,9 +662,7 @@ class MainActivity : ComponentActivity() {
                                     automaticStreamDescription = automaticStreamDescription,
                                     onOpenSettings = { currentScreen = CurrentScreen.Settings() },
                                     onOpenSearch = { voice -> currentScreen = CurrentScreen.Search(startWithVoice = voice) },
-                                    onOpenVod = if (vodEnabled) ({
-                                        if (vodHidden) pinFor = { currentScreen = CurrentScreen.Vod } else currentScreen = CurrentScreen.Vod
-                                    }) else null,
+                                    onOpenVod = if (vodEnabled) ({ kind -> openVodSection(kind) }) else null,
                                     onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
                                     onOpenRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
                                     previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide },
@@ -714,9 +723,7 @@ class MainActivity : ComponentActivity() {
                                     onRefresh = {
                                         viewModel.refresh()
                                     },
-                                    onOpenVod = if (vodEnabled) ({
-                                        if (vodHidden) pinFor = { currentScreen = CurrentScreen.Vod } else currentScreen = CurrentScreen.Vod
-                                    }) else null,
+                                    onOpenVod = if (vodEnabled) ({ kind -> openVodSection(kind) }) else null,
                                     onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
                                     onOpenRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
                                     // Not on a phone / tablet: the focus does not follow the eyes there, a tap opens the channel
@@ -846,6 +853,8 @@ class MainActivity : ComponentActivity() {
                             } else saveableStateHolder.SaveableStateProvider("vod") {
                                 CompositionLocalProvider(LocalPosterWidth provides vodDisplay.posterSize.widthDp.dp) {
                                 VodHomeScreen(
+                                    section = vodSection,
+                                    sectionToken = vodSectionToken,
                                     library = vodLibrary,
                                     progress = vodProgress,
                                     myList = vodMyList,
@@ -1019,6 +1028,7 @@ class MainActivity : ComponentActivity() {
                                 onBack = { currentScreen = screen.returnTo },
                                 next = next,
                                 onPlayNext = { upcoming -> currentScreen = CurrentScreen.VodPlayer(upcoming, screen.returnTo) },
+                                onSwitchFile = { other -> currentScreen = CurrentScreen.VodPlayer(other, screen.returnTo) },
                                 trackPrefs = if (isReplay) null else vodTrackPrefs[request.titleKey],
                                 onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs.copy(introEndMs = trackPrefs.value[request.titleKey]?.introEndMs, creditsMs = trackPrefs.value[request.titleKey]?.creditsMs)) } },
                                 onIntroLearned = { end ->

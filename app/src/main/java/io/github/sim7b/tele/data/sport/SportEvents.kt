@@ -15,7 +15,7 @@ data class SportEvent(val channel: Channel, val program: GuideProgram)
  */
 object SportEvents {
 
-    const val MAX_FOLLOWED = 30
+    const val MAX_FOLLOWED = 80
     const val MAX_LENGTH = 40
     const val MAX_EVENTS = 30
     // Coming ones shown up to two days ahead, past ones (with a replay) of the last day
@@ -25,9 +25,10 @@ object SportEvents {
     /** The followed names typed (one per line or comma): trimmed, without duplicates nor empty ones. */
     fun clean(typed: String): List<String> =
         typed.split('\n', ',', ';')
-            .map { it.trim().take(MAX_LENGTH) }
+            // A topic of the catalog ("@football/france/ligue1/...") is kept whole
+            .map { it.trim().let { entry -> if (entry.startsWith("@")) entry else entry.take(MAX_LENGTH) } }
             .filter { it.isNotEmpty() }
-            .distinctBy { ChannelSearch.words(it).joinToString(" ") }
+            .distinctBy { if (it.startsWith("@")) it else ChannelSearch.words(it).joinToString(" ") }
             .take(MAX_FOLLOWED)
 
     /** [program] is about one of [followed] (its words, see [ChannelSearch.words]). */
@@ -50,7 +51,8 @@ object SportEvents {
         replayable: (Channel, GuideProgram) -> Boolean = { _, _ -> false },
         limit: Int = MAX_EVENTS
     ): List<SportEvent> {
-        val terms = followed.map { ChannelSearch.words(it) }.filter { it.isNotEmpty() }
+        // Followed topics of the catalog: all their names, nicknames and what they hold
+        val terms = SportCatalog.keywords(followed).map { ChannelSearch.words(it) }.filter { it.isNotEmpty() }
         if (terms.isEmpty() || schedules.isEmpty()) return emptyList()
         val found = ArrayList<SportEvent>()
         channels.forEach { channel ->

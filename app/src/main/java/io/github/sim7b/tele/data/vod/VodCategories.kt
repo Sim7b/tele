@@ -11,7 +11,7 @@ data class VodCategory(val kind: VodKind, val id: String, val name: String) {
 }
 
 /** What the name of a category tells: its country and its languages, estimated ("FR | VOSTFR"). */
-data class VodCategoryHint(val country: String?, val languages: VodLanguages)
+data class VodCategoryHint(val country: String?, val languages: VodLanguages, val themes: Set<String> = emptySet())
 
 /**
  * Categories of a source to load: [all] (new ones included), or the ones of [keys] only. [known]: the
@@ -61,9 +61,51 @@ object VodCategories {
         map
     }
 
-    /** Country and languages read from the name of a category. */
+    /** Pseudo-country of the categories named after a studio or a platform ("NETFLIX", "DISNEY+", "MARVEL"). */
+    const val STUDIOS = "#studios"
+    /** Pseudo-country of the other categories whose name tells no country. */
+    const val NO_COUNTRY = "#none"
+
+    // Studios, platforms and channels that name categories without a country (whole words of the name)
+    private val STUDIO_WORDS = setOf(
+        "NETFLIX", "DISNEY", "AMAZON", "PRIME", "APPLE", "HBO", "MAX", "PARAMOUNT", "PEACOCK", "HULU", "STARZ",
+        "SHOWTIME", "CANAL", "OCS", "MARVEL", "DC", "PIXAR", "DREAMWORKS", "WARNER", "UNIVERSAL", "SONY", "LIONSGATE",
+        "MGM", "A24", "CRUNCHYROLL", "SKY", "BBC", "DISCOVERY", "NATGEO", "MUBI", "SHUDDER", "AMC", "FOX", "VIAPLAY",
+        "STAN", "HOTSTAR", "ZEE5", "SHAHID", "OSN", "ANIMATION", "GHIBLI", "LUCASFILM", "MIRAMAX", "BLUMHOUSE", "A&E"
+    )
+
+    /** Country and languages read from the name of a category; without a country, a studio / platform or none. */
     fun hint(name: String, estimator: VodLanguageGuess.Estimator): VodCategoryHint =
-        VodCategoryHint(country(name), estimator.estimate("", emptyList(), name))
+        VodCategoryHint(country(name) ?: if (isStudio(name)) STUDIOS else NO_COUNTRY, estimator.estimate("", emptyList(), name), themes(name))
+
+    /** Themes of a category: adult, anime, religious. Adult ones are only loaded when that theme is chosen. */
+    const val ADULT = "#adult"
+    const val ANIME = "#anime"
+    const val RELIGIOUS = "#religious"
+    val THEMES = listOf(ANIME, RELIGIOUS, ADULT)
+
+    private val ADULT_WORDS = setOf("XXX", "ADULT", "ADULTS", "ADULTE", "ADULTES", "PORN", "PORNO", "EROTIC", "EROTIQUE", "EROTICA", "HENTAI", "XXL18")
+    // "18+", "+18" (not inside a number)
+    private val ADULT_MARK = Regex("""(?<!\d)18\s*\+|\+\s*18(?!\d)""")
+    private val ANIME_WORDS = setOf("ANIME", "ANIMES", "MANGA", "MANGAS", "JAPANIMATION", "CRUNCHYROLL", "SHONEN", "SHOUNEN")
+    private val RELIGIOUS_WORDS = setOf(
+        "RELIGION", "RELIGIONS", "RELIGIOUS", "RELIGIEUX", "RELIGIEUSE", "RELIGIEUSES", "CHRISTIAN", "CHRETIEN", "CHRETIENS",
+        "BIBLE", "BIBLICAL", "BIBLIQUE", "ISLAM", "ISLAMIC", "ISLAMIQUE", "CORAN", "QURAN", "CATHOLIC", "CATHOLIQUE", "GOSPEL",
+        "JESUS", "EVANGELIQUE", "EVANGELICAL", "SPIRITUAL", "SPIRITUEL", "FAITH", "TORAH", "JEWISH", "JUIF"
+    )
+
+    /** The themes told by a category name (whole words: "XXX", "18+", "ANIME", "MANGA", "RELIGION", "BIBLE"...). */
+    fun themes(name: String): Set<String> {
+        val words = name.split(TOKENS).map { normalize(it) }.toSet()
+        return buildSet {
+            if (words.any { it in ADULT_WORDS } || ADULT_MARK.containsMatchIn(name)) add(ADULT)
+            if (words.any { it in ANIME_WORDS }) add(ANIME)
+            if (words.any { it in RELIGIOUS_WORDS }) add(RELIGIOUS)
+        }
+    }
+
+    /** The name holds a studio or a platform as a word ("NETFLIX SERIES", "Disney+", "|MARVEL|"). */
+    fun isStudio(name: String): Boolean = name.split(TOKENS).any { normalize(it) in STUDIO_WORDS }
 
     /**
      * Country of a category name: its first word that is a country code in uppercase ("FR | FILMS",
@@ -80,19 +122,29 @@ object VodCategories {
 
     /**
      * Keys of the [categories] matching the choice: each criterion given (country, audio, subtitles) must
-     * match; none given: every category.
+     * match, none given: every category; plus the categories of the [themes] chosen (only them when no other
+     * criterion is given). Adult categories only when that theme is chosen.
      */
     fun matching(
         categories: List<VodCategory>,
         hints: Map<String, VodCategoryHint>,
         countries: Set<String>,
         audio: Set<String>,
-        subtitles: Set<String>
+        subtitles: Set<String>,
+        themes: Set<String> = emptySet()
     ): Set<String> = categories.filter { category ->
         val hint = hints[category.key]
-        (countries.isEmpty() || hint?.country in countries) &&
+        val categoryThemes = hint?.themes.orEmpty()
+        val byCriteria = (countries.isEmpty() || hint?.country in countries) &&
             (audio.isEmpty() || hint?.languages?.audio.orEmpty().any { it in audio }) &&
             (subtitles.isEmpty() || hint?.languages?.subtitles.orEmpty().any { it in subtitles })
+        val byTheme = categoryThemes.any { it in themes }
+        val otherCriteria = countries.isNotEmpty() || audio.isNotEmpty() || subtitles.isNotEmpty()
+        (ADULT !in categoryThemes || ADULT in themes) && when {
+            themes.isEmpty() -> byCriteria
+            !otherCriteria -> byTheme
+            else -> byCriteria || byTheme
+        }
     }.mapTo(LinkedHashSet()) { it.key }
 
     /**
@@ -108,8 +160,11 @@ object VodCategories {
         val chosen = categories.filter { it.key in selection.keys }.map { hint(it.name, estimator) }
         val countries = chosen.mapNotNullTo(HashSet()) { it.country }
         val audio = chosen.flatMapTo(HashSet()) { it.languages.audio }
-        if (countries.isEmpty() && audio.isEmpty()) return added
-        return added.filter { category ->
+        // Adult ones only once some were chosen
+        val adultChosen = chosen.any { ADULT in it.themes }
+        val allowed = added.filter { adultChosen || ADULT !in themes(it.name) }
+        if (countries.isEmpty() && audio.isEmpty()) return allowed
+        return allowed.filter { category ->
             val hint = hint(category.name, estimator)
             hint.country in countries || hint.languages.audio.any { it in audio }
         }

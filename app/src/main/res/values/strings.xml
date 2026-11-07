@@ -197,6 +197,14 @@
     <string name="settings_followed_sport">Followed sport</string>
     <string name="settings_followed_sport_hint">Teams and competitions, separated by commas: PSG, Stade Toulousain, Ligue 1</string>
     <string name="settings_followed_sport_none">None</string>
+    <string name="sport_free_words">Your own words</string>
+    <string name="sport_follow_all">Follow “%1$s” (all of it)</string>
+    <string name="sport_followed">Followed</string>
+    <string name="sport_followed_inside">Some followed</string>
+    <plurals name="sport_items">
+        <item quantity="one">%d choice</item>
+        <item quantity="other">%d choices</item>
+    </plurals>
     <string name="settings_trakt_description">Movies and episodes watched to the end added to your Trakt history, your watchlist on the immersive home. Create an application on trakt.tv (redirect URI: urn:ietf:wg:oauth:2.0:oob), then link your account.</string>
     <string name="settings_trakt_id">Trakt client ID</string>
     <string name="settings_trakt_secret">Trakt client secret</string>
@@ -589,10 +597,7 @@
     <string name="transfer_error_invalid">The received configuration cannot be read.</string>
     <!-- Movies and series -->
     <string name="error_vod_unavailable">Movies and series are not available on this server</string>
-    <string name="home_open_vod">Movies and series</string>
-    <string name="vod_title">Movies and series</string>
     <string name="vod_back_to_tv">Live TV</string>
-    <string name="vod_tab_home">Home</string>
     <string name="vod_tab_movies">Movies</string>
     <string name="vod_tab_series">Series</string>
     <string name="vod_refresh">Refresh</string>
@@ -633,6 +638,11 @@
     <string name="vod_add_to_list">My list</string>
     <string name="vod_in_list">In my list</string>
     <string name="vod_version">Version</string>
+    <string name="vod_file_button">File · %1$s</string>
+    <string name="vod_file_choose_title">Choose the file</string>
+    <string name="vod_menu_choose_file">Play another file</string>
+    <string name="vod_file_audio">Audio: %1$s</string>
+    <string name="vod_file_subtitles">Subtitles: %1$s</string>
     <string name="vod_audio">Audio</string>
     <string name="vod_subtitles">Subtitles</string>
     <string name="vod_not_specified">Not specified by the provider</string>
@@ -787,6 +797,12 @@
     <string name="vod_categories_cancel">Cancel</string>
     <string name="vod_categories_skip">Load nothing from this source</string>
     <string name="vod_categories_countries">Countries</string>
+    <string name="vod_categories_studios">Studios and platforms</string>
+    <string name="vod_categories_no_country">No country</string>
+    <string name="vod_categories_themes">Themes</string>
+    <string name="vod_theme_anime">Anime</string>
+    <string name="vod_theme_religious">Religious</string>
+    <string name="vod_theme_adult">Adult (18+)</string>
     <plurals name="vod_categories_load">
         <item quantity="one">Load %d category</item>
         <item quantity="other">Load %d categories</item>

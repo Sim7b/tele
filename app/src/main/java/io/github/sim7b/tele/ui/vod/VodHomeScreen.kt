@@ -97,7 +97,6 @@ import java.text.Collator
 import java.util.Locale
 
 private enum class VodTab(val labelRes: Int) {
-    HOME(R.string.vod_tab_home),
     MOVIES(R.string.vod_tab_movies),
     SERIES(R.string.vod_tab_series),
     COLLECTIONS(R.string.vod_tab_collections)
@@ -150,12 +149,16 @@ fun VodHomeScreen(
     // New categories suggested (source name, count), to choose or dismiss
     newCategories: Pair<String, Int>? = null,
     onChooseNewCategories: () -> Unit = {},
-    onDismissNewCategories: () -> Unit = {}
+    onDismissNewCategories: () -> Unit = {},
+    // Section opened from the live TV home (movies or series), again each time [sectionToken] changes
+    section: VodKind = VodKind.MOVIE,
+    sectionToken: Int = 0
 ) {
     BackHandler(onBack = onBack)
     val screen = LocalScreen.current
     val compact = screen.compact
-    var tab by rememberSaveable { mutableStateOf(VodTab.HOME) }
+    var tab by rememberSaveable { mutableStateOf(if (section == VodKind.SERIES) VodTab.SERIES else VodTab.MOVIES) }
+    LaunchedEffect(sectionToken) { tab = if (section == VodKind.SERIES) VodTab.SERIES else VodTab.MOVIES }
     // Long press on a title: its actions, then possibly the collection picker
     var menuFor by remember { mutableStateOf<Pair<VodTitle, VodRow?>?>(null) }
     var pickerFor by remember { mutableStateOf<VodTitle?>(null) }
@@ -180,6 +183,17 @@ fun VodHomeScreen(
         }
         onRows(value)
     }
+    // The rows of the movies or the series (no filter chosen): continue watching, my list, collections, rankings;
+    // the genres come from the shelves below
+    val kindRows = remember(rows, kind, filter) {
+        if (kind == null || filter != VodFilter(sort = filter.sort)) {
+            emptyList()
+        } else {
+            rows.filter { it.kind != VodRow.Kind.GENRE }.mapNotNull { row ->
+                row.titles.filter { it.kind == kind }.takeIf { it.isNotEmpty() }?.let { row.copy(titles = it) }
+            }
+        }
+    }
     val listed by produceState(emptyList<VodTitle>(), library.titles, kind, filter, indexVersion) {
         value = if (kind == null) emptyList() else withContext(Dispatchers.Default) { VodBrowse.filter(library.titles, kind, filter, facts()) }
     }
@@ -202,9 +216,9 @@ fun VodHomeScreen(
         if (rows.isEmpty() && listed.isEmpty()) tabFocus.requestFocusWithRetry()
     }
     // First card once the content is there
-    LaunchedEffect(rows.isNotEmpty(), listed.isNotEmpty(), shelves.isNotEmpty(), gridView, tab) {
+    LaunchedEffect(kindRows.isNotEmpty(), listed.isNotEmpty(), shelves.isNotEmpty(), gridView, tab) {
         val tabReady = if (gridView) listed.isNotEmpty() else shelves.isNotEmpty()
-        if ((tab == VodTab.HOME && rows.isNotEmpty()) || (kind != null && tabReady) || tab == VodTab.COLLECTIONS) {
+        if ((kind != null && (tabReady || kindRows.isNotEmpty())) || tab == VodTab.COLLECTIONS) {
             firstFocus.requestFocusWithRetry(attempts = 40)
         }
     }
@@ -229,7 +243,7 @@ fun VodHomeScreen(
             }
     ) {
         // Wide image of the focused title, fading into the background
-        if (tab == VodTab.HOME) {
+        if (kind != null && !gridView) {
             hero?.backdropUrl?.let { url ->
                 Box(
                     modifier = Modifier
@@ -267,7 +281,7 @@ fun VodHomeScreen(
             // Header: tabs, status, search, refresh, back to live TV; on a phone, the tabs under the title
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = stringResource(R.string.vod_title),
+                    text = stringResource(tab.labelRes),
                     fontSize = if (compact) 18.sp else 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary,
@@ -359,16 +373,24 @@ fun VodHomeScreen(
             }
 
             when (tab) {
-                VodTab.HOME -> {
-                    // Low screen (phone in landscape): the title scrolls away with the rows
-                    if (!screen.short) Hero(hero)
-                    LazyColumn(
+                VodTab.MOVIES, VodTab.SERIES -> {
+                    // The focused title over its picture (rows only; low screen: none)
+                    if (!gridView && !screen.short) Hero(hero)
+                    FilterBar(
+                        filter = filter,
+                        count = listed.size,
+                        onOpen = { openFilter = it },
+                        onClear = { kind?.let { onFiltersChange(it, VodFilter(sort = filter.sort)) } },
+                        gridView = gridView,
+                        onToggleView = { gridView = !gridView }
+                    )
+                    if (!gridView) LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(18.dp),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 40.dp),
+                        contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        if (screen.short) item(key = "hero") { Hero(hero) }
-                        rows.forEachIndexed { rowIndex, row ->
+                        // First the rows of this kind: continue watching, my list, collections, TMDB rankings
+                        kindRows.forEachIndexed { rowIndex, row ->
                             item(key = "${row.kind}:${row.name}") {
                                 PosterRow(
                                     label = rowTitle(row),
@@ -383,23 +405,6 @@ fun VodHomeScreen(
                                 )
                             }
                         }
-                    }
-                }
-
-                VodTab.MOVIES, VodTab.SERIES -> {
-                    FilterBar(
-                        filter = filter,
-                        count = listed.size,
-                        onOpen = { openFilter = it },
-                        onClear = { kind?.let { onFiltersChange(it, VodFilter(sort = filter.sort)) } },
-                        gridView = gridView,
-                        onToggleView = { gridView = !gridView }
-                    )
-                    if (!gridView) LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
-                        contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
                         shelves.forEachIndexed { index, shelf ->
                             item(key = "${shelf.kind}:${shelf.genre}") {
                                 PosterRow(
@@ -407,9 +412,10 @@ fun VodHomeScreen(
                                     titles = shelf.titles,
                                     progress = progressByTitle,
                                     onOpenTitle = onOpenTitle,
+                                    onFocused = { focusedKey = it.key },
                                     onLongClick = { menuFor = it to null },
                                     findPoster = findPoster,
-                                    firstFocus = if (index == 0) firstFocus else null
+                                    firstFocus = if (index == 0 && kindRows.isEmpty()) firstFocus else null
                                 )
                             }
                         }

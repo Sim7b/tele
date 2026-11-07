@@ -51,6 +51,7 @@ fun PlaybackOptionsPanel(
     tracks: PlaybackTracks,
     pictureFormat: PictureFormat,
     onChooseStream: (() -> Unit)?,
+    // Movies and series: the choice of the file, with its own name
     onSelectAudio: (TrackChoice) -> Unit,
     onSelectSubtitles: (TrackChoice?) -> Unit,
     onSelectPictureFormat: (PictureFormat) -> Unit,
@@ -75,7 +76,8 @@ fun PlaybackOptionsPanel(
     // Program on air that can be recorded on the device (null: none), and whether it is
     recordTitle: String? = null,
     recording: Boolean = false,
-    onToggleRecording: () -> Unit = {}
+    onToggleRecording: () -> Unit = {},
+    chooseStreamLabel: String? = null
 ) {
     val firstRow = remember { FocusRequester() }
     var interactions by remember { mutableIntStateOf(0) }
@@ -150,7 +152,7 @@ fun PlaybackOptionsPanel(
                 }
                 if (onChooseStream != null) {
                     MenuRow(
-                        label = stringResource(R.string.options_choose_stream),
+                        label = chooseStreamLabel ?: stringResource(R.string.options_choose_stream),
                         icon = Icons.Filled.List,
                         onClick = onChooseStream,
                         modifier = Modifier.focusRequester(firstRow)

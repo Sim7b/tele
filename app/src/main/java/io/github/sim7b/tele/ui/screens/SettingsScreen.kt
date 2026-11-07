@@ -649,7 +649,7 @@ fun SettingsScreen(
                                 item {
                                     SettingRow(
                                         label = stringResource(R.string.settings_followed_sport),
-                                        value = followedSport.joinToString(", ").ifEmpty { stringResource(R.string.settings_followed_sport_none) },
+                                        value = followedSportLabel(followedSport).ifEmpty { stringResource(R.string.settings_followed_sport_none) },
                                         onClick = { editingSport = true }
                                     )
                                 }
@@ -1214,16 +1214,9 @@ fun SettingsScreen(
             TraktLinkDialog(app = traktApp, onLinked = { repository.setTraktSession(it) }, onDismiss = { linkingTrakt = false })
         }
         if (editingSport) {
-            NameDialog(
-                title = stringResource(R.string.settings_followed_sport),
-                initial = followedSport.joinToString(", "),
-                confirm = stringResource(R.string.vod_collection_save),
-                hint = stringResource(R.string.settings_followed_sport_hint),
-                maxLength = 600,
-                onConfirm = { typed ->
-                    repository.setFollowedSport(typed)
-                    editingSport = false
-                },
+            SportPickerDialog(
+                followed = followedSport,
+                onChange = { repository.setFollowedSport(it) },
                 onDismiss = { editingSport = false }
             )
         }
