@@ -186,6 +186,10 @@
     <string name="home_retry">Retry</string>
     <string name="home_resume">Continue watching</string>
     <string name="home_row_sport">Sport</string>
+    <string name="home_row_up_next">Up next</string>
+    <string name="home_kind_movie">Movie</string>
+    <string name="home_kind_series">Series</string>
+    <string name="home_time_left">%1$s left</string>
     <string name="home_row_trakt">Trakt watchlist</string>
     <string name="home_row_categories">Categories</string>
     <string name="side_menu_home">Home</string>
@@ -215,7 +219,7 @@
     <string name="home_style_classic">Classic</string>
     <string name="home_style_classic_description">Featured channels, categories and the grid of channels</string>
     <string name="home_style_immersive">Immersive</string>
-    <string name="home_style_immersive_description">The program of the focused channel over the whole screen, then its live picture after the preview delay; the channels in rows at the bottom</string>
+    <string name="home_style_immersive_description">As on an Apple TV: a featured program over the whole screen (then its live picture after the preview delay), glass tabs, then rows of programs and titles that lift when chosen</string>
     <string name="settings_home_rows">Rows of the immersive home</string>
     <string name="settings_home_rows_description">Shown after the favorites, in this order</string>
     <plurals name="settings_home_rows_count">

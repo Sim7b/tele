@@ -637,6 +637,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     watchlist = if (vodEnabled && !vodHidden) traktWatchlist else emptyList(),
+                                    guideActions = homeActions,
                                     onOpenTitle = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) },
                                     updateAvailable = updateState.release != null && updateState !is UpdateState.Failed,
                                     onChannelSelected = { channel -> currentScreen = CurrentScreen.Player(channel) },

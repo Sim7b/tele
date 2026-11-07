@@ -1,14 +1,23 @@
 package io.github.sim7b.tele.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +26,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,10 +40,20 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -42,105 +63,120 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import io.github.sim7b.tele.ui.components.MenuRow
-import io.github.sim7b.tele.ui.components.RecordDot
-import io.github.sim7b.tele.ui.components.groupLabel
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Glow
+import androidx.tv.material3.Icon
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.epg.EpgResolver
+import io.github.sim7b.tele.data.home.HomeFeed
+import io.github.sim7b.tele.data.home.HomeItem
 import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.ChannelList
 import io.github.sim7b.tele.data.model.ChannelListView
+import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.HomeRow
 import io.github.sim7b.tele.data.model.StreamSource
 import io.github.sim7b.tele.data.remote.ProgramPosterRepository
 import io.github.sim7b.tele.data.sport.SportEvent
 import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.storage.VodProgress
+import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.ui.components.ChannelActionMenuDialog
-import io.github.sim7b.tele.ui.components.CompactChannelCard
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.GuideActions
 import io.github.sim7b.tele.ui.components.LogoPlate
+import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.ProgressLine
-import io.github.sim7b.tele.ui.components.RoundIconButton
-import io.github.sim7b.tele.ui.components.SectionLabel
-import io.github.sim7b.tele.ui.components.focusRing
+import io.github.sim7b.tele.ui.components.RecordDot
+import io.github.sim7b.tele.ui.components.RecordRed
+import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.theme.LiveRed
 import io.github.sim7b.tele.ui.theme.LocalAppColors
 import io.github.sim7b.tele.ui.theme.SurfaceCard
-import io.github.sim7b.tele.ui.theme.SurfaceDark
-import io.github.sim7b.tele.ui.theme.TextPrimary
-import io.github.sim7b.tele.ui.theme.TextSecondary
-import io.github.sim7b.tele.ui.vod.PosterCard
-import io.github.sim7b.tele.ui.vod.ResumeRow
-import io.github.sim7b.tele.ui.vod.VodChip
+import io.github.sim7b.tele.ui.vod.CollectionPickerDialog
+import io.github.sim7b.tele.ui.vod.TitleActionsDialog
 import io.github.sim7b.tele.ui.vod.VodTitleActions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
- * What the immersive home shows over the whole screen for the focused item: a channel (its program, then its
- * live picture after [previewDelayMs]), a sport event, or a movie or series.
+ * What the home shows over the whole screen for an item (featured, or focused in a row): its artwork (then its
+ * live picture after the preview delay when it is on air), its title (as a TMDB logo when there is one) and its
+ * details.
  */
 private data class Spotlight(
     val key: String,
     val title: String,
     val overline: String?,
-    val details: String?,
-    val description: String?,
-    val imageUrl: String?,
-    // Looked up by title (TVMaze) when the guide has no image
-    val imageTitle: String?,
     val logoUrl: String?,
     val live: Boolean,
+    val details: String?,
+    val description: String?,
     val progress: Float?,
+    val imageUrl: String?,
+    // Looked up by title (TMDB, TVMaze) when there is no image, and for the title logo
+    val lookupTitle: String?,
+    val tmdbId: String?,
+    val movie: Boolean?,
     // On air: its live picture after the delay
     val channel: Channel?
 )
 
+/** A row of the home: its key, its name and what it shows. */
+private data class Shelf(val key: String, val name: String, val items: List<HomeItem>) {
+    /** Its name as shown (a category of the source by its displayed name). */
+    val isGroup: Boolean get() = key.startsWith("group:")
+}
+
+@Composable
+private fun Shelf.label(): String = if (isGroup) groupLabel(name) else name
+
 /**
- * Live TV home where the focused item fills the screen (its program artwork, then its live picture), the
- * rows of channels along the bottom: favorites, movies and series in progress, followed sport, the Trakt
- * watchlist, then each category. The usual home stays the default (see [HomeScreen]).
+ * Live TV home in the style of the Apple TV app: a featured item over the whole screen (the program on air of a
+ * favorite, a title to resume, a followed match, one after the other), with glass tabs and buttons, then rows of
+ * landscape cards (up next, favorites, Trakt watchlist, categories): the focused one lifts, the screen shows it.
+ * Left with nothing more on the left opens a side menu (screens, then every row). The classic home stays the
+ * default (see [HomeScreen]).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -180,25 +216,63 @@ fun ImmersiveHomeScreen(
     onOpenSport: (SportEvent) -> Unit = {},
     // Trakt watchlist found in the library
     watchlist: List<VodTitle> = emptyList(),
-    onOpenTitle: (VodTitle) -> Unit = {}
+    onOpenTitle: (VodTitle) -> Unit = {},
+    // Reminders and recordings of the programs (buttons of the featured item)
+    guideActions: GuideActions = GuideActions()
 ) {
-    var spotlight by remember { mutableStateOf<Spotlight?>(null) }
-    var menuChannel by remember { mutableStateOf<Channel?>(null) }
-    // Row holding the focus (0: the first one, the header shown)
-    var focusedRow by remember { mutableIntStateOf(0) }
-    var lastFocusedKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val firstFocus = remember { FocusRequester() }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val now = System.currentTimeMillis()
-    // Side menu (left at the start of a row): the other screens, then every row to jump to it
+    val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+
+    // The featured items and the rows
+    val upNextName = stringResource(R.string.home_row_up_next)
+    val favoritesName = stringResource(R.string.home_favorites)
+    val traktName = stringResource(R.string.home_row_trakt)
+    val upNext = remember(resume, sport, rows) {
+        HomeFeed.upNext(if (HomeRow.RESUME in rows) resume else emptyList(), if (HomeRow.SPORT in rows) sport else emptyList(), now)
+    }
+    val featured = remember(favorites, upNext, channels) { HomeFeed.featured(favorites, upNext, channels) }
+    val shelves = remember(upNext, favorites, watchlist, channels, categoryOrder, channelLists, rows) {
+        buildList {
+            if (upNext.isNotEmpty()) add(Shelf("upnext", upNextName, upNext))
+            if (favorites.isNotEmpty()) add(Shelf("favorites", favoritesName, favorites.map { HomeItem.Live(it) }))
+            if (HomeRow.TRAKT in rows && watchlist.isNotEmpty()) add(Shelf("trakt", traktName, watchlist.map { HomeItem.Title(it) }))
+            if (HomeRow.CATEGORIES in rows) {
+                channelLists.filter { it.channels.isNotEmpty() }.forEach { list ->
+                    add(Shelf("list:${list.id}", list.name, list.channels.map { HomeItem.Live(it) }))
+                }
+                Categories.ordered(channels.map { it.group }.distinct(), categoryOrder).forEach { group ->
+                    add(Shelf("group:$group", group, channels.filter { it.group == group }.map { HomeItem.Live(it) }))
+                }
+            }
+        }
+    }
+
+    // Where the focus is: -1 the featured item (and the tabs), else the index of the row
+    var focusedRow by remember { mutableIntStateOf(-1) }
+    var page by rememberSaveable { mutableIntStateOf(0) }
+    val pageIndex = if (featured.isEmpty()) 0 else page.coerceIn(0, featured.lastIndex)
+    var focusedItem by remember { mutableStateOf<HomeItem?>(null) }
+    var heroButton by remember { mutableIntStateOf(-1) }
+    // Number of buttons of the featured item shown (read by the keys, not drawn)
+    val heroButtonCount = remember { intArrayOf(0) }
+    var lastFocusedKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val heroFocus = remember { FocusRequester() }
+    val cardFocus = remember { FocusRequester() }
+    val listState = rememberLazyListState()
+    var menuChannel by remember { mutableStateOf<Channel?>(null) }
+    var menuTitle by remember { mutableStateOf<HomeItem.Title?>(null) }
+    var pickerFor by remember { mutableStateOf<VodTitle?>(null) }
+    // Side menu (Left with nothing more on the left): the other screens, then every row to jump to it
     var railOpen by remember { mutableStateOf(false) }
     val railFocus = remember { FocusRequester() }
     val rowFocus = remember { HashMap<String, FocusRequester>() }
     fun rowRequester(key: String) = rowFocus.getOrPut(key) { FocusRequester() }
-    val focusManager = LocalFocusManager.current
 
-    // Live picture of the focused channel once it stayed focused for the delay
+    val shownItem = if (focusedRow < 0) featured.getOrNull(pageIndex) else focusedItem ?: featured.getOrNull(pageIndex)
+    val spotlight = shownItem?.let { spotlightOf(it, now) }
+
+    // Live picture of the item shown once it stayed for the delay
     var previewKey by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(spotlight?.key, previewDelayMs) {
         if (previewKey != null) {
@@ -212,257 +286,220 @@ fun ImmersiveHomeScreen(
         onPreviewChannel(channel)
     }
 
-    // Categories: the lists of the user first, then the groups in the chosen order
-    val categoryRows = remember(channels, categoryOrder, channelLists, rows) {
-        if (HomeRow.CATEGORIES !in rows) {
-            emptyList()
-        } else {
-            channelLists.filter { it.channels.isNotEmpty() }.map { "list:${it.id}" to (it.name to it.channels) } +
-                Categories.ordered(channels.map { it.group }.distinct(), categoryOrder).map { group ->
-                    "group:$group" to (group to channels.filter { it.group == group })
-                }
+    // The featured items go by themselves while one is chosen, as long as no live picture plays
+    LaunchedEffect(pageIndex, heroButton >= 0, previewKey, featured.size) {
+        if (featured.size < 2 || heroButton < 0 || previewKey != null) return@LaunchedEffect
+        delay(FEATURED_ROTATION_MS)
+        page = (pageIndex + 1) % featured.size
+        heroFocus.requestFocusWithRetry()
+    }
+
+    // The focused row comes up under the details (after the scroll the focus does by itself, which it replaces)
+    LaunchedEffect(focusedRow) {
+        if (focusedRow >= 0) listState.animateScrollToItem(focusedRow)
+    }
+
+    fun toHero() {
+        focusedRow = -1
+        lastFocusedKey = null
+        scope.launch {
+            listState.scrollToItem(0)
+            heroFocus.requestFocusWithRetry()
         }
     }
 
-    fun channelSpotlight(key: String, channel: Channel): Spotlight {
-        val program = channel.currentProgram
-        return Spotlight(
-            key = key,
-            title = program?.title ?: channel.name,
-            overline = channel.name,
-            details = program?.let { listOfNotNull("${it.startTime} â ${it.endTime}", it.category, it.nextTitle?.let { next -> "${it.nextStartTime ?: ""} ${next}".trim() }).joinToString("  Â·  ") },
-            description = program?.description,
-            imageUrl = program?.posterUrl,
-            imageTitle = program?.title,
-            logoUrl = channel.logoUrl,
-            live = true,
-            progress = program?.progress,
-            channel = channel
-        )
-    }
-
-    fun eventSpotlight(event: SportEvent): Spotlight {
-        val program = event.program
-        val onAir = program.startMillis <= now && program.endMillis > now
-        return Spotlight(
-            key = "sport:${event.channel.id}:${program.startMillis}",
-            title = program.title,
-            overline = event.channel.name,
-            details = listOfNotNull(
-                "${EpgResolver.formatClock(program.startMillis)} â ${EpgResolver.formatClock(program.endMillis)}",
-                program.category
-            ).joinToString("  Â·  "),
-            description = program.description,
-            imageUrl = program.posterUrl,
-            imageTitle = program.title,
-            logoUrl = event.channel.logoUrl,
-            live = onAir,
-            progress = if (onAir) ((now - program.startMillis).toFloat() / (program.endMillis - program.startMillis)).coerceIn(0f, 1f) else null,
-            channel = event.channel.takeIf { onAir }
-        )
-    }
-
-    fun titleSpotlight(title: VodTitle): Spotlight = Spotlight(
-        key = "vod:${title.key}",
-        title = title.title,
-        overline = null,
-        details = listOfNotNull(title.year?.toString(), title.genres.take(3).joinToString(", ").takeIf { it.isNotEmpty() }).joinToString("  Â·  "),
-        description = title.plot,
-        imageUrl = title.backdropUrl ?: title.posterUrl,
-        imageTitle = null,
-        logoUrl = null,
-        live = false,
-        progress = null,
-        channel = null
-    )
-
-    fun Modifier.spot(key: String, make: () -> Spotlight): Modifier = this
-        .then(if (key == (lastFocusedKey ?: "fav:${favorites.firstOrNull()?.id}")) Modifier.focusRequester(firstFocus) else Modifier)
-        .onFocusChanged {
-            if (it.isFocused) {
-                lastFocusedKey = key
-                spotlight = make()
-            }
-        }
-
-    LaunchedEffect(favorites.isNotEmpty(), channels.isNotEmpty()) {
-        if (favorites.isNotEmpty() || channels.isNotEmpty()) firstFocus.requestFocusWithRetry()
-    }
-
-    // The rows, in the order shown: key and name (for the side menu)
-    val rowEntries = buildList {
-        if (favorites.isNotEmpty()) add("favorites" to stringResource(R.string.home_favorites))
-        if (HomeRow.RESUME in rows && resume.isNotEmpty()) add("resume" to stringResource(R.string.home_resume))
-        if (HomeRow.SPORT in rows && sport.isNotEmpty()) add("sport" to stringResource(R.string.home_row_sport))
-        if (HomeRow.TRAKT in rows && watchlist.isNotEmpty()) add("trakt" to stringResource(R.string.home_row_trakt))
-        categoryRows.forEach { (key, content) -> add(key to groupLabel(content.first)) }
+    // The featured item first, or the card left last (back from a channel)
+    LaunchedEffect(featured.isNotEmpty()) {
+        if (featured.isEmpty()) return@LaunchedEffect
+        if (lastFocusedKey == null) heroFocus.requestFocusWithRetry() else cardFocus.requestFocusWithRetry()
     }
     LaunchedEffect(railOpen) { if (railOpen) railFocus.requestFocusWithRetry() }
     BackHandler(enabled = railOpen) {
         railOpen = false
-        scope.launch { firstFocus.requestFocusWithRetry() }
+        scope.launch { if (focusedRow < 0) heroFocus.requestFocusWithRetry() else cardFocus.requestFocusWithRetry() }
     }
+    // In the rows, Back goes back up to the featured item
+    BackHandler(enabled = !railOpen && focusedRow >= 0) { toHero() }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
+            .clipToBounds()
             .background(LocalAppColors.current.background)
             .onPreviewKeyEvent { event ->
-                // Left with nothing more on the left: the side menu
-                if (railOpen || menuChannel != null || event.type != KeyEventType.KeyDown || event.key != Key.DirectionLeft) return@onPreviewKeyEvent false
-                if (!focusManager.moveFocus(FocusDirection.Left)) railOpen = true
-                true
+                if (railOpen || menuChannel != null || menuTitle != null || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionLeft -> {
+                        when {
+                            // On the featured item: the previous one, before it the side menu
+                            heroButton == 0 && pageIndex > 0 -> {
+                                page = pageIndex - 1
+                                scope.launch { heroFocus.requestFocusWithRetry() }
+                            }
+                            heroButton == 0 -> railOpen = true
+                            !focusManager.moveFocus(FocusDirection.Left) -> railOpen = true
+                        }
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        // After its last button: the next featured item
+                        if (heroButton >= 0 && heroButton == heroButtonCount[0] - 1 && featured.size > 1) {
+                            page = (pageIndex + 1) % featured.size
+                            scope.launch { heroFocus.requestFocusWithRetry() }
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    Key.DirectionUp -> {
+                        if (focusedRow == 0) {
+                            toHero()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
             }
     ) {
-        // Artwork of the focused item, then its live picture
-        Crossfade(targetState = spotlight?.key, label = "spotlight") { key ->
+        val height = maxHeight
+        val inRows = focusedRow >= 0
+
+        // Artwork of the item shown, then its live picture
+        Crossfade(targetState = spotlight?.key, label = "backdrop") { key ->
             val shown = spotlight?.takeIf { it.key == key }
-            if (shown != null) SpotlightBackdrop(shown)
+            if (shown != null) Backdrop(shown)
         }
         AnimatedVisibility(visible = previewKey != null && previewKey == spotlight?.key, enter = fadeIn(), exit = fadeOut()) {
             Box(modifier = Modifier.fillMaxSize()) { previewSurface() }
         }
-        // Below the first row: the header goes, the details move up in its place
-        val headerAlpha by animateFloatAsState(if (focusedRow == 0) 1f else 0f, label = "header")
-        val detailsTop by animateDpAsState(if (focusedRow == 0) 104.dp else 40.dp, label = "details")
-        // Scrims: the texts on the left, the rows at the bottom stay readable over any picture
+        // Scrims: the texts on the left and the rows at the bottom stay readable over any picture
+        Box(modifier = Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.75f), 0.4f to Color.Black.copy(alpha = 0.3f), 0.65f to Color.Transparent)))
+        val bottomScrim by animateFloatAsState(if (inRows) 0.62f else 0.5f, label = "scrim")
         Box(
             modifier = Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.85f), 0.6f to Color.Transparent)
-            )
-        )
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0.4f to Color.Transparent, 0.7f to Color.Black.copy(alpha = 0.55f), 1f to Color.Black.copy(alpha = 0.85f))
+                Brush.verticalGradient(
+                    (1f - bottomScrim) to Color.Transparent,
+                    (1f - bottomScrim * 0.55f) to Color.Black.copy(alpha = 0.6f),
+                    1f to Color.Black.copy(alpha = 0.92f)
+                )
             )
         )
 
-        // Header: time, the other screens, search, settings; gone once below the first row (back with it)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
+        // Glass tabs and the time: with the featured item only
+        val headerAlpha by animateFloatAsState(if (inRows) 0f else 1f, label = "tabs")
+        GlassTabs(
+            onGuide = onOpenGuide,
+            onVod = onOpenVod,
+            onRecordings = onOpenRecordings,
+            onSearch = { onOpenSearch(false) },
+            onSettings = onOpenSettings,
+            updateAvailable = updateAvailable,
             modifier = Modifier
-                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .padding(top = 20.dp)
                 .graphicsLayer { alpha = headerAlpha }
-                .padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 24.dp)
-        ) {
-            HeaderClock()
-            Spacer(modifier = Modifier.weight(1f))
-            onOpenGuide?.let {
-                VodChip(label = stringResource(R.string.home_open_guide), selected = false, onClick = it)
-                Spacer(modifier = Modifier.width(10.dp))
-            }
-            onOpenVod?.let {
-                VodChip(label = stringResource(R.string.home_open_vod), selected = false, onClick = it)
-                Spacer(modifier = Modifier.width(10.dp))
-            }
-            onOpenRecordings?.let {
-                VodChip(label = stringResource(R.string.recordings_screen_title), selected = false, onClick = it)
-                Spacer(modifier = Modifier.width(10.dp))
-            }
-            RoundIconButton(icon = Icons.Filled.Search, contentDescription = stringResource(R.string.home_search), onClick = { onOpenSearch(false) })
-            Spacer(modifier = Modifier.width(10.dp))
-            SettingsButton(updateAvailable = updateAvailable, onClick = onOpenSettings)
-        }
+        )
+        Clock(modifier = Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = screenMargin(36.dp)).graphicsLayer { alpha = headerAlpha })
 
-        // The focused item: channel, title, hours, summary
+        // The featured item with its buttons, or the details of the focused card
         spotlight?.let { shown ->
-            SpotlightDetails(
-                shown,
-                live = previewKey != null && previewKey == shown.key,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = screenMargin(48.dp), top = detailsTop)
-                    .widthIn(max = 620.dp)
-            )
+            if (!inRows) {
+                val item = featured.getOrNull(pageIndex)
+                Column(modifier = Modifier.padding(start = screenMargin(48.dp), top = height * 0.22f).widthIn(max = 460.dp)) {
+                    SpotlightText(shown, compact = false, live = previewKey == shown.key)
+                    Spacer(modifier = Modifier.height(18.dp))
+                    val buttons = item?.let { heroButtons(it, now, favoriteIds, guideActions, vodMyList, resumeActions, onChannelSelected, onToggleFavorite, onOpenResume, onOpenTitle, onOpenSport) }.orEmpty()
+                    heroButtonCount[0] = buttons.size
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        buttons.forEachIndexed { index, button ->
+                            GlassButton(
+                                button = button,
+                                modifier = (if (index == 0) Modifier.focusRequester(heroFocus) else Modifier)
+                                    .onFocusChanged { state ->
+                                        if (state.isFocused) {
+                                            heroButton = index
+                                            focusedRow = -1
+                                        } else if (heroButton == index) {
+                                            heroButton = -1
+                                        }
+                                    }
+                            )
+                        }
+                    }
+                    if (featured.size > 1) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        PageDots(count = featured.size, current = pageIndex)
+                    }
+                }
+            } else {
+                Column(modifier = Modifier.padding(start = screenMargin(48.dp), top = 28.dp).widthIn(max = 480.dp)) {
+                    SpotlightText(shown, compact = true, live = previewKey == shown.key)
+                }
+            }
         }
 
-        // Rows along the bottom: the focused one comes up first
+        // The rows: the first one peeks under the featured item, the focused one comes up under the details
+        val rowsTop by animateDpAsState(if (inRows) height * 0.40f else height * 0.80f, label = "rows")
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .align(Alignment.BottomStart)
+                .offset(y = rowsTop)
                 .fillMaxWidth()
-                .fillMaxHeight(0.42f)
-                .fadingTop(RowsFade),
-            contentPadding = PaddingValues(top = RowsFade, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .height(height * 0.60f)
+                .fadingTop(if (inRows) RowsFade else 0.dp),
+            // Room below the last row: any row can come up under the details
+            contentPadding = PaddingValues(top = if (inRows) RowsFade else 0.dp, bottom = height * 0.4f),
+            verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            var rowIndex = 0
-            fun Modifier.bringUp(index: Int): Modifier = focusRequester(rowRequester(rowEntries.getOrNull(index)?.first.orEmpty()))
-                .onFocusChanged {
-                    if (it.hasFocus) {
-                        focusedRow = index
-                        scope.launch { listState.animateScrollToItem(index) }
-                    }
-                }
-
-            if (favorites.isNotEmpty()) {
-                val index = rowIndex++
-                item(key = "favorites") {
-                    ChannelRow(stringResource(R.string.home_favorites), favorites, "fav", Modifier.bringUp(index), onChannelSelected, { menuChannel = it }) { key, channel ->
-                        Modifier.spot(key) { channelSpotlight(key, channel) }
-                    }
-                }
-            }
-            if (HomeRow.RESUME in rows && resume.isNotEmpty()) {
-                val index = rowIndex++
-                item(key = "resume") {
-                    ResumeRow(
-                        items = resume,
-                        onOpen = onOpenResume,
-                        actions = resumeActions,
-                        myList = vodMyList,
-                        collections = vodCollections,
-                        onFocused = { title -> spotlight = titleSpotlight(title) },
-                        modifier = Modifier.padding(start = screenMargin(48.dp)).bringUp(index)
+            itemsIndexed(shelves, key = { _, shelf -> shelf.key }) { index, shelf ->
+                Column(
+                    modifier = Modifier
+                        .focusRequester(rowRequester(shelf.key))
+                        .onFocusChanged {
+                            if (it.hasFocus) focusedRow = index
+                        }
+                ) {
+                    Text(
+                        text = shelf.label(),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier.padding(start = screenMargin(48.dp), bottom = 10.dp)
                     )
-                }
-            }
-            if (HomeRow.SPORT in rows && sport.isNotEmpty()) {
-                val index = rowIndex++
-                item(key = "sport") {
-                    Column(modifier = Modifier.bringUp(index)) {
-                        SectionLabel(text = stringResource(R.string.home_row_sport), modifier = Modifier.padding(start = screenMargin(48.dp)))
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(start = screenMargin(48.dp), end = 48.dp, top = 10.dp)
-                        ) {
-                            items(sport, key = { "${it.channel.id}:${it.program.startMillis}" }) { event ->
-                                val spot = eventSpotlight(event)
-                                SportCard(event, now, onClick = { onOpenSport(event) }, modifier = Modifier.spot(spot.key) { spot })
-                            }
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        contentPadding = PaddingValues(start = screenMargin(48.dp), end = 48.dp, top = 6.dp, bottom = 4.dp)
+                    ) {
+                        items(shelf.items, key = { it.key }) { item ->
+                            val cardKey = "${shelf.key}|${item.key}"
+                            HomeCard(
+                                item = item,
+                                now = now,
+                                onClick = {
+                                    when (item) {
+                                        is HomeItem.Live -> onChannelSelected(item.channel)
+                                        is HomeItem.Title -> if (item.progress != null) onOpenResume(item.title) else onOpenTitle(item.title)
+                                        is HomeItem.Event -> onOpenSport(item.event)
+                                    }
+                                },
+                                onLongClick = {
+                                    when (item) {
+                                        is HomeItem.Live -> menuChannel = item.channel
+                                        is HomeItem.Title -> if (resumeActions != null) menuTitle = item
+                                        is HomeItem.Event -> menuChannel = item.event.channel
+                                    }
+                                },
+                                modifier = (if (cardKey == lastFocusedKey) Modifier.focusRequester(cardFocus) else Modifier)
+                                    .onFocusChanged {
+                                        if (it.isFocused) {
+                                            lastFocusedKey = cardKey
+                                            focusedItem = item
+                                        }
+                                    }
+                            )
                         }
-                    }
-                }
-            }
-            if (HomeRow.TRAKT in rows && watchlist.isNotEmpty()) {
-                val index = rowIndex++
-                item(key = "trakt") {
-                    Column(modifier = Modifier.bringUp(index)) {
-                        SectionLabel(text = stringResource(R.string.home_row_trakt), modifier = Modifier.padding(start = screenMargin(48.dp)))
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            contentPadding = PaddingValues(start = screenMargin(48.dp), end = 48.dp, top = 10.dp)
-                        ) {
-                            items(watchlist, key = { it.key }) { title ->
-                                PosterCard(
-                                    title = title,
-                                    onClick = { onOpenTitle(title) },
-                                    width = 120.dp,
-                                    onFocused = { spotlight = titleSpotlight(title) },
-                                    modifier = Modifier.onFocusChanged { if (it.isFocused) lastFocusedKey = "vod:${title.key}" }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            categoryRows.forEach { (rowKey, content) ->
-                val (name, rowChannels) = content
-                val index = rowIndex++
-                item(key = rowKey) {
-                    ChannelRow(name, rowChannels, rowKey, Modifier.bringUp(index), onChannelSelected, { menuChannel = it }) { key, channel ->
-                        Modifier.spot(key) { channelSpotlight(key, channel) }
                     }
                 }
             }
@@ -475,11 +512,11 @@ fun ImmersiveHomeScreen(
             modifier = Modifier.align(Alignment.CenterStart)
         ) {
             SideMenu(
-                rows = rowEntries,
+                rows = shelves.map { it.key to it.label() },
                 focus = railFocus,
                 onHome = {
                     railOpen = false
-                    scope.launch { firstFocus.requestFocusWithRetry() }
+                    toHero()
                 },
                 onGuide = onOpenGuide,
                 onVod = onOpenVod,
@@ -489,13 +526,14 @@ fun ImmersiveHomeScreen(
                 onRow = { index, key ->
                     railOpen = false
                     scope.launch {
+                        focusedRow = index
                         listState.scrollToItem(index)
                         rowRequester(key).requestFocusWithRetry()
                     }
                 },
                 onClose = {
                     railOpen = false
-                    scope.launch { firstFocus.requestFocusWithRetry() }
+                    scope.launch { if (focusedRow < 0) heroFocus.requestFocusWithRetry() else cardFocus.requestFocusWithRetry() }
                 }
             )
         }
@@ -516,165 +554,418 @@ fun ImmersiveHomeScreen(
             onCreateList = { name -> onCreateList(name, channel) },
             onDismiss = {
                 menuChannel = null
-                scope.launch { firstFocus.requestFocusWithRetry() }
+                scope.launch { cardFocus.requestFocusWithRetry() }
             }
+        )
+    }
+    menuTitle?.let { item ->
+        val title = item.title
+        TitleActionsDialog(
+            title = title,
+            inContinue = item.progress != null,
+            watched = if (title.kind == VodKind.MOVIE) false else null,
+            removeFrom = null,
+            onOpen = { onOpenTitle(title) },
+            onAddTo = { pickerFor = title },
+            onRemoveContinue = { resumeActions?.removeFromContinue?.invoke(title.key) },
+            onToggleWatched = { resumeActions?.setWatched?.invoke(title, true) },
+            onRemoveFrom = {},
+            onDismiss = {
+                menuTitle = null
+                scope.launch { cardFocus.requestFocusWithRetry() }
+            }
+        )
+    }
+    pickerFor?.let { title ->
+        CollectionPickerDialog(
+            collections = vodCollections,
+            titleKey = title.key,
+            inMyList = title.key in vodMyList,
+            onToggleMyList = { resumeActions?.toggleMyList?.invoke(title.key) },
+            onToggle = { id -> resumeActions?.toggleInCollection?.invoke(id, title.key) },
+            onCreate = { name -> resumeActions?.createCollectionWith?.invoke(name, title.key) },
+            onDismiss = { pickerFor = null }
         )
     }
 }
 
-/** A labelled row of channels; [focusModifier] reports the focused one (key and channel). */
+/** What the screen shows for [item]. */
 @Composable
-private fun ChannelRow(
-    label: String,
-    channels: List<Channel>,
-    keyPrefix: String,
-    modifier: Modifier,
-    onSelect: (Channel) -> Unit,
-    onMenu: (Channel) -> Unit,
-    focusModifier: (key: String, Channel) -> Modifier
-) {
-    Column(modifier = modifier) {
-        SectionLabel(text = label, modifier = Modifier.padding(start = screenMargin(48.dp)))
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(start = screenMargin(48.dp), end = 48.dp, top = 10.dp)
+private fun spotlightOf(item: HomeItem, now: Long): Spotlight = when (item) {
+    is HomeItem.Live -> {
+        val channel = item.channel
+        val program = channel.currentProgram
+        Spotlight(
+            key = item.key,
+            title = program?.title ?: channel.name,
+            overline = channel.name,
+            logoUrl = channel.logoUrl,
+            live = true,
+            details = program?.let { listOfNotNull("${it.startTime} – ${it.endTime}", it.category).joinToString(" · ") },
+            description = program?.description,
+            progress = program?.progress,
+            imageUrl = program?.posterUrl,
+            lookupTitle = program?.title,
+            tmdbId = null,
+            movie = null,
+            channel = channel
+        )
+    }
+    is HomeItem.Title -> {
+        val title = item.title
+        val left = item.progress?.let { (it.durationMs - it.positionMs).coerceAtLeast(0) }
+        Spotlight(
+            key = item.key,
+            title = title.title,
+            overline = null,
+            logoUrl = null,
+            live = false,
+            details = listOfNotNull(
+                stringResource(if (title.kind == VodKind.MOVIE) R.string.home_kind_movie else R.string.home_kind_series),
+                title.year?.toString(),
+                title.genres.take(2).joinToString(", ").takeIf { it.isNotEmpty() },
+                left?.takeIf { it > 0 }?.let { stringResource(R.string.home_time_left, durationLabel(it)) }
+            ).joinToString(" · "),
+            description = title.plot,
+            progress = item.progress?.fraction,
+            imageUrl = title.backdropUrl ?: title.posterUrl,
+            lookupTitle = title.title,
+            tmdbId = title.tmdbId,
+            movie = title.kind == VodKind.MOVIE,
+            channel = null
+        )
+    }
+    is HomeItem.Event -> {
+        val event = item.event
+        val program = event.program
+        val onAir = program.startMillis <= now && program.endMillis > now
+        Spotlight(
+            key = item.key,
+            title = program.title,
+            overline = event.channel.name,
+            logoUrl = event.channel.logoUrl,
+            live = onAir,
+            details = listOfNotNull(
+                "${EpgResolver.formatClock(program.startMillis)} – ${EpgResolver.formatClock(program.endMillis)}",
+                program.category
+            ).joinToString(" · "),
+            description = program.description,
+            progress = if (onAir) ((now - program.startMillis).toFloat() / (program.endMillis - program.startMillis)).coerceIn(0f, 1f) else null,
+            imageUrl = program.posterUrl,
+            lookupTitle = program.title,
+            tmdbId = null,
+            movie = null,
+            channel = event.channel.takeIf { onAir }
+        )
+    }
+}
+
+/** "1 h 12" or "45 min". */
+private fun durationLabel(ms: Long): String {
+    val minutes = (ms / 60_000L).coerceAtLeast(1)
+    return if (minutes >= 60) "%d h %02d".format(minutes / 60, minutes % 60) else "$minutes min"
+}
+
+/** A button of the featured item. */
+private class HeroButton(val label: String, val icon: ImageVector?, val primary: Boolean, val record: Boolean = false, val onClick: () -> Unit)
+
+/** The buttons of [item]: watch or open it first, then favorite / my list, reminder, recording. */
+@Composable
+private fun heroButtons(
+    item: HomeItem,
+    now: Long,
+    favoriteIds: List<String>,
+    guideActions: GuideActions,
+    myList: List<String>,
+    resumeActions: VodTitleActions?,
+    onChannel: (Channel) -> Unit,
+    onToggleFavorite: (String) -> Unit,
+    onOpenResume: (VodTitle) -> Unit,
+    onOpenTitle: (VodTitle) -> Unit,
+    onOpenSport: (SportEvent) -> Unit
+): List<HeroButton> {
+    val watch = stringResource(R.string.reminder_watch)
+    val record = stringResource(R.string.program_record)
+    val cancelRecord = stringResource(R.string.program_cancel_recording)
+    fun recordButton(channel: Channel, program: GuideProgram): HeroButton? {
+        if (!guideActions.canRecord(channel, program, now)) return null
+        val recorded = guideActions.isRecorded(channel, program)
+        return HeroButton(if (recorded) cancelRecord else record, null, primary = false, record = true) { guideActions.toggleRecording?.invoke(channel, program) }
+    }
+    return when (item) {
+        is HomeItem.Live -> {
+            val channel = item.channel
+            val favorite = channel.allIds.any { it in favoriteIds } || channel.isFavorite
+            val program = channel.currentProgram?.let { onAir ->
+                GuideProgram(
+                    id = "", channelUuid = channel.id, title = onAir.title, description = onAir.description,
+                    startTimeIso = "", endTimeIso = "", posterUrl = onAir.posterUrl,
+                    startMillis = onAir.startMillis, endMillis = onAir.endMillis, category = onAir.category
+                )
+            }
+            listOfNotNull(
+                HeroButton(watch, Icons.Filled.PlayArrow, primary = true) { onChannel(channel) },
+                HeroButton(
+                    stringResource(if (favorite) R.string.card_remove_favorite else R.string.card_add_favorite),
+                    if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    primary = false
+                ) { onToggleFavorite(channel.id) },
+                program?.takeIf { it.endMillis > it.startMillis }?.let { recordButton(channel, it) }
+            )
+        }
+        is HomeItem.Title -> {
+            val title = item.title
+            val inList = title.key in myList
+            listOfNotNull(
+                HeroButton(stringResource(R.string.vod_menu_open), Icons.Filled.PlayArrow, primary = true) {
+                    if (item.progress != null) onOpenResume(title) else onOpenTitle(title)
+                },
+                resumeActions?.let { actions ->
+                    HeroButton(stringResource(R.string.vod_row_my_list), if (inList) Icons.Filled.Check else Icons.Filled.Add, primary = false) {
+                        actions.toggleMyList(title.key)
+                    }
+                }
+            )
+        }
+        is HomeItem.Event -> {
+            val event = item.event
+            val program = event.program
+            val primary = when {
+                program.endMillis <= now -> HeroButton(stringResource(R.string.program_replay), Icons.Filled.PlayArrow, primary = true) { onOpenSport(event) }
+                program.startMillis > now -> HeroButton(
+                    if (guideActions.hasReminder(event.channel, program)) stringResource(R.string.program_cancel_reminder)
+                    else stringResource(R.string.program_remind, EpgResolver.formatClock(program.startMillis)),
+                    Icons.Filled.Notifications,
+                    primary = true
+                ) { onOpenSport(event) }
+                else -> HeroButton(watch, Icons.Filled.PlayArrow, primary = true) { onOpenSport(event) }
+            }
+            listOfNotNull(primary, recordButton(event.channel, program))
+        }
+    }
+}
+
+/** The artwork of [shown] over the whole screen: the largest known, else its channel logo on a plain background. */
+@Composable
+private fun Backdrop(shown: Spotlight) {
+    val image by produceState(initialValue = shown.imageUrl?.takeIf { shown.lookupTitle == null }, shown.key) {
+        val title = shown.lookupTitle
+        if (title == null) {
+            value = shown.imageUrl
+            return@produceState
+        }
+        value = ProgramPosterRepository.getBackdropUrl(title) ?: shown.imageUrl ?: ProgramPosterRepository.getPosterUrl(title)
+    }
+    Box(modifier = Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF1B2433), Color(0xFF0B0F17))))) {
+        if (!image.isNullOrBlank()) {
+            FadeInImage(url = image, contentDescription = null, modifier = Modifier.fillMaxSize())
+        } else if (shown.overline != null) {
+            // No picture: the logo of the channel, discreet, above the rows
+            LogoPlate(
+                logoUrl = shown.logoUrl,
+                name = shown.overline,
+                corner = 12.dp,
+                padding = 12.dp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 70.dp, end = 110.dp)
+                    .size(width = 150.dp, height = 100.dp)
+                    .graphicsLayer { alpha = 0.85f }
+            )
+        }
+    }
+}
+
+/** The title (its TMDB logo when there is one), its channel and details; over its live picture, less. */
+@Composable
+private fun SpotlightText(shown: Spotlight, compact: Boolean, live: Boolean) {
+    val context = LocalContext.current
+    val logo by produceState<String?>(initialValue = null, shown.key) {
+        value = shown.lookupTitle?.let { ProgramPosterRepository.getTitleLogoUrl(it, shown.tmdbId, shown.movie) }
+    }
+    if (shown.overline != null && !compact) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LogoPlate(logoUrl = shown.logoUrl, name = shown.overline, corner = 6.dp, padding = 3.dp, modifier = Modifier.size(width = 44.dp, height = 28.dp))
+            if (shown.live) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(LiveRed))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = stringResource(R.string.player_live), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, color = Color(0xFFFFB4B4))
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+    }
+    val logoHeight = if (compact) 64.dp else 96.dp
+    if (logo != null) {
+        AsyncImage(
+            model = remember(logo) { ImageRequest.Builder(context).data(logo).crossfade(200).build() },
+            contentDescription = shown.title,
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterStart,
+            modifier = Modifier.height(logoHeight).widthIn(max = if (compact) 280.dp else 360.dp)
+        )
+    } else {
+        Text(
+            text = shown.title,
+            fontSize = if (compact) 26.sp else 38.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = if (compact) 30.sp else 42.sp
+        )
+    }
+    if (live && !compact) return
+    shown.details?.takeIf { it.isNotBlank() }?.let {
+        Spacer(modifier = Modifier.height(10.dp))
+        val prefix = if (compact && shown.overline != null) "${shown.overline} · " else ""
+        Text(text = prefix + it, fontSize = 13.sp, color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    shown.progress?.let {
+        Spacer(modifier = Modifier.height(10.dp))
+        ProgressLine(progress = it, height = 3.dp, trackColor = Color.White.copy(alpha = 0.25f), color = Color.White, modifier = Modifier.width(200.dp))
+    }
+    shown.description?.takeIf { it.isNotBlank() }?.let {
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(text = it, fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 19.sp)
+    }
+}
+
+/** A landscape card: the program or title artwork (else the channel logo), its channel, its progress; it lifts when focused. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val shine = remember { Animatable(0f) }
+    LaunchedEffect(focused) {
+        if (focused) {
+            shine.snapTo(0f)
+            shine.animateTo(1f, tween(900))
+        }
+    }
+    val channel = when (item) {
+        is HomeItem.Live -> item.channel
+        is HomeItem.Event -> item.event.channel
+        is HomeItem.Title -> null
+    }
+    val program = (item as? HomeItem.Live)?.channel?.currentProgram
+    val event = (item as? HomeItem.Event)?.event?.program
+    val onAir = when (item) {
+        is HomeItem.Live -> program != null
+        is HomeItem.Event -> event!!.startMillis <= now && event.endMillis > now
+        is HomeItem.Title -> false
+    }
+    val progress = when (item) {
+        is HomeItem.Live -> program?.progress
+        is HomeItem.Event -> if (onAir) ((now - event!!.startMillis).toFloat() / (event.endMillis - event.startMillis)).coerceIn(0f, 1f) else null
+        is HomeItem.Title -> item.progress?.fraction
+    }
+    val lookup = program?.title ?: event?.title
+    val guideImage = program?.posterUrl ?: event?.posterUrl
+    val image by produceState(initialValue = (item as? HomeItem.Title)?.let { it.title.backdropUrl ?: it.title.posterUrl } ?: guideImage, item.key) {
+        if (value.isNullOrBlank() && lookup != null) {
+            value = ProgramPosterRepository.getBackdropUrl(lookup) ?: ProgramPosterRepository.getPosterUrl(lookup)
+        }
+    }
+    val shape = RoundedCornerShape(12.dp)
+    val titleTop by animateDpAsState(if (focused) 16.dp else 9.dp, label = "cardTitle")
+    Column(modifier = Modifier.width(CardWidth)) {
+        Surface(
+            onClick = onClick,
+            onLongClick = onLongClick,
+            interactionSource = interactionSource,
+            modifier = modifier.size(width = CardWidth, height = CardHeight).touchClick(onClick, onLongClick),
+            shape = ClickableSurfaceDefaults.shape(shape = shape),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.12f),
+            glow = ClickableSurfaceDefaults.glow(focusedGlow = Glow(Color.Black.copy(alpha = 0.7f), 18.dp)),
+            colors = ClickableSurfaceDefaults.colors(containerColor = SurfaceCard, focusedContainerColor = SurfaceCard)
         ) {
-            itemsIndexed(channels, key = { _, channel -> channel.id }) { _, channel ->
-                val key = "$keyPrefix:${channel.id}"
-                Box(modifier = Modifier.width(ImmersiveCardWidth)) {
-                    CompactChannelCard(
-                        channel = channel,
-                        onClick = { onSelect(channel) },
-                        onLongClick = { onMenu(channel) },
-                        modifier = focusModifier(key, channel)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawWithContent {
+                        drawContent()
+                        if (focused && shine.value < 1f) {
+                            val x = size.width * (shine.value * 1.6f - 0.3f)
+                            drawRect(
+                                Brush.linearGradient(
+                                    0f to Color.Transparent, 0.5f to Color.White.copy(alpha = 0.3f), 1f to Color.Transparent,
+                                    start = Offset(x - size.width * 0.25f, 0f),
+                                    end = Offset(x + size.width * 0.25f, size.height)
+                                )
+                            )
+                        }
+                    }
+            ) {
+                if (!image.isNullOrBlank()) {
+                    FadeInImage(url = image, contentDescription = null, modifier = Modifier.fillMaxSize())
+                } else if (channel != null) {
+                    // No artwork: the logo of the channel
+                    LogoPlate(logoUrl = channel.logoUrl, name = channel.name, corner = 8.dp, padding = 6.dp, modifier = Modifier.align(Alignment.Center).size(width = 76.dp, height = 50.dp))
+                }
+                if (channel != null && !image.isNullOrBlank()) {
+                    LogoPlate(
+                        logoUrl = channel.logoUrl,
+                        name = channel.name,
+                        corner = 5.dp,
+                        padding = 2.dp,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(7.dp).size(width = 34.dp, height = 22.dp)
+                    )
+                }
+                if (onAir) {
+                    Box(modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(7.dp).clip(CircleShape).background(LiveRed))
+                }
+                progress?.takeIf { it > 0f }?.let {
+                    ProgressLine(
+                        progress = it,
+                        height = 3.dp,
+                        trackColor = Color.Black.copy(alpha = 0.35f),
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     )
                 }
             }
         }
+        Spacer(modifier = Modifier.height(titleTop))
+        Text(
+            text = when (item) {
+                is HomeItem.Live -> program?.title ?: item.channel.name
+                is HomeItem.Title -> item.title.title
+                is HomeItem.Event -> item.event.program.title
+            },
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = if (focused) 1f else 0.85f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = when (item) {
+                // Without a program, the name is already the title
+                is HomeItem.Live -> program?.let { "${item.channel.name} · ${it.startTime} – ${it.endTime}" }.orEmpty()
+                is HomeItem.Title -> item.progress?.let { p ->
+                    val left = (p.durationMs - p.positionMs).coerceAtLeast(0)
+                    if (left > 0) stringResource(R.string.home_time_left, durationLabel(left)) else null
+                } ?: item.title.year?.toString().orEmpty()
+                is HomeItem.Event -> "${eventWhen(item.event.program, now)} · ${item.event.channel.name}"
+            },
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.6f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
-/** Artwork of the focused item over the whole screen: the program's, else the channel logo on a plain background. */
+/** "En direct", "21:00", "Demain 18:30", "Le 9 à 20:45", or the replay. */
 @Composable
-private fun SpotlightBackdrop(shown: Spotlight) {
-    // The largest picture known: the TMDB backdrop of the program (with a TMDB key), else the guide's, else TVMaze's
-    val image by produceState(initialValue = shown.imageUrl, shown.key) {
-        value = shown.imageUrl
-        val title = shown.imageTitle ?: return@produceState
-        ProgramPosterRepository.getBackdropUrl(title)?.let {
-            value = it
-            return@produceState
-        }
-        if (value.isNullOrBlank()) value = ProgramPosterRepository.getPosterUrl(title)
-    }
-    Box(modifier = Modifier.fillMaxSize().background(SurfaceDark)) {
-        if (!image.isNullOrBlank()) {
-            FadeInImage(url = image, contentDescription = null, modifier = Modifier.fillMaxSize())
-        } else if (shown.logoUrl != null || shown.overline != null) {
-            LogoPlate(
-                logoUrl = shown.logoUrl,
-                name = shown.overline ?: shown.title,
-                corner = 16.dp,
-                padding = 18.dp,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 140.dp, bottom = 120.dp)
-                    .size(width = 280.dp, height = 190.dp)
-            )
-        }
-    }
-}
-
-/** The focused item: channel, title, hours, progress, summary; over its live picture ([live]), the title and the summary only. */
-@Composable
-private fun SpotlightDetails(shown: Spotlight, live: Boolean = false, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        if (shown.overline != null && !live) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (shown.live) {
-                    Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(LiveRed))
-                    Spacer(modifier = Modifier.width(7.dp))
-                    Text(text = stringResource(R.string.player_live), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = Color.White.copy(alpha = 0.85f))
-                    Spacer(modifier = Modifier.width(10.dp))
-                }
-                Text(text = shown.overline, fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-        }
-        Text(text = shown.title, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        shown.details?.takeIf { it.isNotBlank() && !live }?.let {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = it, fontSize = 13.sp, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        shown.progress?.takeIf { !live }?.let {
-            Spacer(modifier = Modifier.height(8.dp))
-            ProgressLine(progress = it, height = 3.dp, trackColor = Color.White.copy(alpha = 0.2f), modifier = Modifier.width(260.dp))
-        }
-        shown.description?.takeIf { it.isNotBlank() }?.let {
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(text = it, fontSize = 13.sp, color = Color.White.copy(alpha = 0.65f), maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 19.sp)
-        }
-    }
-}
-
-/** A followed match: on air (with its progress), its start, or its replay. */
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-internal fun SportCard(event: SportEvent, now: Long, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val program = event.program
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(10.dp)
-    val onAir = program.startMillis <= now && program.endMillis > now
-    val past = program.endMillis <= now
-    Surface(
-        onClick = onClick,
-        interactionSource = interactionSource,
-        modifier = modifier.width(ImmersiveCardWidth).height(78.dp).touchClick(onClick),
-        shape = ClickableSurfaceDefaults.shape(shape = shape),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-        border = focusRing(shape),
-        colors = ClickableSurfaceDefaults.colors(containerColor = SurfaceDark, focusedContainerColor = SurfaceCard)
-    ) {
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 9.dp)) {
-            Text(
-                text = when {
-                    onAir -> stringResource(R.string.player_live)
-                    past -> stringResource(R.string.program_replay_tag)
-                    else -> programWhenLabel(program.startMillis, now)
-                },
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
-                color = if (onAir) LiveRed else TextSecondary
-            )
-            Text(
-                text = program.title,
-                fontSize = 14.sp,
-                fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(text = event.channel.name, fontSize = 12.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (onAir) {
-                Spacer(modifier = Modifier.weight(1f))
-                ProgressLine(
-                    progress = ((now - program.startMillis).toFloat() / (program.endMillis - program.startMillis)).coerceIn(0f, 1f),
-                    height = 2.dp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    }
-}
-
-/** "21:00", or "Tomorrow 18:30" for a later day. */
-@Composable
-private fun programWhenLabel(start: Long, now: Long): String {
-    val clock = EpgResolver.formatClock(start)
+private fun eventWhen(program: GuideProgram, now: Long): String {
+    if (program.endMillis <= now) return stringResource(R.string.program_replay_tag)
+    if (program.startMillis <= now) return stringResource(R.string.player_live)
+    val clock = EpgResolver.formatClock(program.startMillis)
     val zone = java.time.ZoneId.systemDefault()
-    val day = java.time.Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+    val day = java.time.Instant.ofEpochMilli(program.startMillis).atZone(zone).toLocalDate()
     val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
     return when (day) {
         today -> clock
@@ -683,26 +974,138 @@ private fun programWhenLabel(start: Long, now: Long): String {
     }
 }
 
-private val ImmersiveCardWidth = 260.dp
+/** Glass of the tabs, buttons and menu: a light veil with a bright edge (the picture behind stays visible). */
+private fun Modifier.glass(shape: Shape): Modifier = this
+    .clip(shape)
+    .background(Color(0x33141A24))
+    .background(Color.White.copy(alpha = 0.10f))
+    .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.38f), Color.White.copy(alpha = 0.08f))), shape)
 
-// Height over which the rows fade into the picture at the top of their area
-private val RowsFade = 36.dp
-
-/** The top [height] of the content fades out: rows scrolled up melt into the picture instead of being cut. */
-private fun Modifier.fadingTop(height: androidx.compose.ui.unit.Dp): Modifier = this
-    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-    .drawWithContent {
-        drawContent()
-        val fade = height.toPx()
-        drawRect(
-            brush = Brush.verticalGradient(0f to Color.Transparent, fade / size.height to Color.Black),
-            blendMode = BlendMode.DstIn
-        )
+/** The other screens, in a glass bar at the top: home (here), guide, movies and series, recordings, search, settings. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun GlassTabs(
+    onGuide: (() -> Unit)?,
+    onVod: (() -> Unit)?,
+    onRecordings: (() -> Unit)?,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    updateAvailable: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val pill = RoundedCornerShape(50)
+    Row(
+        modifier = modifier.glass(pill).padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        GlassTab(label = stringResource(R.string.side_menu_home), selected = true, onClick = {})
+        onGuide?.let { GlassTab(label = stringResource(R.string.home_open_guide), onClick = it) }
+        onVod?.let { GlassTab(label = stringResource(R.string.home_open_vod), onClick = it) }
+        onRecordings?.let { GlassTab(label = stringResource(R.string.recordings_screen_title), onClick = it) }
+        GlassTab(icon = Icons.Filled.Search, label = stringResource(R.string.home_search), onClick = onSearch)
+        GlassTab(icon = Icons.Filled.Settings, label = stringResource(if (updateAvailable) R.string.home_settings_update else R.string.home_settings), dot = updateAvailable, onClick = onSettings)
     }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun GlassTab(label: String, onClick: () -> Unit, selected: Boolean = false, icon: ImageVector? = null, dot: Boolean = false) {
+    val shape = RoundedCornerShape(50)
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.height(36.dp).touchClick(onClick),
+        shape = ClickableSurfaceDefaults.shape(shape = shape),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+            contentColor = Color.White,
+            focusedContainerColor = Color.White,
+            focusedContentColor = Color(0xFF0B0D12)
+        )
+    ) {
+        Box(modifier = Modifier.fillMaxHeight().padding(horizontal = if (icon != null) 12.dp else 18.dp), contentAlignment = Alignment.Center) {
+            if (icon != null) {
+                Icon(imageVector = icon, contentDescription = label, modifier = Modifier.size(18.dp))
+                if (dot) Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp).size(6.dp).clip(CircleShape).background(Color(0xFF38BDF8)))
+            } else {
+                Text(text = label, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** A button of the featured item: white for the main one, glass for the others. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun GlassButton(button: HeroButton, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(50)
+    Surface(
+        onClick = button.onClick,
+        modifier = modifier
+            .height(42.dp)
+            .then(if (button.primary) Modifier else Modifier.glass(shape))
+            .touchClick(button.onClick),
+        shape = ClickableSurfaceDefaults.shape(shape = shape),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+        glow = ClickableSurfaceDefaults.glow(focusedGlow = Glow(Color.Black.copy(alpha = 0.5f), 14.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (button.primary) Color.White else Color.Transparent,
+            contentColor = if (button.primary) Color(0xFF0B0D12) else Color.White,
+            focusedContainerColor = Color.White,
+            focusedContentColor = Color(0xFF0B0D12)
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxHeight().padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            when {
+                button.record -> Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(RecordRed))
+                button.icon != null -> Icon(imageVector = button.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+            Text(text = button.label, fontSize = 14.sp, fontWeight = if (button.primary) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun PageDots(count: Int, current: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        repeat(count) { index ->
+            val width by animateDpAsState(if (index == current) 20.dp else 6.dp, label = "dot")
+            Box(
+                modifier = Modifier
+                    .size(width = width, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = if (index == current) 1f else 0.4f))
+            )
+        }
+    }
+}
+
+/** The time, alone, in a corner. */
+@Composable
+private fun Clock(modifier: Modifier = Modifier) {
+    val time by produceState(initialValue = LocalTime.now()) {
+        while (true) {
+            value = LocalTime.now()
+            delay(5_000)
+        }
+    }
+    Text(
+        text = remember(time.hour, time.minute) { time.format(DateTimeFormatter.ofPattern("HH:mm")) },
+        fontSize = 20.sp,
+        fontWeight = FontWeight.Light,
+        color = Color.White,
+        modifier = modifier
+    )
+}
 
 /**
- * Side menu of the immersive home, opened by Left at the start of a row: the home, the other screens, then
- * each row (Right or Back closes it).
+ * Side menu of the home, opened by Left at the start of a row (or before the first featured item): the home, the
+ * other screens, then each row (Right or Back closes it).
  */
 @Composable
 private fun SideMenu(
@@ -719,9 +1122,11 @@ private fun SideMenu(
 ) {
     LazyColumn(
         modifier = Modifier
+            .padding(start = 18.dp, top = 18.dp, bottom = 18.dp)
             .fillMaxHeight()
             .width(SideMenuWidth)
-            .background(Brush.horizontalGradient(0f to SurfaceDark, 0.85f to SurfaceDark.copy(alpha = 0.97f), 1f to SurfaceDark.copy(alpha = 0.9f)))
+            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(24.dp))
+            .glass(RoundedCornerShape(24.dp))
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight) {
                     onClose()
@@ -730,7 +1135,7 @@ private fun SideMenu(
                     false
                 }
             },
-        contentPadding = PaddingValues(start = 24.dp, end = 16.dp, top = 32.dp, bottom = 32.dp),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 20.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         item { MenuRow(label = stringResource(R.string.side_menu_home), icon = Icons.Filled.Home, onClick = onHome, modifier = Modifier.focusRequester(focus)) }
@@ -740,7 +1145,13 @@ private fun SideMenu(
         item { MenuRow(label = stringResource(R.string.home_search), icon = Icons.Filled.Search, onClick = onSearch) }
         item { MenuRow(label = stringResource(R.string.home_settings), icon = Icons.Filled.Settings, onClick = onSettings) }
         if (rows.isNotEmpty()) item {
-            SectionLabel(text = stringResource(R.string.side_menu_rows), modifier = Modifier.padding(start = 14.dp, top = 18.dp, bottom = 6.dp))
+            Text(
+                text = stringResource(R.string.side_menu_rows).uppercase(),
+                fontSize = 11.sp,
+                letterSpacing = 1.4.sp,
+                color = Color.White.copy(alpha = 0.55f),
+                modifier = Modifier.padding(start = 14.dp, top = 16.dp, bottom = 6.dp)
+            )
         }
         itemsIndexed(rows, key = { _, row -> row.first }) { index, (key, name) ->
             MenuRow(label = name, onClick = { onRow(index, key) })
@@ -748,4 +1159,22 @@ private fun SideMenu(
     }
 }
 
-private val SideMenuWidth = 320.dp
+// Featured item shown before the next one (while no live picture plays)
+private const val FEATURED_ROTATION_MS = 8_000L
+private val CardWidth = 176.dp
+private val CardHeight = 99.dp
+private val SideMenuWidth = 300.dp
+// Height over which the rows fade into the picture at the top of their area
+private val RowsFade = 28.dp
+
+/** The top [height] of the content fades out: rows scrolled up melt into the picture instead of being cut. */
+private fun Modifier.fadingTop(height: Dp): Modifier = if (height == 0.dp) this else this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val fade = height.toPx()
+        drawRect(
+            brush = Brush.verticalGradient(0f to Color.Transparent, fade / size.height to Color.Black),
+            blendMode = BlendMode.DstIn
+        )
+    }

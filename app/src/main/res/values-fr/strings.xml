@@ -187,6 +187,10 @@
     <string name="home_retry">Réessayer</string>
     <string name="home_resume">Reprendre</string>
     <string name="home_row_sport">Sport</string>
+    <string name="home_row_up_next">À suivre</string>
+    <string name="home_kind_movie">Film</string>
+    <string name="home_kind_series">Série</string>
+    <string name="home_time_left">%1$s restantes</string>
     <string name="home_row_trakt">Watchlist Trakt</string>
     <string name="home_row_categories">Catégories</string>
     <string name="side_menu_home">Accueil</string>
@@ -216,7 +220,7 @@
     <string name="home_style_classic">Classique</string>
     <string name="home_style_classic_description">Chaînes à la une, catégories et grille des chaînes</string>
     <string name="home_style_immersive">Immersif</string>
-    <string name="home_style_immersive_description">Le programme de la chaîne sélectionnée en plein écran, puis son direct après le délai d\'aperçu ; les chaînes en rangées en bas</string>
+    <string name="home_style_immersive_description">Comme sur une Apple TV : un programme à la une en plein écran (puis son direct après le délai d\'aperçu), des onglets en verre, puis des rangées de programmes et de titres qui se soulèvent quand on les choisit</string>
     <string name="settings_home_rows">Rangées de l\'accueil immersif</string>
     <string name="settings_home_rows_description">Affichées après les favoris, dans cet ordre</string>
     <plurals name="settings_home_rows_count">
