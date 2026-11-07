@@ -708,7 +708,7 @@ fun HomeScreen(
 
 /** Settings button, with a discreet accent dot when an app update is available. */
 @Composable
-private fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) {
+internal fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) {
     Box {
         RoundIconButton(
             icon = Icons.Filled.Settings,
@@ -797,7 +797,7 @@ private fun CompactHomeHeader(
 
 /** Discreet time and date at the top of the home screen. */
 @Composable
-private fun HeaderClock() {
+internal fun HeaderClock() {
     val now by produceState(initialValue = LocalDateTime.now()) {
         while (true) {
             value = LocalDateTime.now()

@@ -16,6 +16,10 @@ import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.ChannelList
 import io.github.sim7b.tele.data.model.ChannelLists
 import io.github.sim7b.tele.data.model.PreviewDelay
+import io.github.sim7b.tele.data.model.HomeLayout
+import io.github.sim7b.tele.data.sport.SportEvents
+import io.github.sim7b.tele.data.trakt.TraktApp
+import io.github.sim7b.tele.data.trakt.TraktSession
 import io.github.sim7b.tele.data.vod.VodCategories
 import io.github.sim7b.tele.data.vod.VodDisplay
 import io.github.sim7b.tele.data.vod.VodEntry
@@ -181,6 +185,20 @@ class SettingsRepository(context: Context) {
     // Live TV kept on the device to pause it and go back in it
     private val _timeshift = MutableStateFlow(true)
     val timeshift: StateFlow<Boolean> = _timeshift.asStateFlow()
+    // Multichannel sound (Dolby, Atmos) sent as it is to the amplifier, or decoded by the device
+    private val _audioPassthrough = MutableStateFlow(true)
+    val audioPassthrough: StateFlow<Boolean> = _audioPassthrough.asStateFlow()
+    // Look of the live TV home (the usual one by default) and the rows of the immersive one
+    private val _homeLayout = MutableStateFlow(HomeLayout())
+    val homeLayout: StateFlow<HomeLayout> = _homeLayout.asStateFlow()
+    // Trakt: the application of the user (client id and secret) and the access to the account, encrypted
+    private val _traktApp = MutableStateFlow(TraktApp("", ""))
+    val traktApp: StateFlow<TraktApp> = _traktApp.asStateFlow()
+    private val _traktSession = MutableStateFlow<TraktSession?>(null)
+    val traktSession: StateFlow<TraktSession?> = _traktSession.asStateFlow()
+    // Teams and competitions followed: their programs in the guide (home row, guide category)
+    private val _followedSport = MutableStateFlow<List<String>>(emptyList())
+    val followedSport: StateFlow<List<String>> = _followedSport.asStateFlow()
     private val _tmdbKey = MutableStateFlow("")
     val tmdbKey: StateFlow<String> = _tmdbKey.asStateFlow()
     private val _vodDisplay = MutableStateFlow(VodDisplay())
@@ -249,6 +267,17 @@ class SettingsRepository(context: Context) {
         _matchFrameRate.value = prefs.getBoolean(KEY_MATCH_FRAME_RATE, true)
         _audioLeveling.value = AudioLeveling.entries.firstOrNull { it.name == prefs.getString(KEY_AUDIO_LEVELING, null) } ?: AudioLeveling.OFF
         _timeshift.value = prefs.getBoolean(KEY_TIMESHIFT, true)
+        _audioPassthrough.value = prefs.getBoolean(KEY_AUDIO_PASSTHROUGH, true)
+        _homeLayout.value = prefs.getString(KEY_HOME_LAYOUT, null)?.let { saved ->
+            try {
+                HomeLayout.fromJson(JSONObject(saved))
+            } catch (e: Exception) {
+                null
+            }
+        } ?: HomeLayout()
+        _followedSport.value = SportEvents.clean(prefs.getString(KEY_FOLLOWED_SPORT, null).orEmpty())
+        readSecretJson(KEY_TRAKT_APP)?.let { _traktApp.value = TraktApp(it.optString("id"), it.optString("secret")) }
+        _traktSession.value = readSecretJson(KEY_TRAKT_SESSION)?.let { TraktSession.fromJson(it) }
         _vodSelections.value = VodCategories.fromJson(prefs.getString(KEY_VOD_SELECTIONS, null))
         _vodDisplay.value = prefs.getString(KEY_VOD_DISPLAY, null)?.let { saved ->
             try {
@@ -432,9 +461,54 @@ class SettingsRepository(context: Context) {
         _audioLeveling.value = leveling
     }
 
+    fun setAudioPassthrough(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_AUDIO_PASSTHROUGH, enabled) }
+        _audioPassthrough.value = enabled
+    }
+
     fun setTimeshift(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_TIMESHIFT, enabled) }
         _timeshift.value = enabled
+    }
+
+    fun setHomeLayout(layout: HomeLayout) {
+        prefs.edit { putString(KEY_HOME_LAYOUT, layout.toJson().toString()) }
+        _homeLayout.value = layout
+    }
+
+    /** Trakt client id or secret (null: unchanged); a new application unlinks the account. */
+    fun setTraktApp(clientId: String? = null, clientSecret: String? = null) {
+        val current = _traktApp.value
+        val app = TraktApp(clientId?.trim() ?: current.clientId, clientSecret?.trim() ?: current.clientSecret)
+        if (app == current) return
+        writeSecretJson(KEY_TRAKT_APP, JSONObject().put("id", app.clientId).put("secret", app.clientSecret).takeIf { app.clientId.isNotEmpty() || app.clientSecret.isNotEmpty() })
+        _traktApp.value = app
+        setTraktSession(null)
+    }
+
+    fun setTraktSession(session: TraktSession?) {
+        writeSecretJson(KEY_TRAKT_SESSION, session?.toJson())
+        _traktSession.value = session
+    }
+
+    private fun readSecretJson(key: String): JSONObject? = prefs.getString(key, null)?.let { stored ->
+        try {
+            JSONObject(secrets.decrypt(stored))
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read a secret setting: ${e.javaClass.simpleName}")
+            null
+        }
+    }
+
+    private fun writeSecretJson(key: String, value: JSONObject?) {
+        prefs.edit { if (value == null) remove(key) else putString(key, secrets.encrypt(value.toString())) }
+    }
+
+    /** The followed teams and competitions, as typed (one per line or comma). */
+    fun setFollowedSport(typed: String) {
+        val cleaned = SportEvents.clean(typed)
+        prefs.edit { putString(KEY_FOLLOWED_SPORT, cleaned.joinToString("\n")) }
+        _followedSport.value = cleaned
     }
 
     fun setVodEnabled(enabled: Boolean) {
@@ -747,6 +821,11 @@ class SettingsRepository(context: Context) {
         put("matchFrameRate", _matchFrameRate.value)
         put("audioLeveling", _audioLeveling.value.name)
         put("timeshift", _timeshift.value)
+        put("audioPassthrough", _audioPassthrough.value)
+        put("homeLayout", _homeLayout.value.toJson())
+        put("followedSport", JSONArray(_followedSport.value))
+        // The Trakt application, not the access to the account: linked again on the other TV
+        _traktApp.value.takeIf { it.clientId.isNotEmpty() }?.let { put("traktApp", JSONObject().put("id", it.clientId).put("secret", it.clientSecret)) }
         put("vodDisplay", _vodDisplay.value.toJson())
         _tmdbKey.value.takeIf { it.isNotEmpty() }?.let { put("tmdbKey", it) }
         _openSubtitlesKey.value.takeIf { it.isNotEmpty() }?.let { put("openSubtitlesKey", it) }
@@ -809,6 +888,10 @@ class SettingsRepository(context: Context) {
         if (json.has("matchFrameRate")) setMatchFrameRate(json.optBoolean("matchFrameRate", true))
         AudioLeveling.entries.firstOrNull { it.name == json.optString("audioLeveling") }?.let { setAudioLeveling(it) }
         if (json.has("timeshift")) setTimeshift(json.optBoolean("timeshift", true))
+        if (json.has("audioPassthrough")) setAudioPassthrough(json.optBoolean("audioPassthrough", true))
+        json.optJSONObject("homeLayout")?.let { setHomeLayout(HomeLayout.fromJson(it)) }
+        strings("followedSport")?.let { setFollowedSport(it.joinToString("\n")) }
+        json.optJSONObject("traktApp")?.let { setTraktApp(it.optString("id"), it.optString("secret")) }
         json.optJSONObject("vodDisplay")?.let { setVodDisplay(VodDisplay.fromJson(it)) }
         json.optStringOrNull("tmdbKey")?.let { setTmdbKey(it) }
         json.optStringOrNull("openSubtitlesKey")?.let { setOpenSubtitlesKey(it) }
@@ -875,6 +958,11 @@ class SettingsRepository(context: Context) {
         private const val KEY_MATCH_FRAME_RATE = "match_frame_rate"
         private const val KEY_AUDIO_LEVELING = "audio_leveling"
         private const val KEY_TIMESHIFT = "timeshift"
+        private const val KEY_AUDIO_PASSTHROUGH = "audio_passthrough"
+        private const val KEY_HOME_LAYOUT = "home_layout"
+        private const val KEY_FOLLOWED_SPORT = "followed_sport"
+        private const val KEY_TRAKT_APP = "trakt_app"
+        private const val KEY_TRAKT_SESSION = "trakt_session"
         private const val KEY_VOD_DISPLAY = "vod_display"
         private const val KEY_VOD_SELECTIONS = "vod_selections"
         private const val VOD_STATE_FILE = "vod_state.json"

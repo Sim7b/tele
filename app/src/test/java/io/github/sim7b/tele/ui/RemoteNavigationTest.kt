@@ -40,6 +40,9 @@ import io.github.sim7b.tele.data.vod.VodSelection
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.SourceType
 import io.github.sim7b.tele.ui.screens.HomeScreen
+import io.github.sim7b.tele.ui.screens.ImmersiveHomeScreen
+import io.github.sim7b.tele.data.model.HomeRow
+import io.github.sim7b.tele.data.model.EpgProgram
 import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.vod.VodCategoryPicker
 import io.github.sim7b.tele.ui.vod.VodTitleActions
@@ -90,6 +93,46 @@ class RemoteNavigationTest {
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         compose.waitForIdle()
         compose.onNode(isFocused() and hasAnyDescendant(hasText("Info Monde")), useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "w960dp-h540dp-land-television")
+    fun `the immersive home starts on the first favorite, shows its program, and Down goes to the next row`() {
+        val news = (1..3).map { channel("$it", "Channel $it").copy(currentProgram = EpgProgram(title = "Program $it", startTime = "20:00", endTime = "21:00")) }
+        val movies = (4..9).map { channel("$it", "Channel $it").copy(group = "Movies") }
+        var opened: Channel? = null
+        compose.setContent {
+            ImmersiveHomeScreen(
+                channels = news + movies,
+                // More favorites than fit on the screen: the row scrolls
+                favorites = news + movies,
+                rows = setOf(HomeRow.CATEGORIES),
+                favoriteIds = (news + movies).map { it.id },
+                onChannelSelected = { opened = it },
+                onToggleFavorite = {},
+                onHideChannel = {},
+                loadStreams = { Result.success(emptyList()) },
+                onSelectStream = { _, _ -> },
+                automaticStreamDescription = { "" },
+                onOpenSettings = {},
+                onOpenSearch = {}
+            )
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNode(isFocused() and hasAnyDescendant(hasText("Channel 1")), useUnmergedTree = true).assertExists()
+        // The focused program over the screen
+        compose.onAllNodes(hasText("Program 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty().let { assertEquals(true, it) }
+        repeat(8) { compose.onRoot().performKeyInput { pressKey(Key.DirectionRight) } }
+        compose.waitForIdle()
+        compose.onNode(isFocused() and hasAnyDescendant(hasText("Channel 9")), useUnmergedTree = true).assertExists()
+        // Down: the first category row ("News")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.waitForIdle()
+        assertEquals("News", opened?.group)
     }
 
     @Test

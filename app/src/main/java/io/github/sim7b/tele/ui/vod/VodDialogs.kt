@@ -267,7 +267,8 @@ internal fun NameDialog(
     confirm: String,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
-    hint: String = stringResource(R.string.vod_collection_name_hint)
+    hint: String = stringResource(R.string.vod_collection_name_hint),
+    maxLength: Int = 60
 ) {
     var name by remember { mutableStateOf(initial) }
     var focused by remember { mutableStateOf(false) }
@@ -281,7 +282,7 @@ internal fun NameDialog(
     VodDialogFrame(title = title, onDismiss = onDismiss) {
         BasicTextField(
             value = name,
-            onValueChange = { name = it.take(60) },
+            onValueChange = { name = it.take(maxLength) },
             singleLine = true,
             textStyle = TextStyle(color = TextPrimary, fontSize = 17.sp),
             cursorBrush = SolidColor(accent),

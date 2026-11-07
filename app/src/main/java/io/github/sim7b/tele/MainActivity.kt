@@ -42,6 +42,15 @@ import io.github.sim7b.tele.data.epg.GuideTimeline
 import io.github.sim7b.tele.data.storage.Reminder
 import io.github.sim7b.tele.data.storage.Reminders
 import io.github.sim7b.tele.data.storage.ReminderAlarms
+import io.github.sim7b.tele.data.sport.SportEvent
+import io.github.sim7b.tele.data.sport.SportEvents
+import io.github.sim7b.tele.data.trakt.Trakt
+import io.github.sim7b.tele.data.trakt.TraktItem
+import io.github.sim7b.tele.data.trakt.TraktMatch
+import io.github.sim7b.tele.data.trakt.TraktWatched
+import io.github.sim7b.tele.data.storage.VodProgress
+import io.github.sim7b.tele.data.model.HomeStyle
+import io.github.sim7b.tele.ui.screens.ImmersiveHomeScreen
 import io.github.sim7b.tele.data.record.Recording
 import io.github.sim7b.tele.data.record.RecordingRules
 import io.github.sim7b.tele.data.record.RecordingScheduler
@@ -155,6 +164,10 @@ sealed class CurrentScreen {
 
 private const val WELCOME_MIN_MS = 1_800L
 private const val HOME_RESUME_SIZE = 12
+// Followed sport looked up again in the guide (matches start, end)
+private const val SPORT_REFRESH_MS = 5 * 60_000L
+// Trakt watchlist read again
+private const val TRAKT_REFRESH_MS = 30 * 60_000L
 private const val FRAME_RATE_SETTLE_MS = 1_500L
 private const val WATCH_NEXT_SIZE = 10
 private const val WATCH_NEXT_DELAY_MS = 3_000L
@@ -225,6 +238,8 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(audioLanguage) { playerManager.setPreferredAudioLanguage(audioLanguage) }
             val audioLeveling by configRepository.audioLeveling.collectAsState()
             LaunchedEffect(audioLeveling) { playerManager.setAudioLeveling(audioLeveling) }
+            val audioPassthrough by configRepository.audioPassthrough.collectAsState()
+            LaunchedEffect(audioPassthrough) { playerManager.audioPassthrough = audioPassthrough }
             val timeshiftOn by configRepository.timeshift.collectAsState()
             LaunchedEffect(timeshiftOn) { playerManager.timeshiftEnabled = timeshiftOn }
 
@@ -358,15 +373,22 @@ class MainActivity : ComponentActivity() {
                 previewJob = previewScope.launch {
                     val url = viewModel.automaticStreamUrls(channel).firstOrNull() ?: channel.activeStreamUrl
                     // The stream choice can take a moment: a channel opened meanwhile must not be replaced
-                    if (currentScreen !is CurrentScreen.Home) return@launch
+                    if (currentScreen !is CurrentScreen.Home && currentScreen !is CurrentScreen.Guide) return@launch
                     playerManager.preview(url, configsById[channel.sourceId]?.customUserAgent, streamAuths)
                 }
             }
-            // Settings, search and guide: no preview behind them (the player takes it over, see playStream); any other
-            // screen cancels a preview still choosing its stream, so it cannot replace the channel opened
+            // Settings and search: no preview behind them (the player takes it over, see playStream); the home and the
+            // guide start their own (the one of the other screen goes); any other screen cancels a preview still
+            // choosing its stream, so it cannot replace the channel opened
+            var previewScreen by remember { mutableStateOf<CurrentScreen?>(null) }
             LaunchedEffect(currentScreen) {
-                if (currentScreen is CurrentScreen.Settings || currentScreen is CurrentScreen.Search || currentScreen is CurrentScreen.Guide) previewChannel(null)
-                else if (currentScreen !is CurrentScreen.Home) previewJob?.cancel()
+                val screen = currentScreen
+                when {
+                    screen is CurrentScreen.Settings || screen is CurrentScreen.Search -> previewChannel(null)
+                    screen is CurrentScreen.Home || screen is CurrentScreen.Guide -> if (previewScreen != null && previewScreen != screen) previewChannel(null)
+                    else -> previewJob?.cancel()
+                }
+                previewScreen = screen
             }
 
             // Hiding / favoriting a grouped channel applies to all its versions ("TF1 HD", "TF1 FHD")
@@ -390,6 +412,52 @@ class MainActivity : ComponentActivity() {
             val visibleChannels = homeLists.visible
             val favoriteChannels = homeLists.favorites
             val categoryCounts = homeLists.categoryCounts
+            // Immersive home: every favorite (the usual home fills 8 tiles), the followed sport of the guide
+            val homeLayout by configRepository.homeLayout.collectAsState()
+            val allFavorites = remember(favoriteIds, unhiddenChannels) {
+                val byId = HashMap<String, Channel>()
+                unhiddenChannels.forEach { channel -> channel.allIds.forEach { byId.putIfAbsent(it, channel) } }
+                favoriteIds.mapNotNull { byId[it] }.distinctBy { it.id }
+            }
+            val followedSport by configRepository.followedSport.collectAsState()
+            val sportSchedules by viewModel.schedules.collectAsState()
+            val sportEvents by produceState(emptyList<SportEvent>(), followedSport, unhiddenChannels, sportSchedules) {
+                while (true) {
+                    value = withContext(Dispatchers.Default) {
+                        val now = System.currentTimeMillis()
+                        SportEvents.find(followedSport, unhiddenChannels, sportSchedules, now, replayable = { channel, program -> Catchup.isReplayable(channel, program, now) })
+                    }
+                    delay(SPORT_REFRESH_MS)
+                }
+            }
+            // Trakt: the watchlist (immersive home), read again every half hour; the access refreshed when needed
+            val traktApp by configRepository.traktApp.collectAsState()
+            val traktSession by configRepository.traktSession.collectAsState()
+            val traktLibrary by viewModel.vod.library.collectAsState()
+            val traktItems by produceState(emptyList<TraktItem>(), traktApp, traktSession, vodEnabled) {
+                val session = traktSession
+                if (session == null || !traktApp.isComplete || !vodEnabled) {
+                    value = emptyList()
+                    return@produceState
+                }
+                while (true) {
+                    try {
+                        val fresh = Trakt.fresh(traktApp, session)
+                        if (fresh != session) {
+                            // Saved, this runs again with it (none: the account is no longer linked)
+                            configRepository.setTraktSession(fresh)
+                            return@produceState
+                        }
+                        value = Trakt.watchlist(traktApp, fresh)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w("Trakt", "Watchlist unavailable: ${e.javaClass.simpleName}")
+                    }
+                    delay(TRAKT_REFRESH_MS)
+                }
+            }
+            val traktWatchlist = remember(traktItems, traktLibrary.titles) { TraktMatch.titles(traktItems, traktLibrary.titles) }
             // Lists of channels made by the user (with their channels found), and the channel menu actions on them
             val channelListViews by viewModel.channelLists.collectAsState()
             val savedChannelLists by configRepository.channelLists.collectAsState()
@@ -536,7 +604,59 @@ class MainActivity : ComponentActivity() {
                             val homeResume = remember(homeProgress, homeLibrary.byKey, vodEnabled, vodHidden) {
                                 if (vodEnabled && !vodHidden) VodRows.continuing(homeLibrary.byKey, homeProgress, limit = HOME_RESUME_SIZE) else emptyList()
                             }
-                            saveableStateHolder.SaveableStateProvider("home") {
+                            // Immersive home (chosen in the settings): with a remote and channels only, the usual home
+                            // shows the loading, the errors and the first steps
+                            val immersive = homeLayout.style == HomeStyle.IMMERSIVE && !Device.isTouch && visibleChannels.isNotEmpty()
+                            if (immersive) saveableStateHolder.SaveableStateProvider("home-immersive") {
+                                val homeActions = guideActions(returnTo = CurrentScreen.Home)
+                                ImmersiveHomeScreen(
+                                    channels = visibleChannels,
+                                    favorites = allFavorites,
+                                    rows = homeLayout.rows,
+                                    favoriteIds = favoriteIds,
+                                    categoryOrder = categoryOrder,
+                                    channelLists = channelListViews,
+                                    savedLists = savedChannelLists,
+                                    onToggleInList = ::toggleInList,
+                                    onCreateList = { name, channel -> configRepository.createChannelList(name, channel.id) },
+                                    resume = homeResume,
+                                    onOpenResume = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) },
+                                    resumeActions = vodActions,
+                                    vodMyList = homeMyList,
+                                    vodCollections = homeCollections,
+                                    sport = sportEvents,
+                                    onOpenSport = { event ->
+                                        val now = System.currentTimeMillis()
+                                        when {
+                                            event.program.endMillis <= now -> homeActions.replay?.invoke(event.channel, event.program)
+                                            event.program.startMillis > now -> homeActions.toggleReminder(event.channel, event.program)
+                                            else -> currentScreen = CurrentScreen.Player(event.channel)
+                                        }
+                                    },
+                                    watchlist = if (vodEnabled && !vodHidden) traktWatchlist else emptyList(),
+                                    onOpenTitle = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) },
+                                    updateAvailable = updateState.release != null && updateState !is UpdateState.Failed,
+                                    onChannelSelected = { channel -> currentScreen = CurrentScreen.Player(channel) },
+                                    onToggleFavorite = { chId -> toggleFavorite(chId) },
+                                    onHideChannel = { chId -> hideChannel(chId) },
+                                    loadStreams = { ch -> viewModel.loadStreams(ch) },
+                                    onSelectStream = { ch, stream ->
+                                        viewModel.selectStream(ch, stream)
+                                        currentScreen = CurrentScreen.Player(ch)
+                                    },
+                                    automaticStreamDescription = automaticStreamDescription,
+                                    onOpenSettings = { currentScreen = CurrentScreen.Settings() },
+                                    onOpenSearch = { voice -> currentScreen = CurrentScreen.Search(startWithVoice = voice) },
+                                    onOpenVod = if (vodEnabled) ({
+                                        if (vodHidden) pinFor = { currentScreen = CurrentScreen.Vod } else currentScreen = CurrentScreen.Vod
+                                    }) else null,
+                                    onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
+                                    onOpenRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
+                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide },
+                                    onPreviewChannel = { channel -> previewChannel(channel) },
+                                    previewSurface = { PreviewVideo(playerManager) }
+                                )
+                            } else saveableStateHolder.SaveableStateProvider("home") {
                                 HomeScreen(
                                     channels = visibleChannels,
                                     favorites = favoriteChannels,
@@ -687,6 +807,10 @@ class MainActivity : ComponentActivity() {
                                     categoryOrder = categoryOrder,
                                     recents = recentChannels,
                                     actions = guideActions(returnTo = CurrentScreen.Guide),
+                                    sportChannels = remember(sportEvents) { sportEvents.map { it.channel }.distinctBy { it.id } },
+                                    previewDelayMs = previewDelay.millis.takeIf { !Device.isTouch },
+                                    onPreviewChannel = { channel -> previewChannel(channel) },
+                                    previewSurface = { PreviewVideo(playerManager) },
                                     onWatch = { channel -> currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Guide) },
                                     onBack = {
                                         saveableStateHolder.removeState("guide")
@@ -866,6 +990,26 @@ class MainActivity : ComponentActivity() {
                                             positionMs = position,
                                             durationMs = duration
                                         )
+                                    }
+                                    // Watched to the end: added once to the Trakt history (by its ids only)
+                                    val session = traktSession
+                                    if (session != null && traktApp.isComplete && duration > 0 && position >= duration * VodProgress.FINISHED_FRACTION &&
+                                        (played.tmdbId != null || played.imdbId != null) && traktSent.add(played.itemKey)
+                                    ) {
+                                        lifecycleScope.launch {
+                                            try {
+                                                val fresh = Trakt.fresh(traktApp, session) ?: return@launch
+                                                Trakt.addToHistory(
+                                                    traktApp,
+                                                    fresh,
+                                                    TraktWatched(played.tmdbId, played.imdbId, played.season, played.episode, System.currentTimeMillis())
+                                                )
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: Exception) {
+                                                Log.w("Trakt", "History not sent: ${e.javaClass.simpleName}")
+                                            }
+                                        }
                                     }
                                 },
                                 onBack = { currentScreen = screen.returnTo },
@@ -1169,6 +1313,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private val recordingStore by lazy { RecordingStore.get(this) }
+
+    // Movies and episodes already sent to the Trakt history in this run (the position is reported every few seconds)
+    private val traktSent = java.util.Collections.synchronizedSet(HashSet<String>())
 
     // Android 13+: the reminders need the notifications, asked for when the first one is set
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
