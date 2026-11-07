@@ -238,6 +238,9 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(audioLanguage) { playerManager.setPreferredAudioLanguage(audioLanguage) }
             val audioLeveling by configRepository.audioLeveling.collectAsState()
             LaunchedEffect(audioLeveling) { playerManager.setAudioLeveling(audioLeveling) }
+            // Program artwork: the large TMDB backdrops need the TMDB key
+            val artworkTmdbKey by configRepository.tmdbKey.collectAsState()
+            LaunchedEffect(artworkTmdbKey) { ProgramPosterRepository.tmdbKey = artworkTmdbKey.takeIf { it.isNotBlank() } }
             val audioPassthrough by configRepository.audioPassthrough.collectAsState()
             LaunchedEffect(audioPassthrough) { playerManager.audioPassthrough = audioPassthrough }
             val timeshiftOn by configRepository.timeshift.collectAsState()

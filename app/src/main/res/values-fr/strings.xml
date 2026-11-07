@@ -189,6 +189,8 @@
     <string name="home_row_sport">Sport</string>
     <string name="home_row_trakt">Watchlist Trakt</string>
     <string name="home_row_categories">Catégories</string>
+    <string name="side_menu_home">Accueil</string>
+    <string name="side_menu_rows">Aller à</string>
     <string name="settings_followed_sport">Sport suivi</string>
     <string name="settings_followed_sport_hint">Équipes et compétitions, séparées par des virgules : PSG, Stade Toulousain, Ligue 1</string>
     <string name="settings_followed_sport_none">Aucun</string>

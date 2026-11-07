@@ -133,6 +133,26 @@ class RemoteNavigationTest {
         compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.waitForIdle()
         assertEquals("News", opened?.group)
+
+        // Left at the start of the row: the side menu, on the home; down to the "Movies" row, OK: its first channel
+        repeat(5) {
+            if (compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Home")), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
+                compose.onRoot().performKeyInput { pressKey(Key.DirectionLeft) }
+                compose.mainClock.advanceTimeBy(500)
+                compose.waitForIdle()
+            }
+        }
+        compose.onNode(isFocused() and hasAnyDescendant(hasText("Home")), useUnmergedTree = true).assertExists()
+        repeat(10) {
+            if (compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Movies")), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
+                compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+                compose.waitForIdle()
+            }
+        }
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNode(isFocused() and hasAnyDescendant(hasText("Channel 4")), useUnmergedTree = true).assertExists()
     }
 
     @Test
