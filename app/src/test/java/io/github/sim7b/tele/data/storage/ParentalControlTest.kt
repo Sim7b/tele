@@ -53,7 +53,9 @@ class ParentalControlTest {
     @Test
     fun `the code is kept as a salted hash only, and survives a restart`() {
         control().setPin("1234")
-        assertFalse(prefs.all.values.any { it.toString().contains("1234") })
+        // Not stored as it is (a 64-digit hex hash may hold "1234" by chance: the whole value is compared)
+        assertFalse(prefs.all.values.any { it.toString() == "1234" })
+        assertTrue(prefs.all.values.any { it.toString().matches(Regex("[0-9a-f]{64}")) })
         val restarted = control()
         assertTrue(restarted.active())
         assertTrue(restarted.unlock("1234"))
