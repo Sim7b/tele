@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import io.github.sim7b.tele.data.model.ChannelList
 import io.github.sim7b.tele.data.model.PreviewDelay
+import io.github.sim7b.tele.data.model.HomeRow
+import io.github.sim7b.tele.data.model.HomeStyle
 import io.github.sim7b.tele.data.vod.PosterSize
 import io.github.sim7b.tele.data.vod.VodFilter
 import io.github.sim7b.tele.data.vod.VodKind
@@ -173,7 +175,10 @@ fun SettingsScreen(
     val currentAccent by repository.accentColor.collectAsState()
     val currentQuality by repository.qualityPreference.collectAsState()
     val previewDelay by repository.previewDelay.collectAsState()
+    val homeLayout by repository.homeLayout.collectAsState()
+    val followedSport by repository.followedSport.collectAsState()
     val matchFrameRate by repository.matchFrameRate.collectAsState()
+    val audioPassthrough by repository.audioPassthrough.collectAsState()
     val audioLeveling by repository.audioLeveling.collectAsState()
     val timeshift by repository.timeshift.collectAsState()
     val vodEnabled by repository.vodEnabled.collectAsState()
@@ -195,6 +200,9 @@ fun SettingsScreen(
     var renamingList by remember { mutableStateOf<ChannelList?>(null) }
     var editingKey by remember { mutableStateOf<ApiKeyService?>(null) }
     val openSubtitlesKey by repository.openSubtitlesKey.collectAsState()
+    val traktApp by repository.traktApp.collectAsState()
+    val traktSession by repository.traktSession.collectAsState()
+    var linkingTrakt by remember { mutableStateOf(false) }
     val subtitleLanguages by repository.subtitleLanguages.collectAsState()
     val currentBouquet by repository.bouquet.collectAsState()
     val hiddenIds by repository.hiddenIds.collectAsState()
@@ -223,6 +231,7 @@ fun SettingsScreen(
     var syncMessage by remember { mutableStateOf<String?>(null) }
     // Configuration transfer with another TV of the local network
     var showSendConfig by remember { mutableStateOf(false) }
+    var editingSport by remember { mutableStateOf(false) }
     var showBackupExport by remember { mutableStateOf(false) }
     var showBackupImport by remember { mutableStateOf(false) }
     var showUnmatched by remember { mutableStateOf(false) }
@@ -570,6 +579,14 @@ fun SettingsScreen(
                                 }
                                 item {
                                     SettingRow(
+                                        label = stringResource(R.string.settings_audio_passthrough),
+                                        description = stringResource(R.string.settings_audio_passthrough_description),
+                                        toggle = audioPassthrough,
+                                        onClick = { repository.setAudioPassthrough(!audioPassthrough) }
+                                    )
+                                }
+                                item {
+                                    SettingRow(
                                         label = stringResource(R.string.settings_timeshift),
                                         description = stringResource(R.string.settings_timeshift_description),
                                         toggle = timeshift,
@@ -619,6 +636,31 @@ fun SettingsScreen(
                                         modifier = Modifier.focusRequester(focusOf(SettingsPanel.Density))
                                     )
                                 }
+                                // The live TV home: the usual one, or the program of the focused channel over the screen
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_home_style),
+                                        value = homeStyleLabel(homeLayout.style),
+                                        onClick = { open(SettingsPanel.HomeLook) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.HomeLook))
+                                    )
+                                }
+                // Teams and competitions followed: their matches on the home and in the guide
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_followed_sport),
+                                        value = followedSport.joinToString(", ").ifEmpty { stringResource(R.string.settings_followed_sport_none) },
+                                        onClick = { editingSport = true }
+                                    )
+                                }
+                                if (homeLayout.style == HomeStyle.IMMERSIVE) item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_home_rows),
+                                        value = pluralStringResource(R.plurals.settings_home_rows_count, homeLayout.rows.size + 1, homeLayout.rows.size + 1),
+                                        onClick = { open(SettingsPanel.HomeRows) },
+                                        modifier = Modifier.focusRequester(focusOf(SettingsPanel.HomeRows))
+                                    )
+                                }
                             }
 
                             SettingsPage.VOD -> {
@@ -633,6 +675,19 @@ fun SettingsScreen(
                                 }
                                 if (vodEnabled) {
                                     item { KeyRow(ApiKeyService.TMDB, tmdbKey) }
+                                    // Trakt: its application (id and secret, created on trakt.tv), then the account linked by a code
+                                    item {
+                                        SettingGroup(title = "Trakt", caption = stringResource(R.string.settings_trakt_description))
+                                    }
+                                    item { KeyRow(ApiKeyService.TRAKT_ID, traktApp.clientId) }
+                                    item { KeyRow(ApiKeyService.TRAKT_SECRET, traktApp.clientSecret) }
+                                    if (traktApp.isComplete) item {
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_trakt_account),
+                                            value = stringResource(if (traktSession != null) R.string.settings_trakt_linked else R.string.settings_trakt_not_linked),
+                                            onClick = { if (traktSession != null) repository.setTraktSession(null) else linkingTrakt = true }
+                                        )
+                                    }
                                     // Categories loaded from each source (chosen at the first opening)
                                     item {
                                         SettingGroup(
@@ -912,6 +967,35 @@ fun SettingsScreen(
                     },
                     onDismiss = close
                 )
+                SettingsPanel.HomeLook -> ChoicePanel(
+                    title = stringResource(R.string.settings_home_style),
+                    description = stringResource(R.string.settings_home_style_description),
+                    choices = HomeStyle.entries.map { style ->
+                        Choice(
+                            label = homeStyleLabel(style),
+                            description = stringResource(if (style == HomeStyle.CLASSIC) R.string.home_style_classic_description else R.string.home_style_immersive_description),
+                            selected = style == homeLayout.style,
+                            onClick = { repository.setHomeLayout(homeLayout.copy(style = style)) }
+                        )
+                    },
+                    onDismiss = close
+                )
+                SettingsPanel.HomeRows -> ChoicePanel(
+                    title = stringResource(R.string.settings_home_rows),
+                    description = stringResource(R.string.settings_home_rows_description),
+                    style = ChoiceStyle.MULTIPLE,
+                    choices = HomeRow.entries.map { row ->
+                        Choice(
+                            label = stringResource(homeRowLabel(row)),
+                            selected = row in homeLayout.rows,
+                            onClick = {
+                                val rows = if (row in homeLayout.rows) homeLayout.rows - row else homeLayout.rows + row
+                                repository.setHomeLayout(homeLayout.copy(rows = rows))
+                            }
+                        )
+                    },
+                    onDismiss = close
+                )
                 SettingsPanel.Preview -> ChoicePanel(
                     title = stringResource(R.string.settings_preview_title),
                     description = stringResource(R.string.settings_preview_description),
@@ -957,6 +1041,8 @@ fun SettingsScreen(
                                 when (current.service) {
                                     ApiKeyService.TMDB -> repository.setTmdbKey("")
                                     ApiKeyService.OPENSUBTITLES -> repository.setOpenSubtitlesKey("")
+                                    ApiKeyService.TRAKT_ID -> repository.setTraktApp(clientId = "")
+                                    ApiKeyService.TRAKT_SECRET -> repository.setTraktApp(clientSecret = "")
                                 }
                             },
                             icon = Icons.Filled.Delete,
@@ -1050,6 +1136,8 @@ fun SettingsScreen(
                     when (service) {
                         ApiKeyService.TMDB -> repository.setTmdbKey(key)
                         ApiKeyService.OPENSUBTITLES -> repository.setOpenSubtitlesKey(key)
+                        ApiKeyService.TRAKT_ID -> repository.setTraktApp(clientId = key)
+                        ApiKeyService.TRAKT_SECRET -> repository.setTraktApp(clientSecret = key)
                     }
                     editingKey = null
                 }
@@ -1122,6 +1210,23 @@ fun SettingsScreen(
         if (showReceiveConfig) {
             ReceiveConfigDialog(repository = repository, onDismiss = { showReceiveConfig = false })
         }
+        if (linkingTrakt) {
+            TraktLinkDialog(app = traktApp, onLinked = { repository.setTraktSession(it) }, onDismiss = { linkingTrakt = false })
+        }
+        if (editingSport) {
+            NameDialog(
+                title = stringResource(R.string.settings_followed_sport),
+                initial = followedSport.joinToString(", "),
+                confirm = stringResource(R.string.vod_collection_save),
+                hint = stringResource(R.string.settings_followed_sport_hint),
+                maxLength = 600,
+                onConfirm = { typed ->
+                    repository.setFollowedSport(typed)
+                    editingSport = false
+                },
+                onDismiss = { editingSport = false }
+            )
+        }
         if (showBackupExport) {
             BackupExportDialog(repository = repository, onDismiss = { showBackupExport = false })
         }
@@ -1167,6 +1272,8 @@ private sealed interface SettingsPanel {
     data object Background : SettingsPanel
     data object Accent : SettingsPanel
     data object Density : SettingsPanel
+    data object HomeLook : SettingsPanel
+    data object HomeRows : SettingsPanel
     data class Default(val kind: VodKind, val field: DefaultField) : SettingsPanel
 }
 
@@ -1271,6 +1378,14 @@ private enum class ApiKeyService(
     OPENSUBTITLES(
         "OpenSubtitles", "https://www.opensubtitles.com/consumers", R.string.settings_opensubtitles_dialog_title, R.string.settings_opensubtitles_dialog_hint,
         R.string.settings_opensubtitles_title, R.string.settings_opensubtitles_description
+    ),
+    TRAKT_ID(
+        "Trakt", "https://trakt.tv/oauth/applications", R.string.settings_trakt_id_dialog_title, R.string.settings_trakt_dialog_hint,
+        R.string.settings_trakt_id, R.string.settings_trakt_description
+    ),
+    TRAKT_SECRET(
+        "Trakt", "https://trakt.tv/oauth/applications", R.string.settings_trakt_secret_dialog_title, R.string.settings_trakt_dialog_hint,
+        R.string.settings_trakt_secret, R.string.settings_trakt_description
     )
 }
 
@@ -1426,6 +1541,17 @@ private fun vodRowLabel(kind: VodRow.Kind): String = stringResource(
         VodRow.Kind.GENRE -> R.string.settings_vod_genres_row
     }
 )
+
+@Composable
+private fun homeStyleLabel(style: HomeStyle): String =
+    stringResource(if (style == HomeStyle.CLASSIC) R.string.home_style_classic else R.string.home_style_immersive)
+
+private fun homeRowLabel(row: HomeRow): Int = when (row) {
+    HomeRow.RESUME -> R.string.home_resume
+    HomeRow.SPORT -> R.string.home_row_sport
+    HomeRow.TRAKT -> R.string.home_row_trakt
+    HomeRow.CATEGORIES -> R.string.home_row_categories
+}
 
 @Composable
 private fun previewDelayLabel(delay: PreviewDelay): String = when (delay) {

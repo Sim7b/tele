@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -62,7 +63,9 @@ fun ResumeRow(
     modifier: Modifier = Modifier,
     actions: VodTitleActions? = null,
     myList: List<String> = emptyList(),
-    collections: List<VodCollection> = emptyList()
+    collections: List<VodCollection> = emptyList(),
+    // Immersive home: the focused title shown over the screen
+    onFocused: (VodTitle) -> Unit = {}
 ) {
     var menuFor by remember { mutableStateOf<VodTitle?>(null) }
     var pickerFor by remember { mutableStateOf<VodTitle?>(null) }
@@ -88,7 +91,8 @@ fun ResumeRow(
                     progress = progress.fraction,
                     onClick = { onOpen(title) },
                     onLongClick = if (actions != null) ({ menuFor = title }) else null,
-                    modifier = if (title.key == nextKey) Modifier.focusRequester(nextFocus) else Modifier
+                    modifier = (if (title.key == nextKey) Modifier.focusRequester(nextFocus) else Modifier)
+                        .onFocusChanged { if (it.isFocused) onFocused(title) }
                 )
             }
         }

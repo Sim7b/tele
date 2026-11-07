@@ -74,11 +74,14 @@ import io.github.sim7b.tele.ui.components.rememberNow
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.Color
 import java.time.ZoneId
 
 private const val ALL_CHANNELS = "__all__"
 private const val FAVORITES = "__favorites__"
 private const val RECENTS = "__recents__"
+private const val SPORT = "__sport__"
 // Guide kept on the device: 30 hours ahead (see GuideLoader)
 private const val GUIDE_HOURS_AHEAD = 30L
 private val RowHeight = 46.dp
@@ -111,26 +114,33 @@ fun GuideScreen(
     categoryOrder: List<String> = emptyList(),
     // Last watched first
     recents: List<Channel> = emptyList(),
-    actions: GuideActions = GuideActions()
+    actions: GuideActions = GuideActions(),
+    // Channels showing the followed sport (see SportEvents), first category after the recent ones
+    sportChannels: List<Channel> = emptyList(),
+    // Muted live picture of the focused channel, after [previewDelayMs] (null: none)
+    previewDelayMs: Long? = null,
+    onPreviewChannel: (Channel?) -> Unit = {},
+    previewSurface: @Composable () -> Unit = {}
 ) {
     val now = rememberNow()
     val zone = remember { ZoneId.systemDefault() }
 
     val lists = actions.listCategories
-    val categories = remember(channels, favorites.isEmpty(), recents.isEmpty(), categoryOrder, lists) {
-        listOfNotNull(FAVORITES.takeIf { favorites.isNotEmpty() }, RECENTS.takeIf { recents.isNotEmpty() }) + lists.keys + ALL_CHANNELS +
+    val categories = remember(channels, favorites.isEmpty(), recents.isEmpty(), sportChannels.isEmpty(), categoryOrder, lists) {
+        listOfNotNull(FAVORITES.takeIf { favorites.isNotEmpty() }, RECENTS.takeIf { recents.isNotEmpty() }, SPORT.takeIf { sportChannels.isNotEmpty() }) + lists.keys + ALL_CHANNELS +
             Categories.ordered(channels.map { it.group }.distinct(), categoryOrder)
     }
     fun rowsOf(key: String): List<Channel> = when (key) {
         FAVORITES -> favorites
         RECENTS -> recents
+        SPORT -> sportChannels
         ALL_CHANNELS -> channels
         in lists -> lists.getValue(key).channels
         else -> channels.filter { it.group == key }
     }
     var categoryKey by rememberSaveable { mutableStateOf(ALL_CHANNELS) }
     if (categoryKey !in categories) categoryKey = ALL_CHANNELS
-    val rows = remember(categoryKey, channels, favorites, recents, lists) { rowsOf(categoryKey) }
+    val rows = remember(categoryKey, channels, favorites, recents, sportChannels, lists) { rowsOf(categoryKey) }
     // With replay channels, the grid also goes back over the past day
     val hasReplay = remember(channels, actions.replay != null) { actions.replay != null && channels.any { it.catchupDays > 0 } }
     var menuProgram by remember { mutableStateOf<Pair<Channel, GuideProgram>?>(null) }
@@ -164,6 +174,19 @@ fun GuideScreen(
         var focusedStart by rememberSaveable { mutableLongStateOf(GuideTimeline.programAt(programsAt(rows, row), now)?.startMillis ?: -1L) }
         var viewStart by rememberSaveable { mutableLongStateOf(nowSlot) }
         val position = GuidePosition(row, cursor, focusedStart, viewStart)
+        // Live picture of the focused channel once it stayed focused for the delay (not while choosing a category)
+        val previewed = rows.getOrNull(row)?.takeIf { !headerFocused && previewDelayMs != null }
+        var previewShown by remember { mutableStateOf(false) }
+        LaunchedEffect(previewed?.id) {
+            if (previewShown) {
+                previewShown = false
+                onPreviewChannel(null)
+            }
+            val channel = previewed ?: return@LaunchedEffect
+            delay(previewDelayMs ?: return@LaunchedEffect)
+            previewShown = true
+            onPreviewChannel(channel)
+        }
         fun moveTo(next: GuidePosition) {
             row = next.row
             cursor = next.cursor
@@ -271,6 +294,7 @@ fun GuideScreen(
                 category = when (categoryKey) {
                     FAVORITES -> stringResource(R.string.home_favorites)
                     RECENTS -> stringResource(R.string.panel_recent_channels)
+                    SPORT -> stringResource(R.string.home_row_sport)
                     ALL_CHANNELS -> stringResource(R.string.panel_all_channels)
                     in lists -> lists.getValue(categoryKey).name
                     else -> groupLabel(categoryKey)
@@ -320,6 +344,16 @@ fun GuideScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(text = stringResource(R.string.panel_no_information), fontSize = 12.sp, color = TextSecondary)
                     }
+                }
+                if (previewShown && !compact) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .fillMaxHeight()
+                            .aspectRatio(16f / 9f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black)
+                    ) { previewSurface() }
                 }
             }
 

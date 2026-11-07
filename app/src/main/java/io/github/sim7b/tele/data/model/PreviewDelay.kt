@@ -10,7 +10,8 @@ enum class PreviewDelay(val millis: Long?, val seconds: Int) {
     ONE_SECOND(1_000L, 1),
     TWO_SECONDS(2_000L, 2),
     THREE_SECONDS(3_000L, 3),
-    FIVE_SECONDS(5_000L, 5);
+    FIVE_SECONDS(5_000L, 5),
+    TEN_SECONDS(10_000L, 10);
 
     companion object {
         val DEFAULT = TWO_SECONDS

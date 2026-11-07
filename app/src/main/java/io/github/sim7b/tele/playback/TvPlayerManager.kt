@@ -49,6 +49,10 @@ import io.github.sim7b.tele.data.subtitles.ExternalSubtitle
 import java.util.concurrent.TimeUnit
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -434,7 +438,16 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
             .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
             .build()
 
-        return ExoPlayer.Builder(context)
+        // Multichannel sound (Dolby Digital, Atmos) sent as it is to the amplifier when the TV allows it, or decoded here
+        val renderers = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink? =
+                if (audioPassthrough) {
+                    super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
+                } else {
+                    DefaultAudioSink.Builder(context).setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES).build()
+                }
+        }
+        return ExoPlayer.Builder(context, renderers)
             .setLoadControl(loadControl)
             // Audio focus handling: pauses/resumes cleanly around other apps
             .setAudioAttributes(audioAttributes, true)
@@ -623,6 +636,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
     private fun codecLabel(format: Format): String? {
         val mime = format.sampleMimeType ?: return null
+        if (mime == MimeTypes.AUDIO_E_AC3_JOC) return "E-AC3 ATMOS"
         return mime.substringAfter('/').uppercase()
     }
 
@@ -1068,9 +1082,27 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         _error.value = null
         _streamInfo.value = StreamInfo()
         droppedFrames = 0
+        if (rebuildOnStop) rebuildPlayer()
     }
 
     /** Loudness of the decoded sound, applied at once to the current audio session. */
+    /** Multichannel sound sent as it is to the amplifier (else decoded on the device). */
+    var audioPassthrough = true
+        set(value) {
+            if (field == value) return
+            field = value
+            // The player is built again with it, now when nothing plays, else once stopped
+            val player = exoPlayer ?: return
+            if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) rebuildPlayer() else rebuildOnStop = true
+        }
+    private var rebuildOnStop = false
+
+    private fun rebuildPlayer() {
+        rebuildOnStop = false
+        exoPlayer?.release()
+        exoPlayer = null
+    }
+
     fun setAudioLeveling(choice: AudioLeveling) {
         audioLeveling = choice
         levelingEffect.apply(exoPlayer?.audioSessionId ?: 0, choice)
