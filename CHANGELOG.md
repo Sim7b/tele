@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.21](https://github.com/Sim7b/tele/compare/v0.3.20...v0.3.21) (2026-11-07)
+
+### Bug Fixes
+
+* **home:** immersive home side menu, header fading, sharper artwork ([43beb4b](https://github.com/Sim7b/tele/commit/43beb4b9ab09765c7e3ac0e8f01d84b588ba9304))
+
 ## [0.3.20](https://github.com/Sim7b/tele/compare/v0.3.19...v0.3.20) (2026-11-07)
 
 ### Features
