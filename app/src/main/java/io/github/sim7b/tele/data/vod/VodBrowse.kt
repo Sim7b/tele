@@ -93,6 +93,47 @@ object VodBrowse {
         return shelves.filter { it.titles.isNotEmpty() }
     }
 
+    /**
+     * Rows of the screen of a streaming service, from its titles in the library by popularity ([popular]): its own
+     * productions first ([originals], apart from the titles it only shows), the most popular, then the latest
+     * releases, the best rated and the main genres, like a tab.
+     */
+    fun platformShelves(popular: List<VodTitle>, facts: Map<String, TmdbFacts>, originals: List<VodTitle> = emptyList()): List<VodShelf> {
+        val shelves = ArrayList<VodShelf>()
+        if (originals.isNotEmpty()) shelves += VodShelf(VodShelf.Kind.ORIGINALS, originals.take(SHELF_SIZE))
+        if (popular.isNotEmpty()) {
+            shelves += VodShelf(VodShelf.Kind.POPULAR, popular.take(SHELF_SIZE))
+            shelves += shelves(popular, facts)
+        }
+        return shelves
+    }
+
+    /**
+     * Rows of the screen of a genre, from its TMDB lists matched in the library: the best of the last years, the
+     * best of all time, the most popular, then the latest releases among them.
+     */
+    fun genreShelves(popular: List<VodTitle>, recentBest: List<VodTitle>, allTimeBest: List<VodTitle>): List<VodShelf> {
+        val all = (popular + recentBest + allTimeBest).distinctBy { it.key }
+        val latest = all.filter { it.year != null }
+            .sortedWith(compareByDescending<VodTitle> { it.year }.thenByDescending { it.addedAt ?: 0L })
+        return listOf(
+            VodShelf(VodShelf.Kind.RECENT_BEST, recentBest.take(SHELF_SIZE)),
+            VodShelf(VodShelf.Kind.ALL_TIME_BEST, allTimeBest.take(SHELF_SIZE)),
+            VodShelf(VodShelf.Kind.POPULAR, popular.take(SHELF_SIZE)),
+            VodShelf(VodShelf.Kind.LATEST, latest.take(SHELF_SIZE))
+        ).filter { it.titles.isNotEmpty() }
+    }
+
+    /**
+     * Rows of the screen of a genre of the provider (without TMDB): its [titles] by popularity, the latest releases
+     * and the best rated, without the genre rows of a tab.
+     */
+    fun libraryGenreShelves(titles: List<VodTitle>, facts: Map<String, TmdbFacts>): List<VodShelf> {
+        if (titles.isEmpty()) return emptyList()
+        val popular = sort(titles, VodSort.POPULARITY, facts).take(SHELF_SIZE)
+        return listOf(VodShelf(VodShelf.Kind.POPULAR, popular)) + shelves(titles, facts).filter { it.kind != VodShelf.Kind.GENRE }
+    }
+
     private const val MAX_RATING = 10.0
     private const val SHELF_SIZE = 40
     private const val MIN_GENRE_TITLES = 4
@@ -204,5 +245,5 @@ object VodBrowse {
 
 /** A row of the Movies or Series tab. */
 data class VodShelf(val kind: Kind, val titles: List<VodTitle>, val genre: String? = null) {
-    enum class Kind { LATEST, TOP_RATED, GENRE }
+    enum class Kind { ORIGINALS, RECENT_BEST, ALL_TIME_BEST, POPULAR, LATEST, TOP_RATED, GENRE }
 }

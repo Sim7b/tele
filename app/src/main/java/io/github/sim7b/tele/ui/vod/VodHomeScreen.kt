@@ -1,5 +1,9 @@
 package io.github.sim7b.tele.ui.vod
 
+import io.github.sim7b.tele.data.vod.VodLibrary
+import io.github.sim7b.tele.data.vod.GenreCatalog
+import io.github.sim7b.tele.data.vod.VodGenre
+import io.github.sim7b.tele.data.vod.StreamingPlatform
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -62,6 +66,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.res.pluralStringResource
 import io.github.sim7b.tele.data.storage.VodCollection
+import io.github.sim7b.tele.data.vod.PlatformCatalog
 import io.github.sim7b.tele.data.vod.RankedItem
 import io.github.sim7b.tele.data.vod.Ranking
 import io.github.sim7b.tele.data.vod.TmdbFacts
@@ -183,7 +188,16 @@ fun VodHomeScreen(
     section: VodKind = VodKind.MOVIE,
     sectionToken: Int = 0,
     // The other screens in a glass bar: the immersive style (the focused title over the whole screen)
-    nav: ScreenNav? = null
+    nav: ScreenNav? = null,
+    // Streaming services: their logos, and their catalog on TMDB (by popularity) when one is opened
+    platformLogos: Map<StreamingPlatform, String> = emptyMap(),
+    platformCatalog: suspend (StreamingPlatform, VodKind) -> PlatformCatalog = { platform, kind ->
+        PlatformCatalog(Ranking.of(platform, kind)?.let { rankings[it] }.orEmpty())
+    },
+    // The TMDB lists of a genre opened from the row of the genres (shown with a TMDB key)
+    genreCatalog: suspend (VodGenre, VodKind) -> GenreCatalog = { _, _ -> GenreCatalog() },
+    // A streaming service focused a moment: its catalog fetched ahead, to open at once
+    onPrefetchPlatform: (StreamingPlatform, VodKind) -> Unit = { _, _ -> }
 ) {
     BackHandler(onBack = onBack)
     val screen = LocalScreen.current
@@ -214,12 +228,51 @@ fun VodHomeScreen(
         railOpen = false
         currentKey?.let { key -> scope.launch { rowRequester(key).requestFocusWithRetry() } }
     }
+    // A streaming service opened from the row of their logos (its titles in rows); Back comes back to its logo
+    var platform by rememberSaveable { mutableStateOf<StreamingPlatform?>(null) }
+    val platformFocus = remember { HashMap<StreamingPlatform, FocusRequester>() }
+    fun platformRequester(entry: StreamingPlatform) = platformFocus.getOrPut(entry) { FocusRequester() }
+    // A service focused a moment: its catalog fetched ahead (not each one passed over)
+    var focusedPlatform by remember { mutableStateOf<StreamingPlatform?>(null) }
+    LaunchedEffect(focusedPlatform) {
+        val focused = focusedPlatform ?: return@LaunchedEffect
+        delay(PREFETCH_DELAY_MS)
+        val focusedKind = if (tab == VodTab.SERIES) VodKind.SERIES else VodKind.MOVIE
+        onPrefetchPlatform(focused, focusedKind)
+    }
+    // Or a genre opened from the row of the genres (its TMDB lists); Back comes back to it
+    var genre by rememberSaveable { mutableStateOf<VodGenre?>(null) }
+    val genreFocus = remember { HashMap<VodGenre, FocusRequester>() }
+    fun genreRequester(entry: VodGenre) = genreFocus.getOrPut(entry) { FocusRequester() }
+    // Without a TMDB key, a genre of the provider instead (its titles of the library)
+    var libraryGenre by rememberSaveable { mutableStateOf<String?>(null) }
+    val libraryGenreFocus = remember { HashMap<String, FocusRequester>() }
+    fun libraryGenreRequester(entry: String) = libraryGenreFocus.getOrPut(entry) { FocusRequester() }
+    fun closeSubview() {
+        val closed = platform?.let { platformRequester(it) } ?: genre?.let { genreRequester(it) } ?: libraryGenre?.let { libraryGenreRequester(it) } ?: return
+        platform = null
+        genre = null
+        libraryGenre = null
+        scope.launch {
+            rowsState.scrollToItem(0)
+            closed.requestFocusWithRetry()
+        }
+    }
+    // Registered after the one of the screen, before the one of the menu: Back closes the menu, then the service
+    BackHandler(enabled = platform != null || genre != null || libraryGenre != null) { closeSubview() }
     // Registered after the one of the screen: Back closes the menu first
     BackHandler(enabled = railOpen) { closeRail() }
     val kind = when (tab) {
         VodTab.MOVIES -> VodKind.MOVIE
         VodTab.SERIES -> VodKind.SERIES
         else -> null
+    }
+    var subviewTab by remember { mutableStateOf(tab) }
+    if (subviewTab != tab) {
+        subviewTab = tab
+        platform = null
+        genre = null
+        libraryGenre = null
     }
     val filter = kind?.let { filters[it] } ?: VodFilter()
 
@@ -233,13 +286,90 @@ fun VodHomeScreen(
     }
     // The rows of the movies or the series (no filter chosen): continue watching, my list, collections, rankings;
     // the genres come from the shelves below
-    val kindRows = remember(rows, kind, filter) {
+    val rowsOfKind = remember(rows, kind, filter) {
         if (kind == null || filter != VodFilter(sort = filter.sort)) {
             emptyList()
         } else {
             rows.filter { it.kind != VodRow.Kind.GENRE }.mapNotNull { row ->
                 row.titles.filter { it.kind == kind }.takeIf { it.isNotEmpty() }?.let { row.copy(titles = it) }
             }
+        }
+    }
+    // The streaming services with titles of this kind in the library: a row of logos, not a row each
+    val platforms = remember(rowsOfKind) { rowsOfKind.filter { it.kind == VodRow.Kind.PLATFORM }.mapNotNull { it.platform } }
+    val kindRows = remember(rowsOfKind) { rowsOfKind.filter { it.kind != VodRow.Kind.PLATFORM } }
+    // The main genres of this kind, from TMDB (with a key, no filter chosen)
+    val genres = remember(kind, hasTmdbKey, rowsOfKind.isNotEmpty()) {
+        if (kind != null && hasTmdbKey && rowsOfKind.isNotEmpty()) VodGenre.of(kind) else emptyList()
+    }
+    // Without a key, the main genres the provider gives (TMDB ones are preferred: same for every provider)
+    val libraryGenres by produceState(emptyList<String>(), kind, hasTmdbKey, rowsOfKind.isNotEmpty(), library.titles) {
+        value = if (kind == null || hasTmdbKey || rowsOfKind.isEmpty()) emptyList() else withContext(Dispatchers.Default) {
+            VodLibrary.topGenres(library.titles.filter { it.kind == kind }, LIBRARY_GENRES)
+        }
+    }
+    // The rows of the opened service: its titles of the home row at once, then its whole catalog on TMDB
+    var subviewLoading by remember { mutableStateOf(false) }
+    var subviewCount by remember { mutableIntStateOf(0) }
+    val subviewShelves by produceState(emptyList<VodShelf>(), platform, genre, libraryGenre, kind, library.titles, indexVersion) {
+        val openedLibraryGenre = libraryGenre
+        if (openedLibraryGenre != null && kind != null) {
+            value = withContext(Dispatchers.Default) {
+                val titles = library.titles.filter { it.kind == kind && openedLibraryGenre in it.genres }
+                subviewCount = titles.size
+                VodBrowse.libraryGenreShelves(titles, facts())
+            }
+            return@produceState
+        }
+        val openedGenre = genre
+        if (openedGenre != null && kind != null) {
+            subviewCount = 0
+            value = emptyList()
+            subviewLoading = true
+            try {
+                val catalog = genreCatalog(openedGenre, kind)
+                value = withContext(Dispatchers.Default) {
+                    val matcher = matcherFor(library.titles, rankings) ?: VodRankings.Matcher(library.titles, facts())
+                    fun matched(items: List<RankedItem>) = items.mapNotNull { matcher.match(it) }.filter { it.kind == kind }.distinctBy { it.key }
+                    val popular = matched(catalog.popular)
+                    val recentBest = matched(catalog.recentBest)
+                    val allTimeBest = matched(catalog.allTimeBest)
+                    subviewCount = (popular + recentBest + allTimeBest).distinctBy { it.key }.size
+                    VodBrowse.genreShelves(popular, recentBest, allTimeBest)
+                }
+            } finally {
+                subviewLoading = false
+            }
+            return@produceState
+        }
+        val opened = platform
+        if (opened == null || kind == null) {
+            value = emptyList()
+            return@produceState
+        }
+        val homeRow = rowsOfKind.firstOrNull { it.platform == opened }?.titles.orEmpty()
+        subviewCount = homeRow.size
+        value = withContext(Dispatchers.Default) { VodBrowse.platformShelves(homeRow, facts()) }
+        subviewLoading = true
+        try {
+            val catalog = platformCatalog(opened, kind)
+            value = withContext(Dispatchers.Default) {
+                val matcher = matcherFor(library.titles, rankings) ?: VodRankings.Matcher(library.titles, facts())
+                fun matched(items: List<RankedItem>) = items.mapNotNull { matcher.match(it) }.filter { it.kind == kind }.distinctBy { it.key }
+                val titles = matched(catalog.popular).ifEmpty { homeRow }
+                val originals = matched(catalog.originals)
+                subviewCount = (titles + originals).distinctBy { it.key }.size
+                VodBrowse.platformShelves(titles, facts(), originals)
+            }
+        } finally {
+            subviewLoading = false
+        }
+    }
+    // The first poster of the service once its rows are there
+    LaunchedEffect(platform, genre, libraryGenre, subviewShelves.isNotEmpty()) {
+        if ((platform != null || genre != null || libraryGenre != null) && subviewShelves.isNotEmpty()) {
+            rowsState.scrollToItem(0)
+            firstFocus.requestFocusWithRetry(attempts = 40)
         }
     }
     val listed by produceState(emptyList<VodTitle>(), library.titles, kind, filter, indexVersion) {
@@ -486,7 +616,18 @@ fun VodHomeScreen(
                 VodTab.MOVIES, VodTab.SERIES -> {
                     // The focused title over its picture (rows only; low screen: none)
                     if (!gridView && !screen.short) Hero(hero, large = immersive)
-                    FilterBar(
+                    val openedPlatform = platform
+                    val openedGenre = genre
+                    val openedLibraryGenre = libraryGenre
+                    val opened = openedPlatform != null || openedGenre != null || openedLibraryGenre != null
+                    if (opened) {
+                        SubviewHeader(
+                            label = openedPlatform?.label ?: openedGenre?.let { genreLabel(it) } ?: openedLibraryGenre.orEmpty(),
+                            logo = openedPlatform?.let { platformLogos[it] },
+                            count = subviewCount,
+                            loading = subviewLoading
+                        )
+                    } else FilterBar(
                         filter = filter,
                         count = listed.size,
                         onOpen = { openFilter = it },
@@ -499,13 +640,111 @@ fun VodHomeScreen(
                     val rowFollow = LocalBringIntoViewSpec.current
                     val lead = with(LocalDensity.current) { RowLead.toPx() }
                     val listFollow = remember(immersive, lead) { if (immersive) RowStartFollow(lead) else rowFollow }
-                    if (!gridView) CompositionLocalProvider(LocalBringIntoViewSpec provides listFollow) { LazyColumn(
+                    if (opened) CompositionLocalProvider(LocalBringIntoViewSpec provides listFollow) { LazyColumn(
                         state = rowsState,
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                         contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        // First the rows of this kind: continue watching, my list, collections, TMDB rankings
+                        // The rows of the opened service: popular, latest releases, best rated, genres
+                        subviewShelves.forEachIndexed { index, shelf ->
+                            item(key = "platform:${shelf.kind}:${shelf.genre}") {
+                                CompositionLocalProvider(LocalBringIntoViewSpec provides rowFollow) {
+                                PosterRow(
+                                    label = shelfTitle(shelf),
+                                    titles = shelf.titles,
+                                    progress = progressByTitle,
+                                    onOpenTitle = onOpenTitle,
+                                    onFocused = { focusedKey = it.key },
+                                    onLongClick = { menuFor = it to null },
+                                    findPoster = findPoster,
+                                    rowFocus = rowRequester("platform:${shelf.kind}:${shelf.genre}"),
+                                    onRowFocused = {
+                                        currentRow = index
+                                        currentKey = "platform:${shelf.kind}:${shelf.genre}"
+                                    },
+                                    onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
+                                    firstFocus = if (index == 0) firstFocus else null
+                                )
+                                }
+                            }
+                        }
+                    } } else if (!gridView) CompositionLocalProvider(LocalBringIntoViewSpec provides listFollow) { LazyColumn(
+                        state = rowsState,
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                        contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Under the featured title, the streaming services: each opens its own rows
+                        if (platforms.isNotEmpty()) {
+                            item(key = PLATFORMS_ROW) {
+                                CompositionLocalProvider(LocalBringIntoViewSpec provides rowFollow) {
+                                    SubviewRow(
+                                        label = stringResource(R.string.vod_platforms_row),
+                                        entries = platforms.map { SubviewEntry(it, it.name, it.label, platformLogos[it]) },
+                                        onOpen = {
+                                            gridView = false
+                                            platform = it
+                                        },
+                                        onEntryFocused = { focusedPlatform = it },
+                                        focusOf = ::platformRequester,
+                                        rowFocus = rowRequester(PLATFORMS_ROW),
+                                        onRowFocused = {
+                                            currentRow = 0
+                                            currentKey = PLATFORMS_ROW
+                                        },
+                                        onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
+                                        firstFocus = firstFocus
+                                    )
+                                }
+                            }
+                        }
+                        // Then the main genres: each opens its best of the last years, of all time, its most popular
+                        if (genres.isNotEmpty()) {
+                            item(key = GENRES_ROW) {
+                                CompositionLocalProvider(LocalBringIntoViewSpec provides rowFollow) {
+                                    SubviewRow(
+                                        label = stringResource(R.string.vod_genres_row),
+                                        entries = genres.map { SubviewEntry(it, it.name, genreLabel(it), null) },
+                                        onOpen = {
+                                            gridView = false
+                                            genre = it
+                                        },
+                                        focusOf = ::genreRequester,
+                                        rowFocus = rowRequester(GENRES_ROW),
+                                        onRowFocused = {
+                                            currentRow = if (platforms.isNotEmpty()) 1 else 0
+                                            currentKey = GENRES_ROW
+                                        },
+                                        onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
+                                        firstFocus = if (platforms.isEmpty()) firstFocus else null
+                                    )
+                                }
+                            }
+                        } else if (libraryGenres.isNotEmpty()) {
+                            item(key = GENRES_ROW) {
+                                CompositionLocalProvider(LocalBringIntoViewSpec provides rowFollow) {
+                                    SubviewRow(
+                                        label = stringResource(R.string.vod_genres_row),
+                                        entries = libraryGenres.map { SubviewEntry(it, it, it, null) },
+                                        onOpen = {
+                                            gridView = false
+                                            libraryGenre = it
+                                        },
+                                        focusOf = ::libraryGenreRequester,
+                                        rowFocus = rowRequester(GENRES_ROW),
+                                        onRowFocused = {
+                                            currentRow = if (platforms.isNotEmpty()) 1 else 0
+                                            currentKey = GENRES_ROW
+                                        },
+                                        onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
+                                        firstFocus = if (platforms.isEmpty()) firstFocus else null
+                                    )
+                                }
+                            }
+                        }
+                        val rowsBefore = (if (platforms.isNotEmpty()) 1 else 0) + (if (genres.isNotEmpty() || libraryGenres.isNotEmpty()) 1 else 0)
+                        // Then the rows of this kind: continue watching, my list, collections, TMDB rankings
                         kindRows.forEachIndexed { rowIndex, row ->
                             item(key = "${row.kind}:${row.name}") {
                                 CompositionLocalProvider(LocalBringIntoViewSpec provides rowFollow) {
@@ -520,11 +759,11 @@ fun VodHomeScreen(
                                     findPoster = findPoster,
                                     rowFocus = rowRequester("${row.kind}:${row.name}"),
                                     onRowFocused = {
-                                        currentRow = rowIndex
+                                        currentRow = rowsBefore + rowIndex
                                         currentKey = "${row.kind}:${row.name}"
                                     },
                                     onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
-                                    firstFocus = if (rowIndex == 0) firstFocus else null
+                                    firstFocus = if (rowIndex == 0 && rowsBefore == 0) firstFocus else null
                                 )
                                 }
                             }
@@ -542,11 +781,11 @@ fun VodHomeScreen(
                                     findPoster = findPoster,
                                     rowFocus = rowRequester("${shelf.kind}:${shelf.genre}"),
                                     onRowFocused = {
-                                        currentRow = kindRows.size + index
+                                        currentRow = rowsBefore + kindRows.size + index
                                         currentKey = "${shelf.kind}:${shelf.genre}"
                                     },
                                     onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
-                                    firstFocus = if (index == 0 && kindRows.isEmpty()) firstFocus else null
+                                    firstFocus = if (index == 0 && kindRows.isEmpty() && rowsBefore == 0) firstFocus else null
                                 )
                                 }
                             }
@@ -626,8 +865,14 @@ fun VodHomeScreen(
         }
 
         // The rows of this section, to jump to one (Right or Back closes it)
-        val menuEntries = if (kind == null || gridView) emptyList() else
-            kindRows.map { "${it.kind}:${it.name}" to rowTitle(it) } + shelves.map { "${it.kind}:${it.genre}" to shelfTitle(it) }
+        val menuEntries = when {
+            kind == null -> emptyList()
+            platform != null || genre != null || libraryGenre != null -> subviewShelves.map { "platform:${it.kind}:${it.genre}" to shelfTitle(it) }
+            gridView -> emptyList()
+            else -> (if (platforms.isNotEmpty()) listOf(PLATFORMS_ROW to stringResource(R.string.vod_platforms_row)) else emptyList()) +
+                (if (genres.isNotEmpty() || libraryGenres.isNotEmpty()) listOf(GENRES_ROW to stringResource(R.string.vod_genres_row)) else emptyList()) +
+                kindRows.map { "${it.kind}:${it.name}" to rowTitle(it) } + shelves.map { "${it.kind}:${it.genre}" to shelfTitle(it) }
+        }
         AnimatedVisibility(
             visible = railOpen && menuEntries.isNotEmpty(),
             enter = fadeIn() + slideInHorizontally { -it / 3 },
@@ -635,7 +880,7 @@ fun VodHomeScreen(
             modifier = Modifier.align(Alignment.CenterStart)
         ) {
             ListsMenu(
-                title = stringResource(tab.labelRes),
+                title = platform?.label ?: genre?.let { genreLabel(it) } ?: libraryGenre ?: stringResource(tab.labelRes),
                 entries = menuEntries,
                 current = currentRow,
                 focus = railFocus,
@@ -862,6 +1107,8 @@ private fun PosterRow(
     }
 }
 
+private const val PREFETCH_DELAY_MS = 700L
+private const val LIBRARY_GENRES = 16
 /** Filters of the Movies and Series tabs, each opening its values; the count of titles shown. */
 @Composable
 private fun FilterBar(
@@ -1030,7 +1277,7 @@ private fun HeroBackdrop(title: VodTitle, alpha: Float, modifier: Modifier = Mod
 
 private const val BACKDROP_LOOKUP_DELAY_MS = 500L
 // Room on the left of a row for its first poster enlarged, and above a focused poster for the title of its row
-private val RowBleed = 10.dp
+internal val RowBleed = 10.dp
 private val RowLead = 34.dp
 
 /** The list of rows scrolls so that the focused poster sits [lead] under its top (the title of its row above). */

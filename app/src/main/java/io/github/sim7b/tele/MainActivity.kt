@@ -857,6 +857,7 @@ class MainActivity : ComponentActivity() {
                             val vodMyList by configRepository.vodStore.myList.collectAsState()
                             val vodCollections by configRepository.vodStore.collections.collectAsState()
                             val vodRankings by viewModel.vod.rankings.collectAsState()
+                            val platformLogos by viewModel.vod.platformLogos.collectAsState()
                             val indexVersion by viewModel.vod.index.version.collectAsState()
                             val indexProgress by viewModel.vod.index.progress.collectAsState()
                             val tmdbKey by configRepository.tmdbKey.collectAsState()
@@ -900,6 +901,10 @@ class MainActivity : ComponentActivity() {
                                     actions = vodActions,
                                     initialRows = viewModel.vod.lastRows,
                                     matcherFor = { titles, ranked -> viewModel.vod.matcher(titles, ranked) },
+                                    platformLogos = platformLogos,
+                                    platformCatalog = { platform, kind -> viewModel.vod.platformCatalog(platform, kind) },
+                                    genreCatalog = { genre, kind -> viewModel.vod.genreCatalog(genre, kind) },
+                                    onPrefetchPlatform = { platform, kind -> viewModel.vod.prefetchPlatform(platform, kind) },
                                     onRows = { built -> viewModel.vod.lastRows = built },
                                     newCategories = vodLibrary.newCategories.entries.firstOrNull()?.let { (id, added) ->
                                         enabledConfigs.firstOrNull { it.id == id }?.let { it.name to added.size }

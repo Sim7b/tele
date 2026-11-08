@@ -39,6 +39,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.vod.VodGenre
 import io.github.sim7b.tele.data.vod.VodBrowse
 import io.github.sim7b.tele.data.vod.VodRow
 import io.github.sim7b.tele.data.vod.VodShelf
@@ -329,7 +330,34 @@ private fun providerSubtitleLabels(version: VodVersion): List<String> {
 
 @Composable
 internal fun shelfTitle(shelf: VodShelf): String = when (shelf.kind) {
+    VodShelf.Kind.ORIGINALS -> stringResource(R.string.vod_shelf_originals)
+    VodShelf.Kind.RECENT_BEST -> stringResource(R.string.vod_shelf_recent_best)
+    VodShelf.Kind.ALL_TIME_BEST -> stringResource(R.string.vod_shelf_all_time_best)
+    VodShelf.Kind.POPULAR -> stringResource(R.string.vod_shelf_popular)
     VodShelf.Kind.LATEST -> stringResource(R.string.vod_shelf_latest)
     VodShelf.Kind.TOP_RATED -> stringResource(R.string.vod_shelf_top_rated)
     VodShelf.Kind.GENRE -> shelf.genre.orEmpty()
 }
+
+/** Name of a main genre, in the language of the TV. */
+@Composable
+internal fun genreLabel(genre: VodGenre): String = stringResource(
+    when (genre) {
+        VodGenre.ACTION -> R.string.vod_genre_action
+        VodGenre.ADVENTURE -> R.string.vod_genre_adventure
+        VodGenre.ANIMATION -> R.string.vod_genre_animation
+        VodGenre.COMEDY -> R.string.vod_genre_comedy
+        VodGenre.CRIME -> R.string.vod_genre_crime
+        VodGenre.DOCUMENTARY -> R.string.vod_genre_documentary
+        VodGenre.DRAMA -> R.string.vod_genre_drama
+        VodGenre.FAMILY -> R.string.vod_genre_family
+        VodGenre.FANTASY -> R.string.vod_genre_fantasy
+        VodGenre.HORROR -> R.string.vod_genre_horror
+        VodGenre.MYSTERY -> R.string.vod_genre_mystery
+        VodGenre.ROMANCE -> R.string.vod_genre_romance
+        VodGenre.SCIENCE_FICTION -> R.string.vod_genre_science_fiction
+        VodGenre.THRILLER -> R.string.vod_genre_thriller
+        VodGenre.WAR -> R.string.vod_genre_war
+        VodGenre.KIDS -> R.string.vod_genre_kids
+    }
+)
