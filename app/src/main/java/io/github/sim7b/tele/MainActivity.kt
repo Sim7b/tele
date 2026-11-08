@@ -64,6 +64,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import io.github.sim7b.tele.ui.components.ScreenNav
+import io.github.sim7b.tele.ui.components.LocalImmersive
 import io.github.sim7b.tele.ui.components.GuideActions
 import io.github.sim7b.tele.ui.components.ReminderDialog
 import io.github.sim7b.tele.data.model.Categories
@@ -608,6 +610,23 @@ class MainActivity : ComponentActivity() {
                             true
                         }
                 ) {
+                    // Immersive home chosen (with a remote): the guide, the movies and the series in the same style,
+                    // the sections in a glass bar at the top of each
+                    val screenNav = if (homeLayout.style == HomeStyle.IMMERSIVE && !Device.isTouch) {
+                        ScreenNav(
+                            onHome = { currentScreen = CurrentScreen.Home },
+                            onGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
+                            onVod = if (vodEnabled) ({ kind -> openVodSection(kind) }) else null,
+                            onRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
+                            onSearch = { currentScreen = CurrentScreen.Search(startWithVoice = false) },
+                            onSettings = { currentScreen = CurrentScreen.Settings() },
+                            updateAvailable = updateState.release != null && updateState !is UpdateState.Failed
+                        )
+                    } else {
+                        null
+                    }
+                    // Immersive style chosen: the shared pieces (chips, titles of rows, buttons) in glass on every screen
+                    CompositionLocalProvider(LocalImmersive provides (screenNav != null)) {
                     when (val screen = currentScreen) {
                         is CurrentScreen.Home -> {
                             // Movies and series started, above the favorites (when the module is enabled)
@@ -823,6 +842,7 @@ class MainActivity : ComponentActivity() {
                                     onPreviewChannel = { channel -> previewChannel(channel) },
                                     previewSurface = { PreviewVideo(playerManager) },
                                     onWatch = { channel -> currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Guide) },
+                                    nav = screenNav,
                                     onBack = {
                                         saveableStateHolder.removeState("guide")
                                         currentScreen = CurrentScreen.Home
@@ -855,6 +875,7 @@ class MainActivity : ComponentActivity() {
                                 VodHomeScreen(
                                     section = vodSection,
                                     sectionToken = vodSectionToken,
+                                    nav = screenNav,
                                     library = vodLibrary,
                                     progress = vodProgress,
                                     myList = vodMyList,
@@ -1098,6 +1119,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                    }
                     }
 
                     if (askExactAlarms) {

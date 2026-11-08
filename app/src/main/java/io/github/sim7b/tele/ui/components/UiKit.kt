@@ -77,7 +77,9 @@ fun FadeInImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
-    alpha: Float = 1f
+    alpha: Float = 1f,
+    // The picture could not be loaded (missing on the server)
+    onError: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val request = remember(url) {
@@ -88,7 +90,8 @@ fun FadeInImage(
         contentDescription = contentDescription,
         modifier = modifier,
         contentScale = contentScale,
-        alpha = alpha
+        alpha = alpha,
+        onError = onError?.let { callback -> { _ -> callback() } }
     )
 }
 
@@ -252,9 +255,13 @@ fun ProgressLine(
     }
 }
 
-/** Subtle section heading (spaced small caps). */
+/** Subtle section heading (spaced small caps); a plain white title in the immersive screens. */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    if (LocalImmersive.current) {
+        Text(text = text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = modifier)
+        return
+    }
     Text(
         text = text.uppercase(),
         fontSize = 11.sp,

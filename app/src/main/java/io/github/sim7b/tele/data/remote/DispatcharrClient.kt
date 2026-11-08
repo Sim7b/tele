@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.remote
 
+import io.github.sim7b.tele.data.epg.EpgText
 import android.util.Log
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UserFacingException
@@ -331,7 +332,7 @@ class DispatcharrClient(
             id = obj.optStringOrNull("id") ?: fallbackId,
             channelUuid = channelKey,
             title = title,
-            description = obj.optStringOrNull("description"),
+            description = EpgText.clean(obj.optStringOrNull("description")),
             startTimeIso = startIso,
             endTimeIso = endIso,
             posterUrl = posterUrl,

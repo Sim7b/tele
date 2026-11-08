@@ -80,10 +80,9 @@ data class VodVersion(
     val subtitles: List<String> = emptyList(),
     val durationSecs: Int? = null
 ) {
-    /** Quality label: "2160p HEVC HDR", "1080p", else the tags of the name ("4K", "FHD"). */
+    /** Quality label: "4K HEVC HDR", "1080p", "SD" (see [VodQuality]), null when unknown. */
     val qualityLabel: String?
-        get() = listOfNotNull(resolution, videoCodec, "HDR".takeIf { hdr }).joinToString(" ").ifBlank { null }
-            ?: qualityTags.joinToString(" ").ifBlank { null }
+        get() = VodQuality.label(this)
 }
 
 data class VodEpisode(

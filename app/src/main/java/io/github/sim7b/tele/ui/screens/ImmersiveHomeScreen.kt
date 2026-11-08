@@ -3,10 +3,16 @@ package io.github.sim7b.tele.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -69,7 +75,6 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -118,6 +123,12 @@ import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.ui.components.ChannelActionMenuDialog
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.GlassClock
+import io.github.sim7b.tele.ui.components.GlassNavBar
+import io.github.sim7b.tele.ui.components.ListsMenu
+import io.github.sim7b.tele.ui.components.NavSection
+import io.github.sim7b.tele.ui.components.ScreenNav
+import io.github.sim7b.tele.ui.components.glass
 import io.github.sim7b.tele.ui.components.GuideActions
 import io.github.sim7b.tele.ui.components.LogoPlate
 import io.github.sim7b.tele.ui.components.MenuRow
@@ -178,7 +189,7 @@ private fun Shelf.label(): String = if (isGroup) groupLabel(name) else name
  * Left with nothing more on the left opens a side menu (screens, then every row). The classic home stays the
  * default (see [HomeScreen]).
  */
-@OptIn(ExperimentalTvMaterial3Api::class)
+@OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ImmersiveHomeScreen(
     channels: List<Channel>,
@@ -294,9 +305,13 @@ fun ImmersiveHomeScreen(
         heroFocus.requestFocusWithRetry()
     }
 
-    // The focused row comes up under the details (after the scroll the focus does by itself, which it replaces)
+    // The focused row comes up under the details
     LaunchedEffect(focusedRow) {
-        if (focusedRow >= 0) listState.animateScrollToItem(focusedRow)
+        if (focusedRow < 0) return@LaunchedEffect
+        // One smooth move to the row (the list itself does not follow the focus, see NoFollow)
+        val row = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusedRow }
+        if (row != null) listState.animateScrollBy(row.offset.toFloat(), tween(MOVE_MS, easing = FastOutSlowInEasing))
+        else listState.scrollToItem(focusedRow)
     }
 
     fun toHero() {
@@ -336,8 +351,8 @@ fun ImmersiveHomeScreen(
                                 page = pageIndex - 1
                                 scope.launch { heroFocus.requestFocusWithRetry() }
                             }
-                            heroButton == 0 -> railOpen = true
-                            !focusManager.moveFocus(FocusDirection.Left) -> railOpen = true
+                            heroButton == 0 -> railOpen = shelves.isNotEmpty()
+                            !focusManager.moveFocus(FocusDirection.Left) -> railOpen = shelves.isNotEmpty()
                         }
                         true
                     }
@@ -389,19 +404,23 @@ fun ImmersiveHomeScreen(
 
         // Glass tabs and the time: with the featured item only
         val headerAlpha by animateFloatAsState(if (inRows) 0f else 1f, label = "tabs")
-        GlassTabs(
-            onGuide = onOpenGuide,
-            onVod = onOpenVod,
-            onRecordings = onOpenRecordings,
-            onSearch = { onOpenSearch(false) },
-            onSettings = onOpenSettings,
-            updateAvailable = updateAvailable,
+        GlassNavBar(
+            nav = ScreenNav(
+                onHome = {},
+                onGuide = onOpenGuide,
+                onVod = onOpenVod,
+                onRecordings = onOpenRecordings,
+                onSearch = { onOpenSearch(false) },
+                onSettings = onOpenSettings,
+                updateAvailable = updateAvailable
+            ),
+            current = NavSection.HOME,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 20.dp)
                 .graphicsLayer { alpha = headerAlpha }
         )
-        Clock(modifier = Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = screenMargin(36.dp)).graphicsLayer { alpha = headerAlpha })
+        GlassClock(modifier = Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = screenMargin(36.dp)).graphicsLayer { alpha = headerAlpha })
 
         // The featured item with its buttons, or the details of the focused card
         spotlight?.let { shown ->
@@ -441,7 +460,11 @@ fun ImmersiveHomeScreen(
         }
 
         // The rows: the first one peeks under the featured item, the focused one comes up under the details
-        val rowsTop by animateDpAsState(if (inRows) height * 0.40f else height * 0.80f, label = "rows")
+        val rowsTop by animateDpAsState(if (inRows) height * 0.40f else height * 0.80f, tween(MOVE_MS, easing = FastOutSlowInEasing), label = "rows")
+        // The rows move only by the scroll above (not by the focus as well: two moves made it bounce); the cards
+        // of a row follow the focus smoothly
+        val rowSpec = remember { SmoothFollow }
+        CompositionLocalProvider(LocalBringIntoViewSpec provides NoFollow) {
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -468,6 +491,7 @@ fun ImmersiveHomeScreen(
                         color = Color.White,
                         modifier = Modifier.padding(start = screenMargin(48.dp), bottom = 10.dp)
                     )
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides rowSpec) {
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(18.dp),
                         contentPadding = PaddingValues(start = screenMargin(48.dp), end = 48.dp, top = 6.dp, bottom = 4.dp)
@@ -501,8 +525,10 @@ fun ImmersiveHomeScreen(
                             )
                         }
                     }
+                    }
                 }
             }
+        }
         }
 
         AnimatedVisibility(
@@ -511,19 +537,13 @@ fun ImmersiveHomeScreen(
             exit = fadeOut() + slideOutHorizontally { -it / 3 },
             modifier = Modifier.align(Alignment.CenterStart)
         ) {
-            SideMenu(
-                rows = shelves.map { it.key to it.label() },
+            // The rows of the home only: the other screens are in the glass bar
+            ListsMenu(
+                title = stringResource(R.string.side_menu_rows),
+                entries = shelves.map { it.key to it.label() },
+                current = focusedRow,
                 focus = railFocus,
-                onHome = {
-                    railOpen = false
-                    toHero()
-                },
-                onGuide = onOpenGuide,
-                onVod = onOpenVod,
-                onRecordings = onOpenRecordings,
-                onSearch = { onOpenSearch(false) },
-                onSettings = onOpenSettings,
-                onRow = { index, key ->
+                onPick = { index, key ->
                     railOpen = false
                     scope.launch {
                         focusedRow = index
@@ -837,13 +857,6 @@ private fun SpotlightText(shown: Spotlight, compact: Boolean, live: Boolean) {
 private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    val shine = remember { Animatable(0f) }
-    LaunchedEffect(focused) {
-        if (focused) {
-            shine.snapTo(0f)
-            shine.animateTo(1f, tween(900))
-        }
-    }
     val channel = when (item) {
         is HomeItem.Live -> item.channel
         is HomeItem.Event -> item.event.channel
@@ -881,23 +894,7 @@ private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick
             glow = ClickableSurfaceDefaults.glow(focusedGlow = Glow(Color.Black.copy(alpha = 0.7f), 18.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = SurfaceCard, focusedContainerColor = SurfaceCard)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .drawWithContent {
-                        drawContent()
-                        if (focused && shine.value < 1f) {
-                            val x = size.width * (shine.value * 1.6f - 0.3f)
-                            drawRect(
-                                Brush.linearGradient(
-                                    0f to Color.Transparent, 0.5f to Color.White.copy(alpha = 0.3f), 1f to Color.Transparent,
-                                    start = Offset(x - size.width * 0.25f, 0f),
-                                    end = Offset(x + size.width * 0.25f, size.height)
-                                )
-                            )
-                        }
-                    }
-            ) {
+            Box(modifier = Modifier.fillMaxSize()) {
                 if (!image.isNullOrBlank()) {
                     FadeInImage(url = image, contentDescription = null, modifier = Modifier.fillMaxSize())
                 } else if (channel != null) {
@@ -912,9 +909,6 @@ private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick
                         padding = 2.dp,
                         modifier = Modifier.align(Alignment.BottomStart).padding(7.dp).size(width = 34.dp, height = 22.dp)
                     )
-                }
-                if (onAir) {
-                    Box(modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(7.dp).clip(CircleShape).background(LiveRed))
                 }
                 progress?.takeIf { it > 0f }?.let {
                     ProgressLine(
@@ -974,70 +968,6 @@ private fun eventWhen(program: GuideProgram, now: Long): String {
     }
 }
 
-/** Glass of the tabs, buttons and menu: a light veil with a bright edge (the picture behind stays visible). */
-private fun Modifier.glass(shape: Shape): Modifier = this
-    .clip(shape)
-    .background(Color(0x33141A24))
-    .background(Color.White.copy(alpha = 0.10f))
-    .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.38f), Color.White.copy(alpha = 0.08f))), shape)
-
-/** The other screens, in a glass bar at the top: home (here), guide, movies and series, recordings, search, settings. */
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun GlassTabs(
-    onGuide: (() -> Unit)?,
-    onVod: ((VodKind) -> Unit)?,
-    onRecordings: (() -> Unit)?,
-    onSearch: () -> Unit,
-    onSettings: () -> Unit,
-    updateAvailable: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val pill = RoundedCornerShape(50)
-    Row(
-        modifier = modifier.glass(pill).padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        GlassTab(label = stringResource(R.string.side_menu_home), selected = true, onClick = {})
-        onGuide?.let { GlassTab(label = stringResource(R.string.home_open_guide), onClick = it) }
-        onVod?.let { openVod ->
-            GlassTab(label = stringResource(R.string.vod_tab_movies), onClick = { openVod(VodKind.MOVIE) })
-            GlassTab(label = stringResource(R.string.vod_tab_series), onClick = { openVod(VodKind.SERIES) })
-        }
-        onRecordings?.let { GlassTab(label = stringResource(R.string.recordings_screen_title), onClick = it) }
-        GlassTab(icon = Icons.Filled.Search, label = stringResource(R.string.home_search), onClick = onSearch)
-        GlassTab(icon = Icons.Filled.Settings, label = stringResource(if (updateAvailable) R.string.home_settings_update else R.string.home_settings), dot = updateAvailable, onClick = onSettings)
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun GlassTab(label: String, onClick: () -> Unit, selected: Boolean = false, icon: ImageVector? = null, dot: Boolean = false) {
-    val shape = RoundedCornerShape(50)
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.height(36.dp).touchClick(onClick),
-        shape = ClickableSurfaceDefaults.shape(shape = shape),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent,
-            contentColor = Color.White,
-            focusedContainerColor = Color.White,
-            focusedContentColor = Color(0xFF0B0D12)
-        )
-    ) {
-        Box(modifier = Modifier.fillMaxHeight().padding(horizontal = if (icon != null) 12.dp else 18.dp), contentAlignment = Alignment.Center) {
-            if (icon != null) {
-                Icon(imageVector = icon, contentDescription = label, modifier = Modifier.size(18.dp))
-                if (dot) Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp).size(6.dp).clip(CircleShape).background(Color(0xFF38BDF8)))
-            } else {
-                Text(text = label, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
-            }
-        }
-    }
-}
-
 /** A button of the featured item: white for the main one, glass for the others. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -1088,88 +1018,10 @@ private fun PageDots(count: Int, current: Int) {
     }
 }
 
-/** The time, alone, in a corner. */
-@Composable
-private fun Clock(modifier: Modifier = Modifier) {
-    val time by produceState(initialValue = LocalTime.now()) {
-        while (true) {
-            value = LocalTime.now()
-            delay(5_000)
-        }
-    }
-    Text(
-        text = remember(time.hour, time.minute) { time.format(DateTimeFormatter.ofPattern("HH:mm")) },
-        fontSize = 20.sp,
-        fontWeight = FontWeight.Light,
-        color = Color.White,
-        modifier = modifier
-    )
-}
-
-/**
- * Side menu of the home, opened by Left at the start of a row (or before the first featured item): the home, the
- * other screens, then each row (Right or Back closes it).
- */
-@Composable
-private fun SideMenu(
-    rows: List<Pair<String, String>>,
-    focus: FocusRequester,
-    onHome: () -> Unit,
-    onGuide: (() -> Unit)?,
-    onVod: ((VodKind) -> Unit)?,
-    onRecordings: (() -> Unit)?,
-    onSearch: () -> Unit,
-    onSettings: () -> Unit,
-    onRow: (index: Int, key: String) -> Unit,
-    onClose: () -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier
-            .padding(start = 18.dp, top = 18.dp, bottom = 18.dp)
-            .fillMaxHeight()
-            .width(SideMenuWidth)
-            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(24.dp))
-            .glass(RoundedCornerShape(24.dp))
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight) {
-                    onClose()
-                    true
-                } else {
-                    false
-                }
-            },
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 20.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        item { MenuRow(label = stringResource(R.string.side_menu_home), icon = Icons.Filled.Home, onClick = onHome, modifier = Modifier.focusRequester(focus)) }
-        onGuide?.let { item { MenuRow(label = stringResource(R.string.home_open_guide), icon = Icons.Filled.DateRange, onClick = it) } }
-        onVod?.let { openVod ->
-            item { MenuRow(label = stringResource(R.string.vod_tab_movies), icon = Icons.Filled.PlayArrow, onClick = { openVod(VodKind.MOVIE) }) }
-            item { MenuRow(label = stringResource(R.string.vod_tab_series), icon = Icons.Filled.PlayArrow, onClick = { openVod(VodKind.SERIES) }) }
-        }
-        onRecordings?.let { item { MenuRow(label = stringResource(R.string.recordings_screen_title), leading = { RecordDot() }, onClick = it) } }
-        item { MenuRow(label = stringResource(R.string.home_search), icon = Icons.Filled.Search, onClick = onSearch) }
-        item { MenuRow(label = stringResource(R.string.home_settings), icon = Icons.Filled.Settings, onClick = onSettings) }
-        if (rows.isNotEmpty()) item {
-            Text(
-                text = stringResource(R.string.side_menu_rows).uppercase(),
-                fontSize = 11.sp,
-                letterSpacing = 1.4.sp,
-                color = Color.White.copy(alpha = 0.55f),
-                modifier = Modifier.padding(start = 14.dp, top = 16.dp, bottom = 6.dp)
-            )
-        }
-        itemsIndexed(rows, key = { _, row -> row.first }) { index, (key, name) ->
-            MenuRow(label = name, onClick = { onRow(index, key) })
-        }
-    }
-}
-
 // Featured item shown before the next one (while no live picture plays)
 private const val FEATURED_ROTATION_MS = 8_000L
 private val CardWidth = 176.dp
 private val CardHeight = 99.dp
-private val SideMenuWidth = 300.dp
 // Height over which the rows fade into the picture at the top of their area
 private val RowsFade = 28.dp
 
@@ -1184,3 +1036,28 @@ private fun Modifier.fadingTop(height: Dp): Modifier = if (height == 0.dp) this 
             blendMode = BlendMode.DstIn
         )
     }
+
+// Duration of the moves of the rows (from the featured item, from row to row)
+private const val MOVE_MS = 320
+
+/** The list of rows does not move by itself when the focus changes row: the home scrolls it once, smoothly. */
+@OptIn(ExperimentalFoundationApi::class)
+private object NoFollow : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
+}
+
+/** The cards of a row follow the focus as little as needed (the card fully shown), with a smooth ease. */
+@OptIn(ExperimentalFoundationApi::class)
+private object SmoothFollow : BringIntoViewSpec {
+    @Suppress("DEPRECATION")
+    override val scrollAnimationSpec: AnimationSpec<Float> = tween(260, easing = FastOutSlowInEasing)
+
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val trailing = offset + size
+        return when {
+            offset >= 0 && trailing <= containerSize -> 0f
+            offset < 0 -> offset
+            else -> trailing - containerSize
+        }
+    }
+}

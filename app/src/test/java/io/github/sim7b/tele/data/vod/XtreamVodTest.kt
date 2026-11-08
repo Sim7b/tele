@@ -90,7 +90,7 @@ class XtreamVodTest {
         assertTrue(file.hdr)
         assertEquals(listOf(VodAudio("fre", "E-AC3", 6)), file.audio)
         assertEquals(listOf("Timothée Chalamet", "Zendaya"), movie.cast)
-        assertEquals("2160p HEVC HDR", file.qualityLabel)
+        assertEquals("4K HEVC HDR", file.qualityLabel)
 
         val series = XtreamVod.seriesDetails(config(), entries.first { it.kind == VodKind.SERIES })
         assertEquals(listOf("S1E1", "S1E5"), series.episodes.map { it.key })

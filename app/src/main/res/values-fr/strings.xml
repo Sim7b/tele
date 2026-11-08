@@ -617,6 +617,10 @@
     <string name="vod_row_recent_series">Séries ajoutées récemment</string>
     <string name="vod_row_top_movies">Films les mieux notés</string>
     <string name="vod_row_top_series">Séries les mieux notées</string>
+    <string name="vod_row_on_the_air">Séries en cours de diffusion</string>
+    <string name="vod_row_airing_today">Épisodes diffusés aujourd\'hui</string>
+    <!-- A streaming service, e.g. Sur Netflix -->
+    <string name="vod_row_platform">Sur %1$s</string>
     <string name="vod_shelf_latest">Dernières sorties</string>
     <string name="vod_shelf_top_rated">Les mieux notés</string>
     <string name="vod_view_grid">Tous les titres</string>
@@ -645,6 +649,7 @@
     <string name="vod_version">Version</string>
     <string name="vod_file_button">Fichier · %1$s</string>
     <string name="vod_file_choose_title">Choisir le fichier</string>
+    <string name="vod_quality_unknown">Qualité inconnue</string>
     <string name="vod_menu_choose_file">Lire un autre fichier</string>
     <string name="vod_file_audio">Audio : %1$s</string>
     <string name="vod_file_subtitles">Sous-titres : %1$s</string>
@@ -843,6 +848,7 @@
     <string name="settings_vod_rows_description">Rangées affichées sur l\'accueil des films et séries (une rangée vide n\'est jamais affichée)</string>
     <string name="settings_vod_collections_row">Collections</string>
     <string name="settings_vod_genres_row">Genres</string>
+    <string name="settings_vod_platforms_row">Plateformes de streaming</string>
     <string name="settings_vod_poster_title">Taille des affiches</string>
     <string name="settings_vod_poster_small">Petite</string>
     <string name="settings_vod_poster_normal">Normale</string>

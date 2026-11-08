@@ -385,9 +385,15 @@ object DispatcharrVod {
             durationSecs = duration,
             stillUrl = item.optStringOrNull("movie_image")?.takeIf { it.startsWith("http") },
             airDate = item.optStringOrNull("air_date"),
-            versions = listOf(version(config, entry, client.vodStreamUrl("episode", uuid), title.ifBlank { entry.name }, ProviderMedia.from(null), duration))
+            // The technical details of the file when the provider gives them (as for its movies)
+            versions = listOf(version(config, entry, client.vodStreamUrl("episode", uuid), title.ifBlank { entry.name }, ProviderMedia.from(episodeInfo(item)), duration))
         )
     }
+
+    /** Details of an episode: "info" of the provider, or kept by Dispatcharr in its custom properties. */
+    internal fun episodeInfo(item: JSONObject): JSONObject? =
+        item.optJSONObject("info")?.takeIf { it.has("video") }
+            ?: item.optJSONObject("custom_properties")?.optJSONObject("info")?.takeIf { it.has("video") }
 
     private fun version(config: SourceConfig, entry: VodEntry, url: String, name: String, media: ProviderMedia, duration: Int?) = VodVersion(
         sourceId = config.id,
