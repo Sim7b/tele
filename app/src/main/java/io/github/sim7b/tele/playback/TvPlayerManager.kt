@@ -989,6 +989,8 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     @OptIn(UnstableApi::class)
     private fun timeshiftSource(buffer: TimeshiftBuffer, from: Long): MediaSource =
         ProgressiveMediaSource.Factory(TimeshiftDataSource.Factory(buffer, from), extractorsFactory)
+            // A failure is never loaded again from the start of the recording (see TimeshiftLoadErrorPolicy)
+            .setLoadErrorHandlingPolicy(TimeshiftLoadErrorPolicy)
             .createMediaSource(MediaItem.fromUri("timeshift://live/$from"))
 
     private fun closeTimeshift() {
