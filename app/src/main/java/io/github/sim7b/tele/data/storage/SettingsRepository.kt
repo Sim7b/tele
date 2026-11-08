@@ -20,6 +20,7 @@ import io.github.sim7b.tele.data.model.HomeLayout
 import io.github.sim7b.tele.data.sport.SportEvents
 import io.github.sim7b.tele.data.trakt.TraktApp
 import io.github.sim7b.tele.data.trakt.TraktSession
+import io.github.sim7b.tele.data.vod.TmdbListsCache
 import io.github.sim7b.tele.data.vod.VodCategories
 import io.github.sim7b.tele.data.vod.VodDisplay
 import io.github.sim7b.tele.data.vod.VodEntry
@@ -103,6 +104,12 @@ class SettingsRepository(context: Context) {
 
     /** TMDB facts of the movies and series (countries, studios), indexed in the background. */
     val vodIndex = VodIndex(File(cacheDir, VOD_INDEX_FILE))
+
+    /** TMDB lists (rankings, catalogs of the streaming services and genres) kept between two starts. */
+    val tmdbLists = TmdbListsCache(File(cacheDir, "tmdb_lists"))
+
+    /** Library, rows, sheets and posters of the movies and series, kept to show them at once. */
+    val vodSnapshots = VodSnapshots(File(cacheDir, "vod_snapshots"), secrets)
 
     private val _configs = MutableStateFlow<List<SourceConfig>>(emptyList())
     val configs: StateFlow<List<SourceConfig>> = _configs.asStateFlow()
@@ -710,6 +717,9 @@ class SettingsRepository(context: Context) {
     }
 
     /** Movies and series of source [configId] as last loaded (to call off the main thread). */
+    /** When the catalog of [configId] kept on the device was saved and fully loaded (its start read only). */
+    fun getVodCatalogStamp(configId: String): Pair<Long, Long>? = vodCatalogCache(configId).stamp(configId)
+
     fun getVodCatalog(configId: String): CachedVodCatalog? =
         try {
             vodCatalogCache(configId).load(configId)
@@ -750,6 +760,8 @@ class SettingsRepository(context: Context) {
         channelCache(configId).clear()
         guideCache(configId).clear()
         vodCatalogCache(configId).clear()
+        // Library, rows and sheets hold its files (and their addresses): built again without it
+        vodSnapshots.clear()
     }
 
     /** Displayed name of the source groups [groups] ([name] blank: back to the source name). */

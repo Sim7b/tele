@@ -13,7 +13,9 @@ data class VodRow(
     val name: String? = null,
     val ranked: Boolean = false,
     // Collection rows: the collection the titles can be removed from
-    val collectionId: String? = null
+    val collectionId: String? = null,
+    // Platform rows: the streaming service
+    val platform: StreamingPlatform? = null
 ) {
     enum class Kind {
         CONTINUE, TRENDING, MY_LIST, COLLECTION, RECENT_MOVIES, RECENT_SERIES, POPULAR_MOVIES, POPULAR_SERIES,
@@ -67,7 +69,7 @@ object VodRows {
         rows += VodRow(VodRow.Kind.AIRING_TODAY, ranked(Ranking.AIRING_TODAY))
         // A row per streaming service and kind (the movies and series screens each show theirs)
         Ranking.entries.filter { it.platform != null }.forEach { ranking ->
-            rows += VodRow(VodRow.Kind.PLATFORM, ranked(ranking), name = ranking.platform!!.label)
+            rows += VodRow(VodRow.Kind.PLATFORM, ranked(ranking), name = ranking.platform!!.label, platform = ranking.platform)
         }
         VodLibrary.topGenres(titles, GENRE_ROWS).forEach { genre ->
             rows += VodRow(VodRow.Kind.GENRE, best(titles.filter { genre in it.genres }), genre)

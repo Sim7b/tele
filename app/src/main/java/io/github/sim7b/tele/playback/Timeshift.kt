@@ -8,6 +8,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -32,7 +35,9 @@ class TimeshiftBuffer(
     private val maxBytes: Long = MAX_BYTES,
     private val reserveBytes: Long = RESERVE_BYTES,
     private val clock: () -> Long = SystemClock::elapsedRealtime,
-    private val freeSpace: () -> Long = { dir.usableSpace }
+    private val freeSpace: () -> Long = { dir.usableSpace },
+    private val maxReconnects: Int = MAX_RECONNECTS,
+    private val reconnectDelay: (attempt: Int) -> Long = ::reconnectDelayMs
 ) {
 
     private class Chunk(val start: Long, val file: File) {
@@ -63,23 +68,47 @@ class TimeshiftBuffer(
         }
     }
 
+    /**
+     * Reads the channel into the recording. A dropped connection (or a stream ending, which a live channel does
+     * not) is opened again, up to [maxReconnects] times in a row with a growing pause: the recording, and the
+     * way back in it, go on. A refusal from the server, or the last attempt, ends it.
+     */
     private fun record() {
         val buffer = ByteArray(READ_BYTES)
+        var reconnects = 0
         try {
-            upstream.open(DataSpec(uri))
             while (!closed) {
-                val read = upstream.read(buffer, 0, buffer.size)
-                if (read == C.RESULT_END_OF_INPUT) break
-                if (read > 0) append(buffer, read)
+                val error: IOException? = try {
+                    upstream.open(DataSpec(uri))
+                    while (!closed) {
+                        val read = upstream.read(buffer, 0, buffer.size)
+                        if (read == C.RESULT_END_OF_INPUT) break
+                        if (read > 0) {
+                            append(buffer, read)
+                            reconnects = 0
+                        }
+                    }
+                    null
+                } catch (e: IOException) {
+                    e
+                } finally {
+                    closeUpstream()
+                }
+                if (closed) break
+                if (error != null && !isWorthReconnecting(error)) {
+                    synchronized(lock) { failure = error }
+                    break
+                }
+                if (reconnects >= maxReconnects) {
+                    // A live channel that keeps ending: its end; one that keeps failing: its failure
+                    if (error != null) synchronized(lock) { failure = error }
+                    break
+                }
+                reconnects++
+                synchronized(lock) { if (!closed) lock.wait(reconnectDelay(reconnects).coerceAtLeast(1)) }
             }
-        } catch (e: IOException) {
-            synchronized(lock) { failure = e }
         } finally {
-            try {
-                upstream.close()
-            } catch (_: IOException) {
-                // Already gone
-            }
+            closeUpstream()
             synchronized(lock) {
                 finished = true
                 output?.close()
@@ -87,6 +116,14 @@ class TimeshiftBuffer(
                 if (closed) deleteAll()
                 lock.notifyAll()
             }
+        }
+    }
+
+    private fun closeUpstream() {
+        try {
+            upstream.close()
+        } catch (_: IOException) {
+            // Already gone
         }
     }
 
@@ -183,6 +220,21 @@ class TimeshiftBuffer(
     }
 
     companion object {
+        /** Connections opened again in a row when the channel drops, before giving up. */
+        const val MAX_RECONNECTS = 3
+
+        /** Pause before reconnection number [attempt] (1-based): 1 s, 2 s, 4 s. */
+        internal fun reconnectDelayMs(attempt: Int): Long = 1_000L shl (attempt - 1).coerceIn(0, 2)
+
+        /**
+         * A dropped connection is opened again; not a refusal (access denied, stream gone, another client error),
+         * except a timeout or too many requests, which pass.
+         */
+        internal fun isWorthReconnecting(error: IOException): Boolean {
+            val code = (error as? HttpDataSource.InvalidResponseCodeException)?.responseCode ?: return true
+            return code !in 400..499 || code == 408 || code == 429
+        }
+
         const val MAX_DURATION_MS = 60 * 60_000L
         const val MAX_BYTES = 8L * 1024 * 1024 * 1024
         // Left free for the system and the other apps
@@ -194,6 +246,16 @@ class TimeshiftBuffer(
         private const val MARK_INTERVAL_MS = 500L
         private const val WAIT_MS = 250L
     }
+}
+
+/**
+ * Errors reading the recording are never retried by the player: a stream of unknown length is taken for a live
+ * URL and loaded again from its start, which here is the start of the recording (minutes back in the past). They
+ * reach the player's error handling instead, which reconnects the channel at its live edge.
+ */
+@OptIn(UnstableApi::class)
+object TimeshiftLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long = C.TIME_UNSET
 }
 
 /** The player reading a [TimeshiftBuffer] from byte [from] (a spot in the past, or the live edge). */

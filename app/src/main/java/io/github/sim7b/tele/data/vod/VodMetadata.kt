@@ -170,14 +170,47 @@ object VodMetadata {
             )
             .firstOrNull()
             ?.optString("key")
+    /**
+     * A TMDB request; asked again ([TMDB_RETRIES] times) when TMDB is busy (too many requests at once, server
+     * error) or the network fails, after the pause TMDB asks for, else a growing one. Null when it fails for good.
+     */
     internal suspend fun tmdbGet(path: String, key: String, language: String, query: HttpUrl.Builder.() -> Unit): JSONObject? {
         val url = (TMDB_API + path).toHttpUrl().newBuilder()
             .addQueryParameter("api_key", key)
             .addQueryParameter("language", language)
             .apply(query)
             .build()
-        return getJson(url)
+        val request = Request.Builder().url(url).header("User-Agent", HttpClients.DEFAULT_USER_AGENT).get().build()
+        var attempt = 0
+        while (true) {
+            var retryAfterS: Long? = null
+            val answer: Pair<Int, JSONObject?>? = try {
+                client.newCall(request).executeCancellable { response ->
+                    retryAfterS = response.header("Retry-After")?.trim()?.toLongOrNull()
+                    response.code to if (response.isSuccessful) JSONObject(HttpClients.jsonString(response.body)) else null
+                }
+            } catch (e: java.io.IOException) {
+                if (attempt >= TMDB_RETRIES) throw e
+                null
+            }
+            if (answer != null && !shouldRetryTmdb(answer.first)) return answer.second
+            if (attempt >= TMDB_RETRIES) return null
+            kotlinx.coroutines.delay(tmdbRetryDelayMs(attempt, retryAfterS))
+            attempt++
+        }
     }
+
+    /** TMDB is busy (too many requests, server error): worth asking again. */
+    internal fun shouldRetryTmdb(code: Int): Boolean = code == HTTP_TOO_MANY_REQUESTS || code in 500..599
+
+    /** Pause before attempt [attempt] + 2: the one TMDB asks for (within limits), else 1 s, 2 s… */
+    internal fun tmdbRetryDelayMs(attempt: Int, retryAfterS: Long?): Long =
+        retryAfterS?.let { (it * 1000).coerceIn(MIN_RETRY_MS, MAX_RETRY_MS) } ?: (MIN_RETRY_MS * 2 shl attempt).coerceAtMost(MAX_RETRY_MS)
+
+    private const val TMDB_RETRIES = 2
+    private const val HTTP_TOO_MANY_REQUESTS = 429
+    private const val MIN_RETRY_MS = 500L
+    private const val MAX_RETRY_MS = 10_000L
 
     // ---------------------------------------------------------------- TVmaze
 

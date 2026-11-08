@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
 import io.github.sim7b.tele.ui.components.clockLabel
 import org.junit.After
@@ -76,7 +77,7 @@ class TimeshiftBufferTest {
     @Test
     fun `the live channel is read back as it was received, waiting for the live data`() {
         val stream = FakeStream()
-        val buffer = TimeshiftBuffer(File(dir, "a"), stream, Uri.EMPTY, clock = { now }, freeSpace = { Long.MAX_VALUE })
+        val buffer = TimeshiftBuffer(File(dir, "a"), stream, Uri.EMPTY, clock = { now }, freeSpace = { Long.MAX_VALUE }, maxReconnects = 0)
         buffer.start()
         val first = ByteArray(1000) { it.toByte() }
         stream.send(first)
@@ -93,7 +94,7 @@ class TimeshiftBufferTest {
     @Test
     fun `a network failure reaches the player once it has read what came before`() {
         val stream = FakeStream()
-        val buffer = TimeshiftBuffer(File(dir, "b"), stream, Uri.EMPTY, clock = { now }, freeSpace = { Long.MAX_VALUE })
+        val buffer = TimeshiftBuffer(File(dir, "b"), stream, Uri.EMPTY, clock = { now }, freeSpace = { Long.MAX_VALUE }, maxReconnects = 0)
         buffer.start()
         stream.send(ByteArray(100) { 1 })
         stream.fail(IOException("HTTP 503"))
@@ -103,6 +104,45 @@ class TimeshiftBufferTest {
             fail("The failure is expected")
         } catch (e: IOException) {
             assertEquals("HTTP 503", e.message)
+        }
+        buffer.close()
+    }
+
+    @Test
+    fun `a dropped connection is opened again and the recording goes on`() {
+        val stream = FakeStream()
+        val buffer = TimeshiftBuffer(File(dir, "d"), stream, Uri.EMPTY, clock = { now }, freeSpace = { Long.MAX_VALUE }, reconnectDelay = { 1 })
+        buffer.start()
+        stream.send(ByteArray(100) { 1 })
+        stream.fail(IOException("Connection reset"))
+        stream.send(ByteArray(50) { 2 })
+        val read = readAll(buffer, 0, 150)
+        assertEquals(150, read.size)
+        assertEquals(2.toByte(), read[149])
+        buffer.close()
+    }
+
+    @Test
+    fun `a refusal of the server, or the last reconnection, ends the recording`() {
+        val refused = HttpDataSource.InvalidResponseCodeException(
+            403, null, null, emptyMap(), DataSpec(Uri.EMPTY), ByteArray(0)
+        )
+        assertFalse(TimeshiftBuffer.isWorthReconnecting(refused))
+        assertTrue(TimeshiftBuffer.isWorthReconnecting(IOException("Connection reset")))
+        val busy = HttpDataSource.InvalidResponseCodeException(503, null, null, emptyMap(), DataSpec(Uri.EMPTY), ByteArray(0))
+        assertTrue(TimeshiftBuffer.isWorthReconnecting(busy))
+        assertEquals(listOf(1_000L, 2_000L, 4_000L), (1..3).map { TimeshiftBuffer.reconnectDelayMs(it) })
+
+        val stream = FakeStream()
+        val buffer = TimeshiftBuffer(File(dir, "e"), stream, Uri.EMPTY, clock = { now }, freeSpace = { Long.MAX_VALUE }, maxReconnects = 1, reconnectDelay = { 1 })
+        buffer.start()
+        stream.fail(IOException("first"))
+        stream.fail(IOException("second"))
+        try {
+            buffer.read(0, ByteArray(10), 0, 10)
+            fail("The failure is expected")
+        } catch (e: IOException) {
+            assertEquals("second", e.message)
         }
         buffer.close()
     }

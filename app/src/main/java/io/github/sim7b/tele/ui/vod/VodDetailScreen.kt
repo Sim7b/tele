@@ -1,5 +1,7 @@
 package io.github.sim7b.tele.ui.vod
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -509,10 +511,11 @@ private fun FileInfo(
             subtitlesBlock(Modifier.fillMaxWidth())
         }
     } else {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            fileBlock(Modifier.weight(1.2f))
-            audioBlock(Modifier.weight(1f))
-            subtitlesBlock(Modifier.weight(1f))
+        // The three blocks as high as the tallest one
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
+            fileBlock(Modifier.weight(1.2f).fillMaxHeight())
+            audioBlock(Modifier.weight(1f).fillMaxHeight())
+            subtitlesBlock(Modifier.weight(1f).fillMaxHeight())
         }
     }
 }
@@ -693,7 +696,7 @@ private fun VodButton(label: String, icon: ImageVector, onClick: () -> Unit, mod
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 14.dp, end = 18.dp, top = 9.dp, bottom = 9.dp)) {
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(text = label, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
         }
     }
 }

@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.vod
 
+import io.github.sim7b.tele.BuildConfig
 import android.os.SystemClock
 import android.util.Log
 import io.github.sim7b.tele.data.UiText
@@ -13,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
@@ -59,6 +62,94 @@ class VodRepository(
     private var rankingsAt = 0L
     private var rankingsJob: Job? = null
 
+    // Logos of the streaming services (TMDB), fetched with the rankings
+    private val _platformLogos = MutableStateFlow<Map<StreamingPlatform, String>>(emptyMap())
+    val platformLogos: StateFlow<Map<StreamingPlatform, String>> = _platformLogos.asStateFlow()
+
+    // Lists of the genres opened on their screen, kept [RANKINGS_MAX_AGE_MS]
+    private val genreCatalogs = ConcurrentHashMap<Pair<VodGenre, VodKind>, Pair<Long, GenreCatalog>>()
+
+    /** The TMDB lists of [genre] for [kind] (fetched once, then kept, on the device too); empty without a key or offline. */
+    suspend fun genreCatalog(genre: VodGenre, kind: VodKind): GenreCatalog {
+        val cacheKey = genre to kind
+        genreCatalogs[cacheKey]?.let { (at, lists) ->
+            if (fresh(at)) return lists
+        }
+        val name = listName("genre_${genre.name}_${kind.name}")
+        keptList(name)?.let { entry ->
+            val kept = GenreCatalog(entry.lists["popular"].orEmpty(), entry.lists["recent_best"].orEmpty(), entry.lists["all_time_best"].orEmpty())
+            genreCatalogs[cacheKey] = entry.fetchedAt to kept
+            return kept
+        }
+        val key = settings.tmdbKey.value.takeIf { it.isNotBlank() } ?: return GenreCatalog()
+        val fetched = VodGenres.catalog(genre, kind, key)
+        if (!fetched.isEmpty) {
+            val now = System.currentTimeMillis()
+            genreCatalogs[cacheKey] = now to fetched
+            keepList(name, mapOf("popular" to fetched.popular, "recent_best" to fetched.recentBest, "all_time_best" to fetched.allTimeBest), now)
+        }
+        return fetched
+    }
+
+    // TMDB lists kept on the device: named by list and language of the TV (its titles, its country's catalogs)
+    private fun listName(list: String): String =
+        "${list}_${Locale.getDefault().toLanguageTag()}".lowercase(Locale.ROOT).replace(Regex("[^a-z0-9_]"), "_")
+
+    private fun fresh(fetchedAt: Long): Boolean = System.currentTimeMillis() - fetchedAt in 0 until RANKINGS_MAX_AGE_MS
+
+    private suspend fun keptList(name: String): TmdbListsCache.Entry? =
+        withContext(Dispatchers.IO) { settings.tmdbLists.read(name) }?.takeIf { fresh(it.fetchedAt) }
+
+    private suspend fun keepList(name: String, lists: Map<String, List<RankedItem>>, fetchedAt: Long) =
+        withContext(Dispatchers.IO) { settings.tmdbLists.write(name, lists, fetchedAt) }
+
+    // Catalogs of the streaming services opened on their screen, kept [RANKINGS_MAX_AGE_MS]
+    private val platformCatalogs = ConcurrentHashMap<Pair<StreamingPlatform, VodKind>, Pair<Long, PlatformCatalog>>()
+
+    /**
+     * The titles of [platform] for [kind] on TMDB, by popularity, and its own productions: its full catalog (fetched
+     * once, then kept), else the entries of its row on the home (no key, offline).
+     */
+    suspend fun platformCatalog(platform: StreamingPlatform, kind: VodKind): PlatformCatalog {
+        val cacheKey = platform to kind
+        platformCatalogs[cacheKey]?.let { (at, items) ->
+            if (fresh(at)) return items
+        }
+        val name = listName("platform_${platform.name}_${kind.name}")
+        keptList(name)?.let { entry ->
+            val kept = PlatformCatalog(entry.lists["popular"].orEmpty(), entry.lists["originals"].orEmpty())
+            if (kept.popular.isNotEmpty()) {
+                platformCatalogs[cacheKey] = entry.fetchedAt to kept
+                return kept
+            }
+        }
+        val home = PlatformCatalog(Ranking.of(platform, kind)?.let { _rankings.value[it] }.orEmpty())
+        val key = settings.tmdbKey.value.takeIf { it.isNotBlank() } ?: return home
+        // Asked twice at once (focus, then opening): one fetch
+        val fetched = platformFetches.getOrPut(cacheKey) {
+            scope.async { VodRankings.platformCatalog(platform, kind, key) }
+        }.let { job ->
+            try {
+                job.await()
+            } finally {
+                platformFetches.remove(cacheKey, job)
+            }
+        }
+        if (fetched.popular.isEmpty()) return home
+        val now = System.currentTimeMillis()
+        platformCatalogs[cacheKey] = now to fetched
+        keepList(name, mapOf("popular" to fetched.popular, "originals" to fetched.originals), now)
+        return fetched
+    }
+
+    private val platformFetches = ConcurrentHashMap<Pair<StreamingPlatform, VodKind>, kotlinx.coroutines.Deferred<PlatformCatalog>>()
+
+    /** Starts fetching the catalog of [platform] (its tile focused), to open it at once. */
+    fun prefetchPlatform(platform: StreamingPlatform, kind: VodKind) {
+        if (settings.tmdbKey.value.isBlank()) return
+        scope.launch { platformCatalog(platform, kind) }
+    }
+
     // Background TMDB indexing of the titles (countries, studios, popularity)
     val index get() = settings.vodIndex
     private var indexJob: Job? = null
@@ -85,6 +176,13 @@ class VodRepository(
 
     /** Loads the library of the enabled sources (their chosen categories), if not done yet for them. */
     fun open() {
+        // The rows of the last start, shown at once if the library takes a while
+        if (lastRows.isEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                val kept = settings.vodSnapshots.rows()
+                if (lastRows.isEmpty()) lastRows = kept
+            }
+        }
         val configs = settings.enabledConfigs.value
         val selections = settings.vodSelections.value
         if (configs == loadedFor && selections.loaded() == loadedSelections.loaded() && (_library.value.loaded || loadJob?.isActive == true)) return
@@ -105,6 +203,7 @@ class VodRepository(
         // The catalog of the device was loaded for another choice
         scope.launch(Dispatchers.IO) { settings.clearVodCatalog(config.id) }
         catalogs.remove(config.id)
+        catalogStamps.remove(config.id)
         builtFrom = null
         load(settings.enabledConfigs.value, force = false, forced = setOf(config.id))
     }
@@ -121,6 +220,8 @@ class VodRepository(
         loadedFor = emptyList()
         loadedSelections = emptyMap()
         catalogs.clear()
+        catalogStamps.clear()
+        keptLibrary = null
         builtFrom = null
         errors.clear()
         synchronized(details) { details.clear() }
@@ -148,6 +249,8 @@ class VodRepository(
         toChoose = configs.filter { it.id !in selections }
         synchronized(details) { details.clear() }
         catalogs.keys.retainAll(chosen.map { it.id }.toSet())
+        catalogStamps.keys.retainAll(chosen.map { it.id }.toSet())
+        chosenIds = chosen.map { it.id }.toSet()
         errors.clear()
         if (chosen.isEmpty()) {
             // Nothing to load until the categories are chosen
@@ -160,6 +263,7 @@ class VodRepository(
         loadJob = scope.launch {
             val startedAt = SystemClock.elapsedRealtime()
             try {
+                showKeptLibrary(chosen)
                 coroutineScope {
                     chosen.map { config ->
                         async { loadSource(config, force || config.id in forced, selections.getValue(config.id)) }
@@ -230,11 +334,30 @@ class VodRepository(
         val now = System.currentTimeMillis()
         if (rankingsJob?.isActive != true && (now - rankingsAt > RANKINGS_MAX_AGE_MS || _rankings.value.isEmpty())) {
             rankingsJob = scope.launch {
+                if (_platformLogos.value.isEmpty()) {
+                    launch {
+                        VodRankings.platformLogos(key).takeIf { it.isNotEmpty() }?.let { _platformLogos.value = it }
+                    }
+                }
+                // Kept on the device by a recent start: no need to fetch them again
+                val name = listName("rankings")
+                if (_rankings.value.isEmpty()) {
+                    keptList(name)?.let { entry ->
+                        val kept = entry.lists.mapNotNull { (list, items) -> Ranking.entries.firstOrNull { it.name == list }?.let { it to items } }.toMap()
+                        if (kept.values.any { it.isNotEmpty() }) {
+                            _rankings.value = kept
+                            rankingsAt = entry.fetchedAt
+                            prepareHome()
+                            return@launch
+                        }
+                    }
+                }
                 val fetched = VodRankings.fetch(key)
                 if (fetched.values.any { it.isNotEmpty() }) {
                     _rankings.value = fetched
                     prepareHome()
                     rankingsAt = System.currentTimeMillis()
+                    keepList(name, fetched.mapKeys { it.key.name }, rankingsAt)
                 }
             }
         }
@@ -249,7 +372,9 @@ class VodRepository(
         Log.i(TAG, "Catalog of a ${config.type} source read from the device: ${cached?.entries?.size ?: 0} entries in ${SystemClock.elapsedRealtime() - readStart} ms")
         if (cached != null) {
             catalogs[config.id] = cached.entries
-            publish(loading = true)
+            catalogStamps[config.id] = cached.savedAt to cached.fullAt
+            // Already shown by the library kept on the device
+            if (keptLibrary == null) publish(loading = true)
         }
         val fresh = cached != null && System.currentTimeMillis() - cached.savedAt in 0..MAX_AGE_MS
         if (fresh && !force) return
@@ -262,6 +387,7 @@ class VodRepository(
                 if (added != null) {
                     val merged = DispatcharrVod.merge(cached.entries, added)
                     catalogs[config.id] = merged
+                    catalogStamps[config.id] = now to cached.fullAt
                     errors.remove(config.id)
                     if (added.isNotEmpty()) publish(loading = true)
                     withContext(Dispatchers.IO) { settings.saveVodCatalog(config.id, now, merged, fullAt = cached.fullAt) }
@@ -275,6 +401,7 @@ class VodRepository(
                 // First load (nothing on the device yet): the library fills as the pages arrive
                 if (cached == null && partial.isNotEmpty()) {
                     catalogs[config.id] = partial
+                    catalogStamps.remove(config.id)
                     val now = SystemClock.elapsedRealtime()
                     // Not more than a fifth of the time spent building: the load keeps the processor
                     if (now - lastPartialPublish >= maxOf(PARTIAL_PUBLISH_MS, lastBuildMs * 4)) {
@@ -296,6 +423,7 @@ class VodRepository(
             catalogs[config.id] = entries
             errors.remove(config.id)
             val savedAt = System.currentTimeMillis()
+            catalogStamps[config.id] = savedAt to savedAt
             if (config.type == SourceType.DISPATCHARR && selection.all) {
                 // The groups (languages) come after: shown before them only when the device had no catalog
                 // (otherwise the one of the device stays shown, and the library is built once, at the end)
@@ -333,14 +461,21 @@ class VodRepository(
             )
             return
         }
-        val entries = sources.flatten()
+        // The library kept on the device for these very catalogs: not built again
+        val signature = librarySignature(order.filter { it in chosenIds }, hideTheater, catalogStamps)
+        val kept = keptLibrary?.takeIf { signature != null && it.first == signature }?.second
         val buildStart = SystemClock.elapsedRealtime()
         val (titles, byKey, featured) = withContext(Dispatchers.Default) {
-            val titles = VodLibrary.build(entries).let { all -> if (hideTheater) all.filterNot { VodDisplay.isTheaterCopy(it) } else all }
+            val titles = kept ?: VodLibrary.build(sources.flatten()).let { all ->
+                if (hideTheater) all.filterNot { VodDisplay.isTheaterCopy(it) } else all
+            }
             Triple(titles, titles.associateBy { it.key }, VodRows.featured(titles))
         }
-        lastBuildMs = SystemClock.elapsedRealtime() - buildStart
-        Log.i(TAG, "Library of ${titles.size} titles built in $lastBuildMs ms")
+        if (kept == null) {
+            lastBuildMs = SystemClock.elapsedRealtime() - buildStart
+            Log.i(TAG, "Library of ${titles.size} titles built in $lastBuildMs ms")
+            if (signature != null) keepLibrary(signature, titles)
+        }
         builtFrom = sources to hideTheater
         _library.value = VodLibraryState(
             titles = titles,
@@ -352,6 +487,54 @@ class VodRepository(
             toChoose = toChoose,
             newCategories = newCategories
         )
+    }
+
+    // The sources whose catalogs are loaded (their categories chosen)
+    @Volatile
+    private var chosenIds: Set<String> = emptySet()
+    // When each catalog in memory was saved and fully loaded (absent: not saved as it is)
+    private val catalogStamps = ConcurrentHashMap<String, Pair<Long, Long>>()
+    // The library kept on the device, with the catalogs it was grouped from
+    @Volatile
+    private var keptLibrary: Pair<String, List<VodTitle>>? = null
+    private var librarySave: Job? = null
+
+    private fun keepLibrary(signature: String, titles: List<VodTitle>) {
+        if (keptLibrary?.first == signature) return
+        keptLibrary = signature to titles
+        librarySave?.cancel()
+        librarySave = scope.launch(Dispatchers.IO) {
+            val start = SystemClock.elapsedRealtime()
+            settings.vodSnapshots.saveLibrary(signature, titles)
+            Log.i(TAG, "Library kept on the device in ${SystemClock.elapsedRealtime() - start} ms")
+        }
+    }
+
+    /**
+     * The library kept on the device, shown before the catalogs are read when they are still the ones it was
+     * grouped from (their start read only).
+     */
+    private suspend fun showKeptLibrary(chosen: List<SourceConfig>) {
+        if (_library.value.titles.isNotEmpty()) return
+        val start = SystemClock.elapsedRealtime()
+        val (signature, titles) = withContext(Dispatchers.IO) {
+            val stamps = chosen.mapNotNull { config -> settings.getVodCatalogStamp(config.id)?.let { config.id to it } }.toMap()
+            val signature = librarySignature(loadedFor.map { it.id }.filter { it in chosenIds }, settings.vodDisplay.value.hideTheater, stamps)
+            signature to signature?.let { settings.vodSnapshots.library(it) }
+        } ?: return
+        if (signature == null || titles.isNullOrEmpty() || _library.value.titles.isNotEmpty()) return
+        keptLibrary = signature to titles
+        val (byKey, featured) = withContext(Dispatchers.Default) { titles.associateBy { it.key } to VodRows.featured(titles) }
+        _library.value = VodLibraryState(
+            titles = titles,
+            byKey = byKey,
+            featured = featured,
+            loading = true,
+            loaded = true,
+            toChoose = toChoose,
+            newCategories = newCategories
+        )
+        Log.i(TAG, "Library of ${titles.size} titles read from the device in ${SystemClock.elapsedRealtime() - start} ms")
     }
 
     private fun dispatcharr(config: SourceConfig): DispatcharrClient =
@@ -390,6 +573,8 @@ class VodRepository(
                 titles, store.progress.value, store.myList.value, store.collections.value, rankings,
                 matcher(titles, rankings), settings.vodDisplay.value.hiddenRows
             )
+            // Kept: the next start shows them before its library is ready
+            withContext(Dispatchers.IO) { settings.vodSnapshots.saveRows(lastRows) }
         }
     }
 
@@ -404,18 +589,68 @@ class VodRepository(
 
     /** Poster of [title] when its providers give none, looked up once (only for the cards shown). */
     suspend fun posterFor(title: VodTitle): String? {
+        loadKeptPosters()
         synchronized(posters) { posters[title.key] }?.let { return it.ifEmpty { null } }
         val found = VodMetadata.poster(title, settings.tmdbKey.value.takeIf { it.isNotBlank() })
         synchronized(posters) { posters[title.key] = found.orEmpty() }
+        keepPostersSoon()
         return found
     }
+
+    // The posters found by the previous starts, read once; written a moment after the last one found
+    private val postersLoaded = kotlinx.coroutines.CompletableDeferred<Unit>()
+    private var postersLoading: Job? = null
+    private var postersSave: Job? = null
+
+    private suspend fun loadKeptPosters() {
+        if (postersLoaded.isCompleted) return
+        synchronized(posters) {
+            if (postersLoading == null) {
+                postersLoading = scope.launch(Dispatchers.IO) {
+                    val kept = settings.vodSnapshots.posters()
+                    synchronized(posters) { kept.forEach { (key, url) -> posters.putIfAbsent(key, url) } }
+                    postersLoaded.complete(Unit)
+                }
+            }
+        }
+        postersLoaded.await()
+    }
+
+    private fun keepPostersSoon() {
+        postersSave?.cancel()
+        postersSave = scope.launch(Dispatchers.IO) {
+            delay(POSTERS_SAVE_DELAY_MS)
+            settings.vodSnapshots.savePosters(synchronized(posters) { LinkedHashMap(posters) })
+        }
+    }
+
+    /**
+     * Sheet of [title]: built once, kept on the device and shown at once the next times (built again in the
+     * background once a day old, or at once when the sources of the title changed).
+     */
+    suspend fun details(title: VodTitle): VodDetails {
+        cachedDetails(title.key)?.let { return it }
+        val kept = withContext(Dispatchers.IO) { settings.vodSnapshots.details(title.key) }
+        if (kept != null && sameFiles(kept.details.title, title)) {
+            val age = System.currentTimeMillis() - kept.savedAt
+            if (age in 0 until DETAILS_MAX_AGE_MS) {
+                synchronized(details) { details[title.key] = kept.details }
+                if (age >= DETAILS_REFRESH_AGE_MS) scope.launch { runCatching { buildDetails(title) } }
+                return kept.details
+            }
+        }
+        return buildDetails(title)
+    }
+
+    /** The same files of the same sources: a sheet kept for one is still right for the other. */
+    private fun sameFiles(kept: VodTitle, current: VodTitle): Boolean =
+        kept.entries.map { it.sourceId to it.providerId }.toSet() == current.entries.map { it.sourceId to it.providerId }.toSet()
 
     /**
      * Sheet of [title]: details of every source that has it (in parallel, each bounded in time), files
      * of the same movie or episode together, completed by TMDB (with a key) or TVmaze (series).
      */
-    suspend fun details(title: VodTitle): VodDetails {
-        cachedDetails(title.key)?.let { return it }
+    private suspend fun buildDetails(title: VodTitle): VodDetails {
         val configs = loadedFor.associateBy { it.id }
         val sourceName = { id: String -> configs[id]?.name.orEmpty() }
 
@@ -470,6 +705,10 @@ class VodRepository(
         val enrichment = VodMetadata.enrich(merged, episodes.map { it.season }.toSet(), settings.tmdbKey.value.takeIf { it.isNotBlank() })
         val result = enrichment?.let { enrich(base, it, preferEnrichment = settings.tmdbKey.value.isNotBlank()) } ?: base
         synchronized(details) { details[title.key] = result }
+        // Kept only when a source answered: a sheet without its files is not worth showing again
+        if (parts.isNotEmpty() || m3uEntries.isNotEmpty()) {
+            withContext(Dispatchers.IO) { settings.vodSnapshots.saveDetails(title.key, result) }
+        }
         return result
     }
 
@@ -489,6 +728,21 @@ class VodRepository(
         private const val DETAILS_TIMEOUT_MS = 15_000L
         private const val MAX_DETAILS = 40
         private const val MAX_POSTERS = 3_000
+        // Sheets kept on the device: shown up to a week, built again in the background past a day
+        private const val DETAILS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L
+        private const val DETAILS_REFRESH_AGE_MS = 24 * 60 * 60 * 1000L
+        private const val POSTERS_SAVE_DELAY_MS = 5_000L
+
+        /**
+         * What the library was grouped from: the catalogs of [sourceIds] in this order, saved and fully loaded at
+         * [stamps], the display setting and the version of the app (another one may group differently). Null when a
+         * catalog is not saved as it is in memory.
+         */
+        internal fun librarySignature(sourceIds: List<String>, hideTheater: Boolean, stamps: Map<String, Pair<Long, Long>>): String? {
+            if (sourceIds.isEmpty()) return null
+            val parts = sourceIds.map { id -> stamps[id]?.let { "$id:${it.first}:${it.second}" } ?: return null }
+            return "${BuildConfig.VERSION_CODE}|$hideTheater|" + parts.joinToString(",")
+        }
         private const val MIN_DURATION_SECS = 300
         private const val RANKINGS_MAX_AGE_MS = 6 * 60 * 60 * 1000L
 
