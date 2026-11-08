@@ -612,6 +612,10 @@
     <string name="vod_row_recent_series">Recently added series</string>
     <string name="vod_row_top_movies">Top rated movies</string>
     <string name="vod_row_top_series">Top rated series</string>
+    <string name="vod_row_on_the_air">Series on the air</string>
+    <string name="vod_row_airing_today">Airing today</string>
+    <!-- A streaming service, e.g. On Netflix -->
+    <string name="vod_row_platform">On %1$s</string>
     <string name="vod_shelf_latest">Latest releases</string>
     <string name="vod_shelf_top_rated">Top rated</string>
     <string name="vod_view_grid">All titles</string>
@@ -640,6 +644,7 @@
     <string name="vod_version">Version</string>
     <string name="vod_file_button">File · %1$s</string>
     <string name="vod_file_choose_title">Choose the file</string>
+    <string name="vod_quality_unknown">Quality unknown</string>
     <string name="vod_menu_choose_file">Play another file</string>
     <string name="vod_file_audio">Audio: %1$s</string>
     <string name="vod_file_subtitles">Subtitles: %1$s</string>
@@ -828,6 +833,7 @@
     <string name="settings_vod_rows_description">Rows shown on the movies and series home (empty rows are never shown)</string>
     <string name="settings_vod_collections_row">Collections</string>
     <string name="settings_vod_genres_row">Genres</string>
+    <string name="settings_vod_platforms_row">Streaming services</string>
     <string name="settings_vod_poster_title">Poster size</string>
     <string name="settings_vod_poster_small">Small</string>
     <string name="settings_vod_poster_normal">Normal</string>

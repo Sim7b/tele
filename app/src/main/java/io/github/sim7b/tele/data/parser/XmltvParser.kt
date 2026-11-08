@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.parser
 
+import io.github.sim7b.tele.data.epg.EpgText
 import android.util.Xml
 import io.github.sim7b.tele.data.model.GuideProgram
 import org.xmlpull.v1.XmlPullParser
@@ -170,7 +171,7 @@ object XmltvParser {
             id = "$channel-$start",
             channelUuid = channel,
             title = programTitle,
-            description = description?.takeIf { it.isNotEmpty() },
+            description = EpgText.clean(description),
             startTimeIso = "",
             endTimeIso = "",
             posterUrl = icon?.takeIf { it.isNotBlank() },

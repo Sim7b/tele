@@ -68,6 +68,8 @@ import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.vod.VodRows
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.data.vod.VodVersion
+import io.github.sim7b.tele.ui.components.glass
+import io.github.sim7b.tele.ui.components.LocalImmersive
 import io.github.sim7b.tele.ui.components.AdaptiveButtonRow
 import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.LocalScreen
@@ -219,7 +221,7 @@ fun VodDetailScreen(
                             Text(text = meta, fontSize = 14.sp, color = TextSecondary)
                             shown.rating?.let {
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text(text = ratingLabel(it), fontSize = 14.sp, color = AccentCyan)
+                                RatingText(rating = it, fontSize = 14)
                             }
                         }
                         details?.director?.let {
@@ -572,9 +574,10 @@ internal fun FilePickerDialog(
     }
 }
 
-/** "2160p HEVC HDR · Maison" / "4K · Liste". */
+/** "4K HEVC HDR · Maison" / "1080p · Liste": the quality always said, "Quality unknown" when nothing tells it. */
+@Composable
 internal fun versionLabel(version: VodVersion): String =
-    listOfNotNull(version.qualityLabel, version.sourceName.ifBlank { null }).joinToString(" · ").ifBlank { version.name }
+    listOfNotNull(version.qualityLabel ?: stringResource(R.string.vod_quality_unknown), version.sourceName.ifBlank { null }).joinToString(" · ")
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -667,16 +670,24 @@ internal fun nextEpisode(titleKey: String, episodes: List<VodEpisode>, progress:
 @Composable
 private fun VodButton(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, primary: Boolean = false) {
     val shape = RoundedCornerShape(50)
+    // As everywhere: white when focused; immersive style: the others in glass over the picture
+    val glass = LocalImmersive.current && !primary
     Surface(
         onClick = onClick,
-        modifier = modifier.touchClick(onClick),
+        modifier = modifier
+            .then(if (glass) Modifier.glass(shape) else Modifier)
+            .touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (primary) TextPrimary.copy(alpha = 0.9f) else SurfaceDark,
+            containerColor = when {
+                primary -> TextPrimary.copy(alpha = 0.9f)
+                glass -> Color.Transparent
+                else -> SurfaceDark
+            },
             contentColor = if (primary) LocalAppColors.current.background else TextPrimary,
-            focusedContainerColor = AccentCyan,
-            focusedContentColor = Color(0xFF080B10)
+            focusedContainerColor = TextPrimary,
+            focusedContentColor = LocalAppColors.current.background
         )
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 14.dp, end = 18.dp, top = 9.dp, bottom = 9.dp)) {

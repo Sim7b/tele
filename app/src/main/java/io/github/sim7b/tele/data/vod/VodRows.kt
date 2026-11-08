@@ -17,7 +17,9 @@ data class VodRow(
 ) {
     enum class Kind {
         CONTINUE, TRENDING, MY_LIST, COLLECTION, RECENT_MOVIES, RECENT_SERIES, POPULAR_MOVIES, POPULAR_SERIES,
-        NOW_PLAYING, UPCOMING, TOP_MOVIES, TOP_SERIES, GENRE
+        NOW_PLAYING, UPCOMING, TOP_MOVIES, TOP_SERIES, ON_THE_AIR, AIRING_TODAY,
+        // The titles of a streaming service ([VodRow.name]: its name)
+        PLATFORM, GENRE
     }
 }
 
@@ -61,6 +63,12 @@ object VodRows {
         // TMDB best rated when available, else the providers' ratings
         rows += VodRow(VodRow.Kind.TOP_MOVIES, ranked(Ranking.TOP_MOVIES).ifEmpty { best(movies.filter { it.rating != null }) })
         rows += VodRow(VodRow.Kind.TOP_SERIES, ranked(Ranking.TOP_SERIES).ifEmpty { best(series.filter { it.rating != null }) })
+        rows += VodRow(VodRow.Kind.ON_THE_AIR, ranked(Ranking.ON_THE_AIR))
+        rows += VodRow(VodRow.Kind.AIRING_TODAY, ranked(Ranking.AIRING_TODAY))
+        // A row per streaming service and kind (the movies and series screens each show theirs)
+        Ranking.entries.filter { it.platform != null }.forEach { ranking ->
+            rows += VodRow(VodRow.Kind.PLATFORM, ranked(ranking), name = ranking.platform!!.label)
+        }
         VodLibrary.topGenres(titles, GENRE_ROWS).forEach { genre ->
             rows += VodRow(VodRow.Kind.GENRE, best(titles.filter { genre in it.genres }), genre)
         }

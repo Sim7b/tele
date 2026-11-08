@@ -136,17 +136,16 @@ class RemoteNavigationTest {
         compose.waitForIdle()
         assertEquals(true, opened != null)
 
-        // Left at the start of the row: the side menu, on the home; down to the "Movies" row, OK, OK: one of its channels
+        // Left at the start of the row: the menu of the rows only (the screens are in the glass bar), on the current
+        // row; down to the "Movies" row, OK, OK: one of its channels
         repeat(10) {
-            if (compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Go to".uppercase())), useUnmergedTree = true).fetchSemanticsNodes().isEmpty() &&
-                compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Home")), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()
-            ) {
+            if (compose.onAllNodes(hasText("Go to".uppercase()), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
                 compose.onRoot().performKeyInput { pressKey(Key.DirectionLeft) }
                 compose.mainClock.advanceTimeBy(500)
                 compose.waitForIdle()
             }
         }
-        compose.onNode(isFocused() and hasAnyDescendant(hasText("Home")), useUnmergedTree = true).assertExists()
+        compose.onNode(hasText("Go to".uppercase()), useUnmergedTree = true).assertExists()
         repeat(12) {
             if (compose.onAllNodes(isFocused() and hasAnyDescendant(hasText("Movies")), useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
                 compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }

@@ -2,6 +2,11 @@ package io.github.sim7b.tele.ui.vod
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,6 +82,30 @@ import io.github.sim7b.tele.data.vod.VodTitle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.GlassClock
+import io.github.sim7b.tele.ui.components.GlassInk
+import io.github.sim7b.tele.ui.components.GlassNavBar
+import io.github.sim7b.tele.ui.components.GlassTab
+import io.github.sim7b.tele.ui.components.ListsMenu
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import kotlinx.coroutines.launch
+import io.github.sim7b.tele.ui.components.LocalImmersive
+import io.github.sim7b.tele.ui.components.NavSection
+import io.github.sim7b.tele.ui.components.ScreenNav
+import io.github.sim7b.tele.ui.components.glass
+import io.github.sim7b.tele.data.remote.ProgramPosterRepository
+import androidx.compose.runtime.CompositionLocalProvider
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.RoundIconButton
 import io.github.sim7b.tele.ui.components.screenMargin
@@ -113,7 +142,7 @@ private enum class FilterField { COUNTRY, STUDIO, GENRE, DECADE, AUDIO, SUBTITLE
  * list the whole library with filters (country, studio, genre, decade) and a sort; the Collections tab
  * shows the user's collections.
  */
-@OptIn(ExperimentalTvMaterial3Api::class)
+@OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun VodHomeScreen(
     library: VodLibraryState,
@@ -152,11 +181,14 @@ fun VodHomeScreen(
     onDismissNewCategories: () -> Unit = {},
     // Section opened from the live TV home (movies or series), again each time [sectionToken] changes
     section: VodKind = VodKind.MOVIE,
-    sectionToken: Int = 0
+    sectionToken: Int = 0,
+    // The other screens in a glass bar: the immersive style (the focused title over the whole screen)
+    nav: ScreenNav? = null
 ) {
     BackHandler(onBack = onBack)
     val screen = LocalScreen.current
     val compact = screen.compact
+    val immersive = nav != null && !compact
     var tab by rememberSaveable { mutableStateOf(if (section == VodKind.SERIES) VodTab.SERIES else VodTab.MOVIES) }
     LaunchedEffect(sectionToken) { tab = if (section == VodKind.SERIES) VodTab.SERIES else VodTab.MOVIES }
     // Long press on a title: its actions, then possibly the collection picker
@@ -168,6 +200,22 @@ fun VodHomeScreen(
     var creating by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
     val tabFocus = remember { FocusRequester() }
+    // Immersive: the menu of the rows, opened by Left at the start of a row
+    var railOpen by remember { mutableStateOf(false) }
+    val railFocus = remember { FocusRequester() }
+    val rowFocus = remember { HashMap<String, FocusRequester>() }
+    fun rowRequester(key: String) = rowFocus.getOrPut(key) { FocusRequester() }
+    val rowsState = rememberLazyListState()
+    var currentRow by remember { mutableIntStateOf(0) }
+    var currentKey by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(railOpen) { if (railOpen) railFocus.requestFocusWithRetry() }
+    fun closeRail() {
+        railOpen = false
+        currentKey?.let { key -> scope.launch { rowRequester(key).requestFocusWithRetry() } }
+    }
+    // Registered after the one of the screen: Back closes the menu first
+    BackHandler(enabled = railOpen) { closeRail() }
     val kind = when (tab) {
         VodTab.MOVIES -> VodKind.MOVIE
         VodTab.SERIES -> VodKind.SERIES
@@ -224,7 +272,7 @@ fun VodHomeScreen(
     }
     // Content replaced under the focused card (library loaded, rows rebuilt): the focus comes back to
     // the first card, else the remote would act on nothing
-    val dialogOpen = menuFor != null || pickerFor != null || openFilter != null || naming != null || creating
+    val dialogOpen = railOpen || menuFor != null || pickerFor != null || openFilter != null || naming != null || creating
     var hadFocus by remember { mutableStateOf(false) }
     var focusLost by remember { mutableIntStateOf(0) }
     LaunchedEffect(focusLost) {
@@ -233,40 +281,54 @@ fun VodHomeScreen(
         if (!hadFocus && !dialogOpen) firstFocus.requestFocusWithRetry()
     }
 
+    val background = if (immersive) ImmersiveBackground else LocalAppColors.current.background
+    CompositionLocalProvider(LocalImmersive provides immersive) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(LocalAppColors.current.background)
+            .background(background)
             .onFocusChanged { state ->
                 if (hadFocus && !state.hasFocus && !dialogOpen) focusLost++
                 hadFocus = state.hasFocus
             }
     ) {
-        // Wide image of the focused title, fading into the background
-        if (kind != null && !gridView) {
-            hero?.backdropUrl?.let { url ->
-                Box(
-                    modifier = Modifier
+        // Wide image of the focused title, fading into the background (immersive: over the whole screen)
+        if (kind != null && !gridView && hero != null) {
+            Box(
+                modifier = if (immersive) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier
                         .align(Alignment.TopEnd)
                         .fillMaxWidth(if (compact) 1f else 0.62f)
                         .height(if (compact) 220.dp else 300.dp)
-                ) {
-                    FadeInImage(url = url, contentDescription = null, modifier = Modifier.fillMaxSize(), alpha = 0.55f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Brush.horizontalGradient(listOf(LocalAppColors.current.background, Color.Transparent)))
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, LocalAppColors.current.background)))
-                    )
                 }
+            ) {
+                HeroBackdrop(title = hero, alpha = if (immersive) 1f else 0.55f, modifier = Modifier.fillMaxSize())
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            if (immersive) {
+                                Brush.horizontalGradient(0f to background.copy(alpha = 0.94f), 0.45f to background.copy(alpha = 0.55f), 0.8f to Color.Transparent)
+                            } else {
+                                Brush.horizontalGradient(listOf(background, Color.Transparent))
+                            }
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            // Immersive: darker at the top too, under the glass bar and the time
+                            if (immersive) Brush.verticalGradient(0f to background.copy(alpha = 0.6f), 0.2f to Color.Transparent, 0.4f to Color.Transparent, 0.72f to background.copy(alpha = 0.85f), 1f to background)
+                            else Brush.verticalGradient(listOf(Color.Transparent, background))
+                        )
+                )
             }
         }
 
-        Column(modifier = Modifier.fillMaxSize().padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = 26.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(start = screenMargin(48.dp), end = screenMargin(48.dp), top = if (immersive) 18.dp else 26.dp)) {
             val tabs: @Composable () -> Unit = {
                 VodTab.entries.forEach { entry ->
                     VodChip(
@@ -278,6 +340,53 @@ fun VodHomeScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
             }
+            if (nav != null && immersive) {
+                // The sections in the glass bar (movies and series switch the tab here), the state of the library
+                // on the left, the time on the right
+                Box(modifier = Modifier.fillMaxWidth().height(46.dp)) {
+                    val status = when {
+                        library.loading -> stringResource(if (library.titles.isEmpty()) R.string.vod_loading else R.string.vod_updating)
+                        indexProgress.running -> stringResource(R.string.vod_index_progress, indexProgress.indexed * 100 / indexProgress.total.coerceAtLeast(1))
+                        else -> library.error?.resolve()
+                    }
+                    status?.let {
+                        Text(
+                            text = it,
+                            fontSize = 12.sp,
+                            color = if (library.error != null && !library.loading) LiveRed.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.align(Alignment.CenterStart).widthIn(max = 200.dp)
+                        )
+                    }
+                    GlassNavBar(
+                        nav = ScreenNav(
+                            onHome = nav.onHome,
+                            onGuide = nav.onGuide,
+                            onVod = { tab = if (it == VodKind.SERIES) VodTab.SERIES else VodTab.MOVIES },
+                            onRecordings = nav.onRecordings,
+                            onSearch = onOpenSearch,
+                            onSettings = onOpenSettings,
+                            updateAvailable = nav.updateAvailable
+                        ),
+                        current = when (tab) {
+                            VodTab.MOVIES -> NavSection.MOVIES
+                            VodTab.SERIES -> NavSection.SERIES
+                            VodTab.COLLECTIONS -> null
+                        },
+                        currentFocus = tabFocus,
+                        modifier = Modifier.align(Alignment.Center)
+                    ) {
+                        GlassTab(
+                            label = stringResource(R.string.vod_tab_collections),
+                            selected = tab == VodTab.COLLECTIONS,
+                            onClick = { tab = VodTab.COLLECTIONS },
+                            modifier = if (tab == VodTab.COLLECTIONS) Modifier.focusRequester(tabFocus) else Modifier
+                        )
+                    }
+                    GlassClock(modifier = Modifier.align(Alignment.CenterEnd))
+                }
+            } else {
             // Header: tabs, status, search, refresh, back to live TV; on a phone, the tabs under the title
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -348,6 +457,7 @@ fun VodHomeScreen(
                         .horizontalScroll(rememberScrollState())
                 ) { tabs() }
             }
+            }
             newCategories?.let { (source, count) ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -375,7 +485,7 @@ fun VodHomeScreen(
             when (tab) {
                 VodTab.MOVIES, VodTab.SERIES -> {
                     // The focused title over its picture (rows only; low screen: none)
-                    if (!gridView && !screen.short) Hero(hero)
+                    if (!gridView && !screen.short) Hero(hero, large = immersive)
                     FilterBar(
                         filter = filter,
                         count = listed.size,
@@ -384,7 +494,13 @@ fun VodHomeScreen(
                         gridView = gridView,
                         onToggleView = { gridView = !gridView }
                     )
-                    if (!gridView) LazyColumn(
+                    // Immersive: the focused row comes up whole under the filters (its title, its posters and their
+                    // names), the rows keeping their own way of following the focus
+                    val rowFollow = LocalBringIntoViewSpec.current
+                    val lead = with(LocalDensity.current) { RowLead.toPx() }
+                    val listFollow = remember(immersive, lead) { if (immersive) RowStartFollow(lead) else rowFollow }
+                    if (!gridView) CompositionLocalProvider(LocalBringIntoViewSpec provides listFollow) { LazyColumn(
+                        state = rowsState,
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                         contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
                         modifier = Modifier.fillMaxSize()
@@ -392,6 +508,7 @@ fun VodHomeScreen(
                         // First the rows of this kind: continue watching, my list, collections, TMDB rankings
                         kindRows.forEachIndexed { rowIndex, row ->
                             item(key = "${row.kind}:${row.name}") {
+                                CompositionLocalProvider(LocalBringIntoViewSpec provides rowFollow) {
                                 PosterRow(
                                     label = rowTitle(row),
                                     titles = row.titles,
@@ -401,12 +518,20 @@ fun VodHomeScreen(
                                     onFocused = { focusedKey = it.key },
                                     onLongClick = { menuFor = it to row },
                                     findPoster = findPoster,
+                                    rowFocus = rowRequester("${row.kind}:${row.name}"),
+                                    onRowFocused = {
+                                        currentRow = rowIndex
+                                        currentKey = "${row.kind}:${row.name}"
+                                    },
+                                    onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
                                     firstFocus = if (rowIndex == 0) firstFocus else null
                                 )
+                                }
                             }
                         }
                         shelves.forEachIndexed { index, shelf ->
                             item(key = "${shelf.kind}:${shelf.genre}") {
+                                CompositionLocalProvider(LocalBringIntoViewSpec provides rowFollow) {
                                 PosterRow(
                                     label = shelfTitle(shelf),
                                     titles = shelf.titles,
@@ -415,11 +540,18 @@ fun VodHomeScreen(
                                     onFocused = { focusedKey = it.key },
                                     onLongClick = { menuFor = it to null },
                                     findPoster = findPoster,
+                                    rowFocus = rowRequester("${shelf.kind}:${shelf.genre}"),
+                                    onRowFocused = {
+                                        currentRow = kindRows.size + index
+                                        currentKey = "${shelf.kind}:${shelf.genre}"
+                                    },
+                                    onLeftAtStart = if (immersive) ({ railOpen = true }) else null,
                                     firstFocus = if (index == 0 && kindRows.isEmpty()) firstFocus else null
                                 )
+                                }
                             }
                         }
-                    } else LazyVerticalGrid(
+                    } } else LazyVerticalGrid(
                         columns = GridCells.Adaptive(LocalPosterWidth.current + 14.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
@@ -492,6 +624,34 @@ fun VodHomeScreen(
                 }
             }
         }
+
+        // The rows of this section, to jump to one (Right or Back closes it)
+        val menuEntries = if (kind == null || gridView) emptyList() else
+            kindRows.map { "${it.kind}:${it.name}" to rowTitle(it) } + shelves.map { "${it.kind}:${it.genre}" to shelfTitle(it) }
+        AnimatedVisibility(
+            visible = railOpen && menuEntries.isNotEmpty(),
+            enter = fadeIn() + slideInHorizontally { -it / 3 },
+            exit = fadeOut() + slideOutHorizontally { -it / 3 },
+            modifier = Modifier.align(Alignment.CenterStart)
+        ) {
+            ListsMenu(
+                title = stringResource(tab.labelRes),
+                entries = menuEntries,
+                current = currentRow,
+                focus = railFocus,
+                onPick = { index, key ->
+                    railOpen = false
+                    currentRow = index
+                    currentKey = key
+                    scope.launch {
+                        rowsState.scrollToItem(index)
+                        rowRequester(key).requestFocusWithRetry()
+                    }
+                },
+                onClose = ::closeRail
+            )
+        }
+    }
     }
 
     // Values of a filter, with their number of titles
@@ -644,17 +804,41 @@ private fun PosterRow(
     ranked: Boolean = false,
     onFocused: (VodTitle) -> Unit = {},
     onLongClick: (VodTitle) -> Unit = {},
-    firstFocus: FocusRequester? = null
+    firstFocus: FocusRequester? = null,
+    // Its first poster, to come back to the row; a poster of the row focused; Left on its first poster
+    rowFocus: FocusRequester? = null,
+    onRowFocused: () -> Unit = {},
+    onLeftAtStart: (() -> Unit)? = null
 ) {
+    var focusedIndex by remember { mutableIntStateOf(-1) }
     Column {
         label?.let { SectionLabel(text = it) }
         if (titles.isEmpty()) {
             Text(text = stringResource(R.string.vod_collection_empty), fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 8.dp))
             return@Column
         }
+        // A little wider on the left than its place, the first poster still at the edge of the labels: once focused
+        // and enlarged, it is not cut
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 10.dp, end = 24.dp)
+            contentPadding = PaddingValues(start = RowBleed, top = 10.dp, end = 24.dp),
+            modifier = Modifier
+                .onPreviewKeyEvent { event ->
+                    val open = onLeftAtStart ?: return@onPreviewKeyEvent false
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft && focusedIndex == 0) {
+                        open()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                .layout { measurable, constraints ->
+                val bleed = RowBleed.roundToPx()
+                val placeable = measurable.measure(
+                    if (constraints.hasBoundedWidth) constraints.copy(maxWidth = constraints.maxWidth + bleed) else constraints
+                )
+                layout((placeable.width - bleed).coerceAtLeast(0), placeable.height) { placeable.place(-bleed, 0) }
+            }
         ) {
             itemsIndexed(titles, key = { _, title -> title.key }) { index, title ->
                 PosterCard(
@@ -663,9 +847,15 @@ private fun PosterRow(
                     rank = if (ranked) index + 1 else null,
                     onClick = { onOpenTitle(title) },
                     onLongClick = { onLongClick(title) },
-                    onFocused = { onFocused(title) },
+                    onFocused = {
+                        focusedIndex = index
+                        onRowFocused()
+                        onFocused(title)
+                    },
                     findPoster = findPoster,
-                    modifier = if (firstFocus != null && index == 0) Modifier.focusRequester(firstFocus) else Modifier
+                    modifier = Modifier
+                        .then(if (firstFocus != null && index == 0) Modifier.focusRequester(firstFocus) else Modifier)
+                        .then(if (rowFocus != null && index == 0) Modifier.focusRequester(rowFocus) else Modifier)
                 )
             }
         }
@@ -761,54 +951,95 @@ internal fun sortLabel(sort: VodSort): String = stringResource(
     }
 )
 
-/** The focused title: name, year, kind, rating, genres and summary. */
+/** The focused title: name, year, kind, rating, genres and summary; [large] in the immersive style. */
 @Composable
-private fun Hero(title: VodTitle?) {
+private fun Hero(title: VodTitle?, large: Boolean = false) {
+    val primary = if (large) Color.White else TextPrimary
+    val secondary = if (large) Color.White.copy(alpha = 0.78f) else TextSecondary
     Column(
         modifier = Modifier
-            .fillMaxWidth(if (LocalScreen.current.compact) 1f else 0.55f)
-            .height(170.dp)
+            .fillMaxWidth(if (LocalScreen.current.compact) 1f else if (large) 0.5f else 0.55f)
+            // Immersive: room left for a whole row of posters under the filters
+            .height(if (large) 160.dp else 170.dp)
             .padding(top = 18.dp)
     ) {
         if (title == null) return@Column
-        Text(text = stringResource(R.string.vod_featured).uppercase(), fontSize = 11.sp, letterSpacing = 1.6.sp, color = TextSecondary)
+        Text(
+            text = stringResource(R.string.vod_featured).uppercase(),
+            fontSize = 11.sp,
+            fontWeight = if (large) FontWeight.SemiBold else FontWeight.Normal,
+            letterSpacing = 1.6.sp,
+            color = secondary
+        )
         Text(
             text = title.title,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
+            fontSize = if (large) 34.sp else 26.sp,
+            fontWeight = if (large) FontWeight.ExtraBold else FontWeight.SemiBold,
+            color = primary,
             maxLines = 1,
+            lineHeight = if (large) 38.sp else 30.sp,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp)
         )
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = if (large) 8.dp else 4.dp)) {
             val meta = listOfNotNull(
                 title.year?.toString(),
                 stringResource(if (title.kind == VodKind.MOVIE) R.string.vod_movie else R.string.vod_series),
                 title.genres.take(3).joinToString(", ").ifBlank { null }
             ).joinToString(" · ")
-            Text(text = meta, fontSize = 13.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text = meta, fontSize = 13.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             title.rating?.let {
                 Spacer(modifier = Modifier.width(10.dp))
-                Text(text = ratingLabel(it), fontSize = 13.sp, color = AccentCyan)
+                RatingText(rating = it, fontSize = 13, color = primary)
             }
             title.entries.flatMap { it.qualityTags }.distinct().take(2).forEach {
                 Spacer(modifier = Modifier.width(8.dp))
-                Tag(text = it)
+                Tag(text = it, color = secondary)
             }
         }
         title.plot?.let {
             Text(
                 text = it,
                 fontSize = 13.sp,
-                color = TextSecondary,
-                maxLines = 3,
+                color = secondary,
+                maxLines = if (large) 2 else 3,
+                lineHeight = 19.sp,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
     }
 }
+
+/**
+ * Wide image of a title: the one of its provider, else (none, or missing on the server) the TMDB backdrop of
+ * that name, looked up once the title stayed focused a moment.
+ */
+@Composable
+private fun HeroBackdrop(title: VodTitle, alpha: Float, modifier: Modifier = Modifier) {
+    var failed by remember(title.key) { mutableStateOf(false) }
+    val url by produceState<String?>(null, title.key, failed) {
+        value = title.backdropUrl.takeUnless { failed }
+        if (value == null) {
+            delay(BACKDROP_LOOKUP_DELAY_MS)
+            value = ProgramPosterRepository.getBackdropUrl(title.title)
+        }
+    }
+    FadeInImage(url = url, contentDescription = null, modifier = modifier, alpha = alpha, onError = { failed = true })
+}
+
+private const val BACKDROP_LOOKUP_DELAY_MS = 500L
+// Room on the left of a row for its first poster enlarged, and above a focused poster for the title of its row
+private val RowBleed = 10.dp
+private val RowLead = 34.dp
+
+/** The list of rows scrolls so that the focused poster sits [lead] under its top (the title of its row above). */
+@OptIn(ExperimentalFoundationApi::class)
+private class RowStartFollow(private val lead: Float) : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = offset - lead
+}
+// Behind the pictures of the immersive style: a deep blue black
+private val ImmersiveBackground = Color(0xFF05070B)
 
 @Composable
 private fun EmptyLibrary() {
@@ -830,17 +1061,30 @@ private fun EmptyLibrary() {
 @Composable
 internal fun VodChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, maxLines: Int = Int.MAX_VALUE) {
     val shape = RoundedCornerShape(50)
+    // Immersive screens: glass over the picture, white when focused
+    val glass = LocalImmersive.current
     Surface(
         onClick = onClick,
-        modifier = modifier.touchClick(onClick),
+        modifier = modifier
+            .then(if (glass) Modifier.glass(shape) else Modifier)
+            .touchClick(onClick),
         shape = ClickableSurfaceDefaults.shape(shape = shape),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) TextPrimary.copy(alpha = 0.16f) else SurfaceDark,
-            contentColor = if (selected) TextPrimary else TextSecondary,
-            focusedContainerColor = TextPrimary,
-            focusedContentColor = LocalAppColors.current.background
-        )
+        colors = if (glass) {
+            ClickableSurfaceDefaults.colors(
+                containerColor = if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+                contentColor = Color.White,
+                focusedContainerColor = Color.White,
+                focusedContentColor = GlassInk
+            )
+        } else {
+            ClickableSurfaceDefaults.colors(
+                containerColor = if (selected) TextPrimary.copy(alpha = 0.16f) else SurfaceDark,
+                contentColor = if (selected) TextPrimary else TextSecondary,
+                focusedContainerColor = TextPrimary,
+                focusedContentColor = LocalAppColors.current.background
+            )
+        }
     ) {
         Text(
             text = label,

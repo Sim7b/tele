@@ -23,6 +23,22 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import io.github.sim7b.tele.ui.components.Device
+import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.GlassClock
+import io.github.sim7b.tele.ui.components.GlassInk
+import io.github.sim7b.tele.ui.components.GlassNavBar
+import io.github.sim7b.tele.ui.components.ListsMenu
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import io.github.sim7b.tele.ui.components.LocalImmersive
+import io.github.sim7b.tele.ui.components.NavSection
+import io.github.sim7b.tele.ui.components.ScreenNav
+import io.github.sim7b.tele.ui.components.glass
+import io.github.sim7b.tele.data.remote.ProgramPosterRepository
+import androidx.compose.ui.graphics.Brush
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.TouchSteps
 import io.github.sim7b.tele.ui.components.screenMargin
@@ -120,9 +136,12 @@ fun GuideScreen(
     // Muted live picture of the focused channel, after [previewDelayMs] (null: none)
     previewDelayMs: Long? = null,
     onPreviewChannel: (Channel?) -> Unit = {},
-    previewSurface: @Composable () -> Unit = {}
+    previewSurface: @Composable () -> Unit = {},
+    // The other screens in a glass bar: the immersive style (the focused program over its picture, the grid in glass)
+    nav: ScreenNav? = null
 ) {
     val now = rememberNow()
+    val immersive = nav != null && !LocalScreen.current.compact
     val zone = remember { ZoneId.systemDefault() }
 
     val lists = actions.listCategories
@@ -150,17 +169,34 @@ fun GuideScreen(
     val listState = rememberLazyListState()
     val gridFocus = remember { FocusRequester() }
     val headerFocus = remember { FocusRequester() }
+    // Immersive: the categories in a glass menu on the left, opened by Left at the start of the grid
+    var categoriesOpen by remember { mutableStateOf(false) }
+    val categoriesFocus = remember { FocusRequester() }
+    LaunchedEffect(categoriesOpen) { if (categoriesOpen) categoriesFocus.requestFocusWithRetry() }
+    val categoryLabel: @Composable (String) -> String = { key ->
+        when (key) {
+            FAVORITES -> stringResource(R.string.home_favorites)
+            RECENTS -> stringResource(R.string.panel_recent_channels)
+            SPORT -> stringResource(R.string.home_row_sport)
+            ALL_CHANNELS -> stringResource(R.string.panel_all_channels)
+            in lists -> lists.getValue(key).name
+            else -> groupLabel(key)
+        }
+    }
     var headerFocused by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val compact = LocalScreen.current.compact
     val scale = if (compact) CompactScale else TvScale
 
+    val margin = screenMargin(40.dp)
+    CompositionLocalProvider(LocalImmersive provides immersive) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .padding(start = screenMargin(40.dp), end = screenMargin(40.dp), top = 26.dp, bottom = 18.dp)
+            .then(if (immersive) Modifier.background(GuideBackground) else Modifier)
     ) {
-        val gridWidth = maxWidth - scale.channelColumn
+        // Immersive: the grid sits in a glass panel, inside its padding
+        val gridWidth = maxWidth - margin * 2 - scale.channelColumn - if (immersive) PanelPadding * 2 else 0.dp
         val span = (gridWidth / scale.perMinute).toLong() * 60_000L
         val nowSlot = GuideTimeline.slotStart(now, zone)
         val minStart = if (hasReplay) GuideTimeline.slotStart(now - Catchup.GUIDE_PAST_WINDOW_MS, zone) else nowSlot
@@ -215,14 +251,15 @@ fun GuideScreen(
         }
         LaunchedEffect(Unit) { gridFocus.requestFocusWithRetry() }
 
-        fun changeCategory(step: Int) {
-            val index = Math.floorMod(categories.indexOf(categoryKey) + step, categories.size)
-            categoryKey = categories[index]
+        fun selectCategory(key: String) {
+            categoryKey = key
             val newRows = rowsOf(categoryKey)
             val newRow = newRows.indexOfFirst { it.id == playingChannelId }.coerceAtLeast(0)
             moveTo(navigation.toRow(newRow, programsAt(newRows, newRow), position))
             scope.launch { listState.scrollToItem((newRow - 2).coerceAtLeast(0)) }
         }
+
+        fun changeCategory(step: Int) = selectCategory(categories[Math.floorMod(categories.indexOf(categoryKey) + step, categories.size)])
 
         fun moveToRow(target: Int) {
             if (rows.isEmpty()) return
@@ -280,9 +317,30 @@ fun GuideScreen(
             }
         }
 
+        // Immersive: the live picture of the focused channel (once previewed), else the picture of its program,
+        // over the top of the screen
+        if (immersive) {
+            Box(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.62f)) {
+                ProgramBackdrop(program = focusedProgram, modifier = Modifier.fillMaxSize())
+                // Over it, seen once it plays (a channel that does not play leaves the picture)
+                if (previewShown) previewSurface()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.horizontalGradient(0f to GuideBackground.copy(alpha = 0.92f), 0.5f to GuideBackground.copy(alpha = 0.45f), 0.85f to Color.Transparent))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(0f to GuideBackground.copy(alpha = 0.6f), 0.25f to Color.Transparent, 0.4f to Color.Transparent, 1f to GuideBackground))
+                )
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(start = margin, end = margin, top = if (immersive) 18.dp else 26.dp, bottom = 18.dp)
                 .onPreviewKeyEvent { event ->
                     if (!headerFocused && numberEntry.onKey(event)) return@onPreviewKeyEvent true
                     if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_BACK) return@onPreviewKeyEvent false
@@ -290,15 +348,9 @@ fun GuideScreen(
                     true
                 }
         ) {
-            GuideHeader(
-                category = when (categoryKey) {
-                    FAVORITES -> stringResource(R.string.home_favorites)
-                    RECENTS -> stringResource(R.string.panel_recent_channels)
-                    SPORT -> stringResource(R.string.home_row_sport)
-                    ALL_CHANNELS -> stringResource(R.string.panel_all_channels)
-                    in lists -> lists.getValue(categoryKey).name
-                    else -> groupLabel(categoryKey)
-                },
+            val header: @Composable () -> Unit = { GuideHeader(
+                immersive = immersive,
+                category = categoryLabel(categoryKey),
                 count = rows.size,
                 now = now,
                 onPrevious = { changeCategory(-1) },
@@ -313,39 +365,52 @@ fun GuideScreen(
                             KeyEvent.KEYCODE_DPAD_LEFT -> { changeCategory(-1); true }
                             KeyEvent.KEYCODE_DPAD_RIGHT -> { changeCategory(+1); true }
                             KeyEvent.KEYCODE_DPAD_DOWN -> { gridFocus.requestFocus(); true }
-                            KeyEvent.KEYCODE_DPAD_UP -> true
+                            // Immersive: up to the glass bar
+                            KeyEvent.KEYCODE_DPAD_UP -> !immersive
                             else -> false
                         }
                     }
-            )
+            ) }
+            if (nav != null && immersive) {
+                Box(modifier = Modifier.fillMaxWidth().height(46.dp)) {
+                    GlassNavBar(nav = nav, current = NavSection.GUIDE, modifier = Modifier.align(Alignment.Center))
+                    GlassClock(modifier = Modifier.align(Alignment.CenterEnd))
+                }
+            } else {
+                header()
+            }
 
             // Details of the focused program (or of the channel, without guide)
+            val primary = if (immersive) Color.White else TextPrimary
+            val secondary = if (immersive) Color.White.copy(alpha = 0.75f) else TextSecondary
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(116.dp)
-                    .padding(top = 10.dp, bottom = 12.dp)
+                    .height(if (immersive) 150.dp else 116.dp)
+                    .padding(top = if (immersive) 18.dp else 10.dp, bottom = 12.dp)
             ) {
                 val channel = rows.getOrNull(row)
                 if (focusedProgram != null) {
                     ProgramDetails(
                         program = focusedProgram,
                         now = now,
-                        primary = TextPrimary,
-                        secondary = TextSecondary,
+                        primary = primary,
+                        secondary = secondary,
                         descriptionLines = 2,
-                        titleSize = 19,
-                        modifier = Modifier.fillMaxWidth(if (compact) 1f else 0.8f),
+                        // Immersive: its picture is the background
+                        showPoster = !immersive,
+                        titleSize = if (immersive) 28 else 19,
+                        modifier = Modifier.fillMaxWidth(if (compact) 1f else if (immersive) 0.55f else 0.8f),
                         badges = channel?.let { programBadges(actions.canReplay(it, focusedProgram, now), actions.hasReminder(it, focusedProgram), actions.isRecorded(it, focusedProgram)) }.orEmpty()
                     )
                 } else if (channel != null) {
                     Column {
-                        Text(text = channel.name, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
+                        Text(text = channel.name, fontSize = if (immersive) 28.sp else 19.sp, fontWeight = FontWeight.SemiBold, color = primary, maxLines = 1)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = stringResource(R.string.panel_no_information), fontSize = 12.sp, color = TextSecondary)
+                        Text(text = stringResource(R.string.panel_no_information), fontSize = 12.sp, color = secondary)
                     }
                 }
-                if (previewShown && !compact) {
+                if (previewShown && !compact && !immersive) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -357,6 +422,7 @@ fun GuideScreen(
                 }
             }
 
+            val grid: @Composable ColumnScope.() -> Unit = {
             TimeRuler(viewStart = viewStart, span = span, now = now, gridWidth = gridWidth, scale = scale)
 
             // Touch: dragging sideways moves the hours by half hours (the rows scroll up and down by themselves)
@@ -392,7 +458,11 @@ fun GuideScreen(
                         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                         when (keyCode) {
                             KeyEvent.KEYCODE_DPAD_RIGHT -> moveTo(navigation.right(focusedPrograms, position))
-                            KeyEvent.KEYCODE_DPAD_LEFT -> moveTo(navigation.left(focusedPrograms, position))
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                val next = navigation.left(focusedPrograms, position)
+                                // Immersive: Left at the start of the grid opens the categories
+                                if (immersive && next == position) categoriesOpen = true else moveTo(next)
+                            }
                             KeyEvent.KEYCODE_DPAD_DOWN -> if (row < rows.lastIndex) {
                                 moveTo(navigation.toRow(row + 1, programsAt(rows, row + 1), position))
                             }
@@ -449,9 +519,27 @@ fun GuideScreen(
                             .padding(start = scale.channelColumn + offsetOf(now, viewStart, scale))
                             .width(2.dp)
                             .fillMaxHeight()
-                            .background(AccentCyan.copy(alpha = 0.85f))
+                            .background(if (immersive) Color.White.copy(alpha = 0.9f) else AccentCyan.copy(alpha = 0.85f))
                     )
                 }
+            }
+            }
+            if (immersive) {
+                // The category selector and the grid in a glass panel
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .glass(RoundedCornerShape(18.dp))
+                        .background(PanelTint)
+                        .padding(horizontal = PanelPadding, vertical = 10.dp)
+                ) {
+                    header()
+                    Spacer(modifier = Modifier.height(8.dp))
+                    grid()
+                }
+            } else {
+                grid()
             }
 
             // Keys of the remote: taps and buttons on a touch screen
@@ -468,8 +556,33 @@ fun GuideScreen(
         ChannelNumberBadge(
             entry = numberEntry,
             channels = channels,
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 48.dp)
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 74.dp, end = margin)
         )
+
+        fun closeCategories() {
+            categoriesOpen = false
+            scope.launch { gridFocus.requestFocusWithRetry() }
+        }
+        BackHandler(enabled = categoriesOpen) { closeCategories() }
+        AnimatedVisibility(
+            visible = categoriesOpen,
+            enter = fadeIn() + slideInHorizontally { -it / 3 },
+            exit = fadeOut() + slideOutHorizontally { -it / 3 },
+            modifier = Modifier.align(Alignment.CenterStart)
+        ) {
+            ListsMenu(
+                title = stringResource(R.string.guide_title),
+                entries = categories.map { it to categoryLabel(it) },
+                current = categories.indexOf(categoryKey),
+                focus = categoriesFocus,
+                onPick = { _, key ->
+                    selectCategory(key)
+                    closeCategories()
+                },
+                onClose = ::closeCategories
+            )
+        }
+    }
     }
 
     menuProgram?.let { (channel, program) ->
@@ -498,6 +611,8 @@ private fun offsetOf(time: Long, viewStart: Long, scale: GuideScale): Dp = scale
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun GuideHeader(
+    // The category selector alone, in glass (the title and the time are in the glass bar)
+    immersive: Boolean,
     category: String,
     count: Int,
     now: Long,
@@ -513,26 +628,40 @@ private fun GuideHeader(
     // Touch: the arrows always shown, as buttons
     val arrows = isFocused || Device.isTouch
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = stringResource(R.string.guide_title),
-            fontSize = if (compact) 20.sp else 24.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary
-        )
-        Spacer(modifier = Modifier.width(if (compact) 12.dp else 22.dp))
+        if (!immersive) {
+            Text(
+                text = stringResource(R.string.guide_title),
+                fontSize = if (compact) 20.sp else 24.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.width(if (compact) 12.dp else 22.dp))
+        }
         // Category selector: focused, ◀ ▶ go through the categories
+        val pill = RoundedCornerShape(50)
         Surface(
             onClick = {},
             interactionSource = interactionSource,
-            modifier = modifier.then(if (compact) Modifier.weight(1f, fill = false) else Modifier),
-            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(50)),
+            modifier = modifier
+                .then(if (compact) Modifier.weight(1f, fill = false) else Modifier)
+                .then(if (immersive) Modifier.glass(pill) else Modifier),
+            shape = ClickableSurfaceDefaults.shape(shape = pill),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-            colors = ClickableSurfaceDefaults.colors(
-                containerColor = SurfaceDark,
-                contentColor = TextSecondary,
-                focusedContainerColor = TextPrimary,
-                focusedContentColor = LocalAppColors.current.background
-            )
+            colors = if (immersive) {
+                ClickableSurfaceDefaults.colors(
+                    containerColor = Color.Transparent,
+                    contentColor = Color.White,
+                    focusedContainerColor = Color.White,
+                    focusedContentColor = GlassInk
+                )
+            } else {
+                ClickableSurfaceDefaults.colors(
+                    containerColor = SurfaceDark,
+                    contentColor = TextSecondary,
+                    focusedContainerColor = TextPrimary,
+                    focusedContentColor = LocalAppColors.current.background
+                )
+            }
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -570,8 +699,8 @@ private fun GuideHeader(
             Spacer(modifier = Modifier.width(10.dp))
             VodChip(label = stringResource(R.string.guide_now), selected = false, onClick = onNow)
         }
-        // Phone: no room for the clock, the Now button is enough
-        if (!compact) {
+        // Phone: no room for the clock, the Now button is enough (immersive: in the glass bar)
+        if (!compact && !immersive) {
             if (Device.isTouch) Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = "${dayLabel(now, now)}  ${EpgResolver.formatClock(now)}",
@@ -592,7 +721,7 @@ private fun TimeRuler(viewStart: Long, span: Long, now: Long, gridWidth: Dp, sca
                 text = dayLabel(viewStart, now),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = AccentCyan
+                color = if (LocalImmersive.current) Color.White else AccentCyan
             )
         }
         Box(modifier = Modifier.width(gridWidth).fillMaxHeight().clipToBounds()) {
@@ -645,7 +774,13 @@ private fun GuideRow(
                 .padding(vertical = 3.dp, horizontal = 0.dp)
                 .padding(end = 6.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(if (isFocusedRow) SurfaceCard else SurfaceDark.copy(alpha = 0.5f))
+                .background(
+                    when {
+                        !LocalImmersive.current -> if (isFocusedRow) SurfaceCard else SurfaceDark.copy(alpha = 0.5f)
+                        isFocusedRow -> Color.White.copy(alpha = 0.16f)
+                        else -> Color.White.copy(alpha = 0.05f)
+                    }
+                )
                 .touchTap(onTapChannel)
                 .padding(horizontal = if (compact) 6.dp else 8.dp)
         ) {
@@ -772,12 +907,18 @@ private fun GuideCell(
 ) {
     val width = offsetOf(end, viewStart, scale) - offsetOf(start, viewStart, scale)
     if (width <= 2.dp) return
+    // Immersive: veils of white over the glass
+    val immersive = LocalImmersive.current
     val background = when {
-        focused -> TextPrimary
-        onAir -> SurfaceCard
-        else -> SurfaceDark
+        focused -> if (immersive) Color.White else TextPrimary
+        onAir -> if (immersive) Color.White.copy(alpha = 0.14f) else SurfaceCard
+        else -> if (immersive) Color.White.copy(alpha = 0.07f) else SurfaceDark
     }
-    val content = if (focused) LocalAppColors.current.background else TextPrimary
+    val content = when {
+        !focused -> if (immersive) Color.White else TextPrimary
+        immersive -> GlassInk
+        else -> LocalAppColors.current.background
+    }
     Column(
         verticalArrangement = Arrangement.Center,
         modifier = Modifier
@@ -786,7 +927,7 @@ private fun GuideCell(
             .fillMaxHeight()
             .padding(vertical = 3.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (dimmed && !focused) background.copy(alpha = 0.4f) else background)
+            .background(if (dimmed && !focused) background.copy(alpha = background.alpha * 0.4f) else background)
             .padding(horizontal = 10.dp)
     ) {
         // Too narrow for a readable title (a weather forecast between two programs): the cell alone
@@ -816,3 +957,29 @@ private fun GuideCell(
         }
     }
 }
+
+/**
+ * Picture of the focused program over the top of the immersive guide: its TMDB backdrop, else the picture of the
+ * guide, else a TVMaze one. The previous one stays while the remote moves fast.
+ */
+@Composable
+private fun ProgramBackdrop(program: GuideProgram?, modifier: Modifier = Modifier) {
+    val title = program?.title
+    // The TMDB picture could not be loaded: the one of the guide
+    var failed by remember(title) { mutableStateOf(false) }
+    val url by produceState<String?>(null, title, failed) {
+        if (title == null) {
+            value = null
+            return@produceState
+        }
+        if (!failed) delay(BACKDROP_LOOKUP_DELAY_MS)
+        value = ProgramPosterRepository.getBackdropUrl(title).takeUnless { failed } ?: program.posterUrl ?: ProgramPosterRepository.getPosterUrl(title)
+    }
+    FadeInImage(url = url, contentDescription = null, modifier = modifier, onError = { failed = true })
+}
+
+private const val BACKDROP_LOOKUP_DELAY_MS = 300L
+// Immersive guide: behind the pictures, the tint of the glass panel and the space inside it
+private val GuideBackground = Color(0xFF04060C)
+private val PanelTint = Color(0x8C0E121A)
+private val PanelPadding = 14.dp

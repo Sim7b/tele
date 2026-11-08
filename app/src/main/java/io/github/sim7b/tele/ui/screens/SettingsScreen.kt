@@ -1531,6 +1531,9 @@ private fun vodRowLabel(kind: VodRow.Kind): String = stringResource(
         VodRow.Kind.UPCOMING -> R.string.vod_row_upcoming
         VodRow.Kind.TOP_MOVIES -> R.string.vod_row_top_movies
         VodRow.Kind.TOP_SERIES -> R.string.vod_row_top_series
+        VodRow.Kind.ON_THE_AIR -> R.string.vod_row_on_the_air
+        VodRow.Kind.AIRING_TODAY -> R.string.vod_row_airing_today
+        VodRow.Kind.PLATFORM -> R.string.settings_vod_platforms_row
         VodRow.Kind.GENRE -> R.string.settings_vod_genres_row
     }
 )

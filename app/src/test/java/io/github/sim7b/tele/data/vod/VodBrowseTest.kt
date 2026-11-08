@@ -78,6 +78,29 @@ class VodBrowseTest {
     }
 
     @Test
+    fun `the catalogs of the streaming services become rows named after them`() {
+        val matcher = VodRankings.Matcher(titles, facts)
+        val rankings = mapOf(
+            Ranking.NETFLIX_SERIES to listOf(RankedItem(VodKind.SERIES, "126308", "Shogun", null, 2024)),
+            Ranking.ON_THE_AIR to listOf(RankedItem(VodKind.SERIES, "126308", "Shogun", null, 2024))
+        )
+        val rows = VodRows.build(titles, emptyMap(), emptyList(), emptyList(), rankings, matcher)
+        val netflix = rows.single { it.kind == VodRow.Kind.PLATFORM }
+        assertEquals("Netflix", netflix.name)
+        assertEquals(listOf("s"), netflix.titles.map { it.key })
+        assertEquals(listOf("s"), rows.single { it.kind == VodRow.Kind.ON_THE_AIR }.titles.map { it.key })
+        // The service, in the country of the TV (else the United States), by popularity, included in the subscription
+        val query = VodRankings.query(Ranking.NETFLIX_MOVIES, 2, "FR").toMap()
+        assertEquals("8", query["with_watch_providers"])
+        assertEquals("FR", query["watch_region"])
+        assertEquals("flatrate", query["with_watch_monetization_types"])
+        assertEquals("2", query["page"])
+        assertEquals("US", VodRankings.query(Ranking.PRIME_VIDEO_SERIES, 1, null).toMap()["watch_region"])
+        assertNull(VodRankings.query(Ranking.POPULAR_MOVIES, 1, "FR").toMap()["region"])
+        assertEquals("FR", VodRankings.query(Ranking.NOW_PLAYING, 1, "FR").toMap()["region"])
+    }
+
+    @Test
     fun `the TMDB index is kept on the device and read back`() {
         val file = folder.newFile("index.jsonl")
         file.writeText(

@@ -143,7 +143,8 @@ internal fun PosterCard(
                         Text(text = "★", fontSize = 10.sp, color = RatingGold)
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = ratingLabel(rating),
+                            // The number alone: the gold star is drawn just before
+                            text = ratingLabel(rating, LocalConfiguration.current.locales[0]),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = androidx.compose.ui.graphics.Color.White
@@ -201,6 +202,9 @@ internal fun rowTitle(row: VodRow): String = when (row.kind) {
     VodRow.Kind.UPCOMING -> stringResource(R.string.vod_row_upcoming)
     VodRow.Kind.TOP_MOVIES -> stringResource(R.string.vod_row_top_movies)
     VodRow.Kind.TOP_SERIES -> stringResource(R.string.vod_row_top_series)
+    VodRow.Kind.ON_THE_AIR -> stringResource(R.string.vod_row_on_the_air)
+    VodRow.Kind.AIRING_TODAY -> stringResource(R.string.vod_row_airing_today)
+    VodRow.Kind.PLATFORM -> stringResource(R.string.vod_row_platform, row.name.orEmpty())
 }
 
 /** Country name of an ISO 3166 code ("KR" -> Corée du Sud) in the language of the TV. */
@@ -224,6 +228,16 @@ internal fun durationLabel(seconds: Int?): String? {
     if (minutes <= 0) return null
     return if (minutes >= 60) stringResource(R.string.vod_duration_hours, minutes / 60, minutes % 60)
     else stringResource(R.string.vod_duration_minutes, minutes)
+}
+
+/** A rating as on the posters: a gold star, then "8,5" in the language of the TV. */
+@Composable
+internal fun RatingText(rating: Double, fontSize: Int, color: androidx.compose.ui.graphics.Color = TextPrimary) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(text = "★", fontSize = (fontSize - 1).sp, color = RatingGold)
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(text = ratingLabel(rating, LocalConfiguration.current.locales[0]), fontSize = fontSize.sp, fontWeight = FontWeight.Medium, color = color)
+    }
 }
 
 /** "★ 8,5" in the language of the TV. */
