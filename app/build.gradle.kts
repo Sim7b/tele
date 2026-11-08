@@ -121,7 +121,7 @@ dependencies {
     // Device picker and Chromecast dialogs (AppCompat dialogs), at the versions media3-cast was built with
     implementation("androidx.mediarouter:mediarouter:1.8.1")
     // "Play next" row of the Android TV home (movies and series started)
-    implementation("androidx.tvprovider:tvprovider:1.0.0")
+    implementation("androidx.tvprovider:tvprovider:1.1.0")
     implementation("androidx.appcompat:appcompat:1.8.0")
 
     // QR codes of the API key pages (encoder only)
