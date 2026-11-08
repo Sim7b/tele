@@ -351,8 +351,8 @@
     <string name="settings_update_downloading">Downloading… %1$d%%</string>
     <string name="settings_update_installing">Installing…</string>
     <string name="settings_update_ready">Downloaded, ready to install</string>
-    <string name="update_prompt_title">Version %1$s is ready</string>
-    <string name="update_prompt_text">Downloaded in the background from GitHub. Install it now?</string>
+    <string name="update_prompt_title">Version %1$s is available</string>
+    <string name="update_prompt_text">Published on GitHub. Download and install it now? Android asks you to confirm.</string>
     <string name="update_prompt_install">Install now</string>
     <string name="update_prompt_ignore">Ignore this version</string>
     <string name="home_settings_update">Settings, update available</string>

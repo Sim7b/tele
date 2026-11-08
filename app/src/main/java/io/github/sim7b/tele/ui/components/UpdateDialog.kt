@@ -33,11 +33,17 @@ import io.github.sim7b.tele.ui.theme.TextPrimary
 import io.github.sim7b.tele.ui.theme.TextSecondary
 
 /**
- * A newer version downloaded in the background: install it now, or ignore this version (not offered
- * again). Back closes it until the next start.
+ * A newer version on GitHub: install it now (downloaded with its [progress] shown, then confirmed in the
+ * system installer), or ignore this version (not offered again). Back closes it until the next start.
  */
 @Composable
-fun UpdateReadyDialog(release: AppRelease, onInstall: () -> Unit, onIgnore: () -> Unit, onDismiss: () -> Unit) {
+fun UpdateReadyDialog(
+    release: AppRelease,
+    progress: Float?,
+    onInstall: () -> Unit,
+    onIgnore: () -> Unit,
+    onDismiss: () -> Unit
+) {
     val installFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { installFocus.requestFocusWithRetry() }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -66,7 +72,11 @@ fun UpdateReadyDialog(release: AppRelease, onInstall: () -> Unit, onIgnore: () -
             }
             Spacer(modifier = Modifier.height(12.dp))
             MenuRow(
-                label = stringResource(R.string.update_prompt_install),
+                label = if (progress != null) {
+                    stringResource(R.string.settings_update_downloading, (progress * 100).toInt())
+                } else {
+                    stringResource(R.string.update_prompt_install)
+                },
                 icon = Icons.Filled.Refresh,
                 onClick = onInstall,
                 modifier = Modifier.focusRequester(installFocus)
