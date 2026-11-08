@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.26](https://github.com/Sim7b/tele/compare/v0.3.25...v0.3.26) (2026-11-08)
+
+### Features
+
+* **vod:** streaming services and genres screens, faster library ([2e7b154](https://github.com/Sim7b/tele/commit/2e7b15462e132e183a4e3ec7a6662efd3671377c))
+
+### Bug Fixes
+
+* **guide:** the live preview keeps its 16:9 shape ([e46df67](https://github.com/Sim7b/tele/commit/e46df67004180532121bacfc2f5da26f452656eb))
+* **playback:** live channels no longer jump back minutes after a drop ([479dbdc](https://github.com/Sim7b/tele/commit/479dbdcb9f5706e54b2ea2932e704ac2d1c22fbc))
+* **ui:** sheet buttons never squeezed, home spotlight lower and simpler ([49af1fa](https://github.com/Sim7b/tele/commit/49af1faf14f3deea1960380e363ced7c808daf2c))
+
 ## [0.3.25](https://github.com/Sim7b/tele/compare/v0.3.24...v0.3.25) (2026-11-08)
 
 ### Bug Fixes
