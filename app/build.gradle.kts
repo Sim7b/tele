@@ -122,7 +122,7 @@ dependencies {
     implementation("androidx.mediarouter:mediarouter:1.8.1")
     // "Play next" row of the Android TV home (movies and series started)
     implementation("androidx.tvprovider:tvprovider:1.0.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
 
     // QR codes of the API key pages (encoder only)
     implementation("com.google.zxing:core:3.5.4")
