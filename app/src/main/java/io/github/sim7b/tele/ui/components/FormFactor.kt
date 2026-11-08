@@ -1,5 +1,7 @@
 package io.github.sim7b.tele.ui.components
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -177,8 +179,9 @@ fun AdaptiveButtonRow(wrap: Boolean, modifier: Modifier = Modifier, spacing: Dp 
             verticalArrangement = Arrangement.spacedBy(spacing)
         ) { content() }
     } else {
+        // Never squeezed: past the width, the row scrolls (the remote brings the focused button into view)
         Row(
-            modifier = modifier,
+            modifier = modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(spacing),
             verticalAlignment = Alignment.CenterVertically
         ) { content() }

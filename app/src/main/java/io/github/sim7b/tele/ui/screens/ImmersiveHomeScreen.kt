@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.ui.screens
 
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -426,12 +427,22 @@ fun ImmersiveHomeScreen(
         spotlight?.let { shown ->
             if (!inRows) {
                 val item = featured.getOrNull(pageIndex)
-                Column(modifier = Modifier.padding(start = screenMargin(48.dp), top = height * 0.22f).widthIn(max = 460.dp)) {
+                // Low on the screen, just above the first row: the picture stays clear
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = screenMargin(48.dp), bottom = height * 0.20f + SpotlightGap)
+                        .widthIn(max = 460.dp)
+                ) {
                     SpotlightText(shown, compact = false, live = previewKey == shown.key)
                     Spacer(modifier = Modifier.height(18.dp))
-                    val buttons = item?.let { heroButtons(it, now, favoriteIds, guideActions, vodMyList, resumeActions, onChannelSelected, onToggleFavorite, onOpenResume, onOpenTitle, onOpenSport) }.orEmpty()
+                    val buttons = item?.let { heroButtons(it, now, guideActions, vodMyList, resumeActions, onChannelSelected, onOpenResume, onOpenTitle, onOpenSport) }.orEmpty()
                     heroButtonCount[0] = buttons.size
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Wider than the text above when needed: a button is never cut
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true)
+                    ) {
                         buttons.forEachIndexed { index, button ->
                             GlassButton(
                                 button = button,
@@ -694,45 +705,18 @@ private class HeroButton(val label: String, val icon: ImageVector?, val primary:
 private fun heroButtons(
     item: HomeItem,
     now: Long,
-    favoriteIds: List<String>,
     guideActions: GuideActions,
     myList: List<String>,
     resumeActions: VodTitleActions?,
     onChannel: (Channel) -> Unit,
-    onToggleFavorite: (String) -> Unit,
     onOpenResume: (VodTitle) -> Unit,
     onOpenTitle: (VodTitle) -> Unit,
     onOpenSport: (SportEvent) -> Unit
 ): List<HeroButton> {
     val watch = stringResource(R.string.reminder_watch)
-    val record = stringResource(R.string.program_record)
-    val cancelRecord = stringResource(R.string.program_cancel_recording)
-    fun recordButton(channel: Channel, program: GuideProgram): HeroButton? {
-        if (!guideActions.canRecord(channel, program, now)) return null
-        val recorded = guideActions.isRecorded(channel, program)
-        return HeroButton(if (recorded) cancelRecord else record, null, primary = false, record = true) { guideActions.toggleRecording?.invoke(channel, program) }
-    }
+    // Watching only: adding to the favorites and recording stay in the guide
     return when (item) {
-        is HomeItem.Live -> {
-            val channel = item.channel
-            val favorite = channel.allIds.any { it in favoriteIds } || channel.isFavorite
-            val program = channel.currentProgram?.let { onAir ->
-                GuideProgram(
-                    id = "", channelUuid = channel.id, title = onAir.title, description = onAir.description,
-                    startTimeIso = "", endTimeIso = "", posterUrl = onAir.posterUrl,
-                    startMillis = onAir.startMillis, endMillis = onAir.endMillis, category = onAir.category
-                )
-            }
-            listOfNotNull(
-                HeroButton(watch, Icons.Filled.PlayArrow, primary = true) { onChannel(channel) },
-                HeroButton(
-                    stringResource(if (favorite) R.string.card_remove_favorite else R.string.card_add_favorite),
-                    if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    primary = false
-                ) { onToggleFavorite(channel.id) },
-                program?.takeIf { it.endMillis > it.startMillis }?.let { recordButton(channel, it) }
-            )
-        }
+        is HomeItem.Live -> listOf(HeroButton(watch, Icons.Filled.PlayArrow, primary = true) { onChannel(item.channel) })
         is HomeItem.Title -> {
             val title = item.title
             val inList = title.key in myList
@@ -760,7 +744,7 @@ private fun heroButtons(
                 ) { onOpenSport(event) }
                 else -> HeroButton(watch, Icons.Filled.PlayArrow, primary = true) { onOpenSport(event) }
             }
-            listOfNotNull(primary, recordButton(event.channel, program))
+            listOf(primary)
         }
     }
 }
@@ -1024,6 +1008,8 @@ private val CardWidth = 176.dp
 private val CardHeight = 99.dp
 // Height over which the rows fade into the picture at the top of their area
 private val RowsFade = 28.dp
+// Between the featured item and the first row under it
+private val SpotlightGap = 28.dp
 
 /** The top [height] of the content fades out: rows scrolled up melt into the picture instead of being cut. */
 private fun Modifier.fadingTop(height: Dp): Modifier = if (height == 0.dp) this else this
