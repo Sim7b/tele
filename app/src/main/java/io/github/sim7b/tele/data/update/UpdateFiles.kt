@@ -1,8 +1,8 @@
 package io.github.sim7b.tele.data.update
 
 /**
- * Update downloaded ahead of time: one APK per version in the cache ("tele-0.3.15.apk"), kept until it is
- * installed or a newer one replaces it.
+ * Update downloaded when the user asks to install it: one APK per version in the cache ("tele-0.3.15.apk"),
+ * kept until it is installed or a newer one replaces it.
  */
 object UpdateFiles {
 
@@ -23,7 +23,7 @@ object UpdateFiles {
         version == null || !AppVersion.isNewer(version, installed) || (keep != null && version != keep)
     }
 
-    /** The offer at startup: a downloaded version the user has not chosen to ignore. */
-    fun shouldPrompt(readyVersion: String?, ignoredVersion: String?): Boolean =
-        readyVersion != null && readyVersion != ignoredVersion
+    /** The offer at startup: a newer version the user has not chosen to ignore. */
+    fun shouldPrompt(offeredVersion: String?, ignoredVersion: String?): Boolean =
+        offeredVersion != null && offeredVersion != ignoredVersion
 }

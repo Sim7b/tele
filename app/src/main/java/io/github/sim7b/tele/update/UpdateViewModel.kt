@@ -7,7 +7,6 @@ import android.content.Intent
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import android.provider.Settings
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sim7b.tele.R
@@ -53,8 +52,8 @@ val UpdateState.release: AppRelease?
 
 /**
  * In-app updates from the latest GitHub release: checked once at launch, then on demand. A newer
- * version is downloaded in the background to the cache, then offered (see [ignore]); installing hands it
- * to the system installer.
+ * version is only offered (see [ignore]): installing downloads it to the cache, checks it and hands it to
+ * the system installer, which always asks the user to confirm.
  */
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -104,20 +103,8 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             clean(keep = release?.version)
-            if (release == null) {
-                _state.value = UpdateState.UpToDate
-                return@launch
-            }
-            // Downloaded ahead: a failure here is silent, the version stays offered
-            _state.value = try {
-                prepare(release)
-                UpdateState.Ready(release)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "Background download of the update failed: ${e.javaClass.simpleName}")
-                UpdateState.Available(release)
-            }
+            // Only offered: the APK is downloaded once the user asks to install it, never in the background
+            _state.value = if (release == null) UpdateState.UpToDate else UpdateState.Available(release)
         }
     }
 
@@ -200,7 +187,6 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private companion object {
-        const val TAG = "Update"
         const val PREFS_NAME = "updates"
         const val KEY_IGNORED = "ignored_version"
     }

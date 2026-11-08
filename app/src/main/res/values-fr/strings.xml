@@ -353,8 +353,8 @@
     <string name="settings_update_downloading">Téléchargement… %1$d %%</string>
     <string name="settings_update_installing">Installation…</string>
     <string name="settings_update_ready">Téléchargée, prête à installer</string>
-    <string name="update_prompt_title">La version %1$s est prête</string>
-    <string name="update_prompt_text">Téléchargée en arrière-plan depuis GitHub. L\'installer maintenant ?</string>
+    <string name="update_prompt_title">La version %1$s est disponible</string>
+    <string name="update_prompt_text">Publiée sur GitHub. La télécharger et l\'installer maintenant ? Android vous demande de confirmer.</string>
     <string name="update_prompt_install">Installer maintenant</string>
     <string name="update_prompt_ignore">Ignorer cette version</string>
     <string name="home_settings_update">Paramètres, mise à jour disponible</string>

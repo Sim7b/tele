@@ -1247,23 +1247,29 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // Newer version downloaded in the background: offered on the home screen (never over
-                    // playback, the welcome or the quick guide), once per start unless ignored for good
+                    // Newer version on GitHub: offered on the home screen (never over playback, the welcome or
+                    // the quick guide), once per start unless ignored for good. Installing downloads it with
+                    // the progress shown here, then the system installer asks for confirmation
                     val ignoredVersion by updateViewModel.ignoredVersion.collectAsState()
                     var updatePromptClosed by rememberSaveable { mutableStateOf(false) }
-                    val readyRelease = (updateState as? UpdateState.Ready)?.release
-                    if (readyRelease != null && UpdateFiles.shouldPrompt(readyRelease.version, ignoredVersion) && !updatePromptClosed &&
+                    LaunchedEffect(updateState) {
+                        // The system installer takes over, or the error shows in the settings
+                        if (updateState is UpdateState.Installing || updateState is UpdateState.Failed) updatePromptClosed = true
+                    }
+                    val offeredRelease = when (updateState) {
+                        is UpdateState.Available, is UpdateState.Ready, is UpdateState.Downloading -> updateState.release
+                        else -> null
+                    }
+                    if (offeredRelease != null && UpdateFiles.shouldPrompt(offeredRelease.version, ignoredVersion) && !updatePromptClosed &&
                         currentScreen == CurrentScreen.Home && !showWelcome && !showGuide
                     ) {
                         UpdateReadyDialog(
-                            release = readyRelease,
-                            onInstall = {
-                                updatePromptClosed = true
-                                updateViewModel.install(readyRelease)
-                            },
+                            release = offeredRelease,
+                            progress = (updateState as? UpdateState.Downloading)?.progress,
+                            onInstall = { updateViewModel.install(offeredRelease) },
                             onIgnore = {
                                 updatePromptClosed = true
-                                updateViewModel.ignore(readyRelease)
+                                updateViewModel.ignore(offeredRelease)
                             },
                             onDismiss = { updatePromptClosed = true }
                         )

@@ -31,7 +31,7 @@ class UpdateFilesTest {
     }
 
     @Test
-    fun `the offer shows a downloaded version unless it was ignored`() {
+    fun `the offer shows a newer version unless it was ignored`() {
         assertTrue(UpdateFiles.shouldPrompt("0.3.16", ignoredVersion = null))
         assertTrue(UpdateFiles.shouldPrompt("0.3.16", ignoredVersion = "0.3.15"))
         assertFalse(UpdateFiles.shouldPrompt("0.3.16", ignoredVersion = "0.3.16"))
