@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.24](https://github.com/Sim7b/tele/compare/v0.3.23...v0.3.24) (2026-11-08)
+
+### Features
+
+* immersive movies, series and guide, more TMDB lists, file quality ([ba377c5](https://github.com/Sim7b/tele/commit/ba377c52f69bd090b832c88653b3cc771dfa624a))
+
 ## [0.3.23](https://github.com/Sim7b/tele/compare/v0.3.22...v0.3.23) (2026-11-07)
 
 ### Features
