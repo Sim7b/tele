@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.25](https://github.com/Sim7b/tele/compare/v0.3.24...v0.3.25) (2026-11-08)
+
+### Bug Fixes
+
+* **update:** download updates on demand and always confirm the install ([28791f8](https://github.com/Sim7b/tele/commit/28791f825f7b1159daff3f9f33f69fb22a898b83))
+
 ## [0.3.24](https://github.com/Sim7b/tele/compare/v0.3.23...v0.3.24) (2026-11-08)
 
 ### Features
