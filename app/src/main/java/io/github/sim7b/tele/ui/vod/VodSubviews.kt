@@ -223,4 +223,3 @@ internal fun SubviewHeader(label: String, logo: String?, count: Int, loading: Bo
         }
     }
 }
-
