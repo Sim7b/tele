@@ -51,6 +51,8 @@ class DispatcharrClient(
     @Volatile private var groupsCache: Map<Int, String>? = null
     @Volatile private var epgDataCache: Map<Int, DispatcharrEpgData>? = null
     @Volatile private var accountsCache: Map<Int, Pair<String, Boolean>>? = null
+    // Features of the Télé API plugin of the server: null until probed, empty when not installed
+    @Volatile private var teleApiFeatures: Set<String>? = null
 
     fun setConfig(config: SourceConfig?) {
         if (config != currentConfig) clearCaches()
@@ -62,6 +64,37 @@ class DispatcharrClient(
         groupsCache = null
         epgDataCache = null
         accountsCache = null
+        teleApiFeatures = null
+    }
+
+    /**
+     * Features of the Télé API plugin (`/api/tele/v1/`), probed once per server and manual refresh: its
+     * endpoints work with a standard user key. Empty when the plugin is missing, disabled or incompatible
+     * (without it, the web interface of Dispatcharr answers the path with an HTML page).
+     */
+    private suspend fun teleApi(): Set<String> {
+        teleApiFeatures?.let { return it }
+        if (baseUrl.isBlank()) return emptySet()
+        val features = TeleApi.features(getObject("$baseUrl${TeleApi.INFO_PATH}")) ?: emptySet()
+        if (features.isNotEmpty()) Log.i(TAG, "Télé API plugin: $features")
+        return features.also { teleApiFeatures = it }
+    }
+
+    /** Channels of the plugin, read by pages; null when a page failed (the standard API takes over). */
+    private suspend fun channelsFromPlugin(): List<DispatcharrChannel>? {
+        val channels = mutableListOf<DispatcharrChannel>()
+        val seenUuids = HashSet<String>()
+        for (page in 1..TeleApi.MAX_CHANNEL_PAGES) {
+            var read = 0
+            val url = "$baseUrl${TeleApi.CHANNELS_PATH}?programs=0&page_size=${TeleApi.CHANNELS_PAGE_SIZE}&page=$page"
+            val fetched = fetchObjects(url) { item ->
+                read++
+                TeleApi.parseChannel(item, baseUrl)?.takeIf { seenUuids.add(it.uuid) }?.let { channels.add(it) }
+            }
+            if (!fetched) return null
+            if (read < TeleApi.CHANNELS_PAGE_SIZE) break
+        }
+        return channels.apply { sortBy { it.channelNumber ?: Int.MAX_VALUE } }
     }
 
     private val baseUrl: String
@@ -170,6 +203,11 @@ class DispatcharrClient(
     suspend fun getChannels(): Result<List<DispatcharrChannel>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext failure(R.string.error_dispatcharr_not_configured)
+        }
+
+        // One list with the group and guide key of each channel, in place of the three tables below
+        if ("channels" in teleApi()) {
+            channelsFromPlugin()?.let { return@withContext Result.success(it) }
         }
 
         try {
@@ -529,11 +567,15 @@ class DispatcharrClient(
 
     /**
      * Playback slots of the provider accounts (free / total), read live: never cached, since
-     * [StreamSlots.used] changes with every viewer. Null when unavailable (no admin rights, error)
-     * or when no account has a stream limit.
+     * [StreamSlots.used] changes with every viewer. Null when unavailable (no Télé API plugin and no admin
+     * rights, error) or when no account has a stream limit.
      */
     suspend fun getStreamSlots(): StreamSlots? = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) return@withContext null
+        // The plugin reads the counters the server checks itself, with a standard user key
+        if ("slots" in teleApi()) {
+            getObject("$baseUrl${TeleApi.SLOTS_PATH}")?.let { return@withContext TeleApi.parseSlots(it) }
+        }
         val accounts = mutableListOf<JSONObject>()
         if (!fetchObjects("$baseUrl/api/m3u/accounts/") { accounts.add(it) }) return@withContext null
         // Connections in use: only the live stats of the server are right (admin rights needed); the profiles
