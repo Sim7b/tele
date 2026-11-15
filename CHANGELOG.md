@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.31](https://github.com/Sim7b/tele/compare/v0.3.30...v0.3.31) (2026-11-15)
+
+### Features
+
+* **dispatcharr-plugin:** groups served to the TVs, TMDB confidence, backup, targeted messages and VOD stats ([040165e](https://github.com/Sim7b/tele/commit/040165e19566a50301922c22d108642102ef4124))
+* **vod:** only the groups the Dispatcharr admin serves, and a Popular on the server row ([1bc1d0d](https://github.com/Sim7b/tele/commit/1bc1d0d2e076101b784c253e801b4e498d0c929a))
+
+### Bug Fixes
+
+* **vod:** groups with the Arabic code alone are in Arabic ([3be8c65](https://github.com/Sim7b/tele/commit/3be8c6519d798e539df2534df1d93cf756aa7d61))
+
 ## [0.3.30](https://github.com/Sim7b/tele/compare/v0.3.29...v0.3.30) (2026-11-15)
 
 ### Features
