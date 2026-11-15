@@ -192,6 +192,13 @@ class FfprobeTest(unittest.TestCase):
         output = probe.run_ffprobe("http://provider.invalid/movie/u/p/1.mkv", "Agent", FakeRedis())
         self.assertEqual(core.parse_probe(output), {"audio": ["en"], "subtitles": []})
 
+    def test_network_protocols_only(self):
+        with mock.patch.object(probe.subprocess, "Popen", side_effect=OSError) as popen:
+            probe.run_ffprobe("http://provider.invalid/x", None, FakeRedis())
+        command = popen.call_args.args[0]
+        self.assertEqual(command[command.index("-protocol_whitelist") + 1], "http,https,tcp,tls,crypto")
+        self.assertEqual(command[-1], "http://provider.invalid/x")
+
     def test_error_and_yield(self):
         self.fake("exit 1\n")
         self.assertIsNone(probe.run_ffprobe("http://provider.invalid/x", None, FakeRedis()))

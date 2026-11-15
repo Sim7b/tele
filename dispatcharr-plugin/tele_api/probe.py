@@ -36,6 +36,7 @@ LOCK_TTL = 15 * 60
 # A run stops after this long, the next one goes on (every 10 minutes)
 RUN_BUDGET = 8 * 60
 PROBE_TIMEOUT = 25
+PROTOCOLS = "http,https,tcp,tls,crypto"
 YIELD_PAUSE = 120
 MAX_ATTEMPTS = 3
 REPROBE_AFTER = 30 * 24 * 3600
@@ -188,6 +189,9 @@ def run_ffprobe(url: str, user_agent: Optional[str], redis_client) -> Optional[s
     """ffprobe output for [url], None on error, timeout, or when a viewer asks to yield (process killed)."""
     command = [
         "ffprobe", "-v", "error", "-hide_banner",
+        # Network protocols only: a provider answer (an HLS playlist, a redirect) must never make ffprobe read
+        # local files of the server (file:, concat:, subfile:)
+        "-protocol_whitelist", PROTOCOLS,
         "-rw_timeout", "15000000",
         "-probesize", "5000000", "-analyzeduration", "5000000",
         "-show_streams", "-of", "json",
