@@ -773,6 +773,11 @@
     <string name="api_key_page_get">Obtenir une clé sur %1$s</string>
     <string name="vod_row_trending">Tendances de la semaine</string>
     <string name="vod_row_server_popular">Populaires sur le serveur</string>
+    <string name="settings_vod_version_order_title">Fichier lu en premier</string>
+    <string name="settings_vod_version_order_description">Quand un film ou un épisode a plusieurs fichiers et qu\'aucun n\'est choisi</string>
+    <string name="settings_vod_version_order_language">Langue de la TV, puis qualité</string>
+    <string name="settings_vod_version_order_quality">Meilleure qualité, puis langue</string>
+    <string name="settings_vod_version_order_listed">Dans l\'ordre des fournisseurs</string>
     <string name="vod_row_popular_movies">Films populaires</string>
     <string name="vod_row_popular_series">Séries populaires</string>
     <string name="vod_row_now_playing">Actuellement au cinéma</string>

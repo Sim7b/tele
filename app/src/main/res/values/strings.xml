@@ -764,6 +764,11 @@
     <string name="vod_row_trending">Trending this week</string>
     <!-- Titles most watched on the Dispatcharr server (Télé API plugin) -->
     <string name="vod_row_server_popular">Popular on the server</string>
+    <string name="settings_vod_version_order_title">File played first</string>
+    <string name="settings_vod_version_order_description">When a movie or an episode has several files and none is chosen</string>
+    <string name="settings_vod_version_order_language">Language of the TV, then quality</string>
+    <string name="settings_vod_version_order_quality">Best quality, then language</string>
+    <string name="settings_vod_version_order_listed">As the providers list them</string>
     <string name="vod_row_popular_movies">Popular movies</string>
     <string name="vod_row_popular_series">Popular series</string>
     <string name="vod_row_now_playing">Now in theaters</string>

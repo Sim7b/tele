@@ -98,6 +98,7 @@ import io.github.sim7b.tele.ui.vod.VodTitleActions
 import io.github.sim7b.tele.ui.vod.VodSubtitles
 import io.github.sim7b.tele.ui.vod.LocalPosterWidth
 import io.github.sim7b.tele.ui.vod.LocalRatingOf
+import io.github.sim7b.tele.data.vod.VodVersionOrder
 import io.github.sim7b.tele.data.vod.VodBrowse
 import io.github.sim7b.tele.data.vod.VodTitle
 import androidx.compose.ui.unit.dp
@@ -1004,9 +1005,13 @@ class MainActivity : ComponentActivity() {
                                         failed = true
                                     }
                                 }
+                                // The file played when none is chosen: in the order chosen in the settings
+                                val ordered = remember(details, vodDisplay.versionOrder) {
+                                    details?.let { VodVersionOrder.apply(it, vodDisplay.versionOrder, java.util.Locale.getDefault().language) }
+                                }
                                 VodDetailScreen(
                                     title = title,
-                                    details = details,
+                                    details = ordered,
                                     languagesMeasured = viewModel.vod.languagesMeasured(title),
                                     loadFailed = failed,
                                     progress = vodProgress,

@@ -22,6 +22,7 @@ import io.github.sim7b.tele.data.model.ChannelList
 import io.github.sim7b.tele.data.model.PreviewDelay
 import io.github.sim7b.tele.data.model.HomeRow
 import io.github.sim7b.tele.data.model.HomeStyle
+import io.github.sim7b.tele.data.vod.VersionOrder
 import io.github.sim7b.tele.data.vod.PosterSize
 import io.github.sim7b.tele.data.vod.VodFilter
 import io.github.sim7b.tele.data.vod.VodKind
@@ -731,6 +732,24 @@ fun SettingsScreen(
                                             description = stringResource(R.string.settings_vod_theater_description),
                                             toggle = !vodDisplay.hideTheater,
                                             onClick = { repository.setVodDisplay(vodDisplay.copy(hideTheater = !vodDisplay.hideTheater)) }
+                                        )
+                                    }
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_vod_version_order_title),
+                                            description = stringResource(R.string.settings_vod_version_order_description),
+                                            value = stringResource(
+                                                when (vodDisplay.versionOrder) {
+                                                    VersionOrder.LANGUAGE_FIRST -> R.string.settings_vod_version_order_language
+                                                    VersionOrder.QUALITY_FIRST -> R.string.settings_vod_version_order_quality
+                                                    VersionOrder.AS_LISTED -> R.string.settings_vod_version_order_listed
+                                                }
+                                            ),
+                                            onClick = {
+                                                val orders = VersionOrder.entries
+                                                val next = orders[(orders.indexOf(vodDisplay.versionOrder) + 1) % orders.size]
+                                                repository.setVodDisplay(vodDisplay.copy(versionOrder = next))
+                                            }
                                         )
                                     }
                                     // Filters the Movies and Series tabs open with
