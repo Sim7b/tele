@@ -19,7 +19,7 @@
     ],
     [
       "@semantic-release/exec",
-      { "prepareCmd": "scripts/build-release-apk.sh ${nextRelease.version}" }
+      { "prepareCmd": "scripts/build-release-apk.sh ${nextRelease.version} && dispatcharr-plugin/scripts/build_zip.sh" }
     ],
     [
       "@semantic-release/git",
@@ -30,7 +30,12 @@
     ],
     [
       "@semantic-release/github",
-      { "assets": [{ "path": "dist/*.apk" }] }
+      {
+        "assets": [
+          { "path": "dist/*.apk" },
+          { "path": "dispatcharr-plugin/dist/*.zip", "label": "Dispatcharr plugin (Télé API)" }
+        ]
+      }
     ]
   ]
 }
