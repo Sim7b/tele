@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.27](https://github.com/Sim7b/tele/compare/v0.3.26...v0.3.27) (2026-11-15)
+
+### Features
+
+* **dispatcharr-plugin:** add the Télé API plugin for Dispatcharr ([28954ee](https://github.com/Sim7b/tele/commit/28954ee7ac1e2de9bfd04cd431d1fc55695fc727))
+* **dispatcharr:** close the sessions this TV left open when no connection is free ([fa39520](https://github.com/Sim7b/tele/commit/fa39520e45d8d08edc136b602fc17742ff2da35f))
+* **dispatcharr:** use the Télé API plugin for channels and free connections ([968ab5d](https://github.com/Sim7b/tele/commit/968ab5dea272b25d9096a66046857c1b267ebeff))
+
+### Bug Fixes
+
+* **dispatcharr:** probe the Télé API plugin without logging a missing plugin ([a25be3c](https://github.com/Sim7b/tele/commit/a25be3c32af2d4cb6fd5582983ff6f2638f0cff0))
+
 ## [0.3.26](https://github.com/Sim7b/tele/compare/v0.3.25...v0.3.26) (2026-11-08)
 
 ### Features
