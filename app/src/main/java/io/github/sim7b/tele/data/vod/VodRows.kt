@@ -21,7 +21,9 @@ data class VodRow(
         CONTINUE, TRENDING, MY_LIST, COLLECTION, RECENT_MOVIES, RECENT_SERIES, POPULAR_MOVIES, POPULAR_SERIES,
         NOW_PLAYING, UPCOMING, TOP_MOVIES, TOP_SERIES, ON_THE_AIR, AIRING_TODAY,
         // The titles of a streaming service ([VodRow.name]: its name)
-        PLATFORM, GENRE
+        PLATFORM, GENRE,
+        // The titles most watched on the Dispatcharr server (last: the rows kept on the device store the position)
+        SERVER_POPULAR
     }
 }
 
@@ -39,7 +41,9 @@ object VodRows {
         collections: List<VodCollection> = emptyList(),
         rankings: Map<Ranking, List<RankedItem>> = emptyMap(),
         matcher: VodRankings.Matcher? = null,
-        hidden: Set<VodRow.Kind> = emptySet()
+        hidden: Set<VodRow.Kind> = emptySet(),
+        // Keys of the titles most watched on the Dispatcharr server, most watched first
+        serverPopular: List<String> = emptyList()
     ): List<VodRow> {
         if (titles.isEmpty()) return emptyList()
         val byKey = titles.associateBy { it.key }
@@ -52,6 +56,7 @@ object VodRows {
 
         rows += VodRow(VodRow.Kind.CONTINUE, continuing(byKey, progress).map { it.first })
         rows += VodRow(VodRow.Kind.TRENDING, ranked(Ranking.TRENDING, TRENDING_SIZE), ranked = true)
+        rows += VodRow(VodRow.Kind.SERVER_POPULAR, serverPopular.mapNotNull { byKey[it] }.distinctBy { it.key }.take(TRENDING_SIZE), ranked = true)
         rows += VodRow(VodRow.Kind.MY_LIST, myList.mapNotNull { byKey[it] }.take(ROW_SIZE))
         collections.forEach { collection ->
             rows += VodRow(VodRow.Kind.COLLECTION, collection.titleKeys.mapNotNull { byKey[it] }.take(ROW_SIZE), collection.name, collectionId = collection.id)

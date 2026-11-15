@@ -174,6 +174,7 @@ fun VodHomeScreen(
     modifier: Modifier = Modifier,
     findPoster: (suspend (VodTitle) -> String?)? = null,
     hiddenRows: Set<VodRow.Kind> = emptySet(),
+    serverPopular: List<String> = emptyList(),
     actions: VodTitleActions? = null,
     // Rows last built (shown at once), the TMDB rankings matching kept between openings, and the rows built
     initialRows: List<VodRow> = emptyList(),
@@ -279,9 +280,9 @@ fun VodHomeScreen(
 
     // Built off the main thread: libraries hold tens of thousands of titles
     // The rows last built first (the home opens with them), then the ones of the current state
-    val rows by produceState(initialRows, library.titles, progress, myList, collections, rankings, indexVersion, hiddenRows) {
+    val rows by produceState(initialRows, library.titles, progress, myList, collections, rankings, indexVersion, hiddenRows, serverPopular) {
         value = withContext(Dispatchers.Default) {
-            VodRows.build(library.titles, progress, myList, collections, rankings, matcherFor(library.titles, rankings), hiddenRows)
+            VodRows.build(library.titles, progress, myList, collections, rankings, matcherFor(library.titles, rankings), hiddenRows, serverPopular)
         }
         onRows(value)
     }

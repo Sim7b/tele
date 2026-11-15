@@ -762,6 +762,8 @@
     <string name="api_key_page_invalid">This key does not look valid.</string>
     <string name="api_key_page_get">Get a key on %1$s</string>
     <string name="vod_row_trending">Trending this week</string>
+    <!-- Titles most watched on the Dispatcharr server (Télé API plugin) -->
+    <string name="vod_row_server_popular">Popular on the server</string>
     <string name="vod_row_popular_movies">Popular movies</string>
     <string name="vod_row_popular_series">Popular series</string>
     <string name="vod_row_now_playing">Now in theaters</string>

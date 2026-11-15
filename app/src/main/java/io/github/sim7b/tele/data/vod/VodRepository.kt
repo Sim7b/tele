@@ -7,6 +7,7 @@ import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.model.SourceConfig
 import io.github.sim7b.tele.data.model.SourceType
 import io.github.sim7b.tele.data.remote.DispatcharrClient
+import io.github.sim7b.tele.data.storage.CachedVodCatalog
 import io.github.sim7b.tele.data.storage.SettingsRepository
 import io.github.sim7b.tele.data.toUiText
 import io.github.sim7b.tele.R
@@ -63,6 +64,12 @@ class VodRepository(
     private var rankingsJob: Job? = null
 
     // Logos of the streaming services (TMDB), fetched with the rankings
+    // Keys of the titles most watched on the Dispatcharr servers (Télé API plugin), most watched first
+    private val _serverPopular = MutableStateFlow<List<String>>(emptyList())
+    val serverPopular: StateFlow<List<String>> = _serverPopular.asStateFlow()
+    // ("movie" | "series", Dispatcharr id) most watched, by Dispatcharr source
+    private val popularIds = ConcurrentHashMap<String, List<Pair<String, String>>>()
+
     private val _platformLogos = MutableStateFlow<Map<StreamingPlatform, String>>(emptyMap())
     val platformLogos: StateFlow<Map<StreamingPlatform, String>> = _platformLogos.asStateFlow()
 
@@ -366,9 +373,34 @@ class VodRepository(
         indexJob = scope.launch { index.index(titles, key) }
     }
 
-    private suspend fun loadSource(config: SourceConfig, force: Boolean, selection: VodSelection) {
+    private suspend fun loadSource(config: SourceConfig, forced: Boolean, chosen: VodSelection) {
         val readStart = SystemClock.elapsedRealtime()
-        val cached = withContext(Dispatchers.IO) { settings.getVodCatalog(config.id) }
+        val stored = withContext(Dispatchers.IO) { settings.getVodCatalog(config.id) }
+        // Dispatcharr: only the groups its admin serves to the TVs (Télé API plugin); unknown (no plugin, error):
+        // nothing hidden. A change of these groups loads the catalog again.
+        var selection = chosen
+        var force = forced
+        var groupsStamp: String? = null
+        var allowed: Set<String>? = null
+        if (config.type == SourceType.DISPATCHARR) {
+            val groups = try {
+                dispatcharr(config).getVodGroups()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                null
+            }
+            if (groups != null) {
+                allowed = if (groups.all) null else groups.groups
+                selection = DispatcharrVod.restrict(chosen, allowed)
+                groupsStamp = DispatcharrVod.groupsStamp(allowed)
+                if (groupsStamp != withContext(Dispatchers.IO) { settings.getVodGroupsStamp(config.id) }) force = true
+            }
+        }
+        // The groups no longer served disappear at once
+        val served = allowed
+        val cached = if (stored == null || served == null) stored else CachedVodCatalog(
+            stored.savedAt, stored.entries.filter { DispatcharrVod.allows(served, it) }, stored.fullAt
+        )
         Log.i(TAG, "Catalog of a ${config.type} source read from the device: ${cached?.entries?.size ?: 0} entries in ${SystemClock.elapsedRealtime() - readStart} ms")
         if (cached != null) {
             catalogs[config.id] = cached.entries
@@ -423,6 +455,7 @@ class VodRepository(
             }
             catalogs[config.id] = entries
             errors.remove(config.id)
+            groupsStamp?.let { stamp -> withContext(Dispatchers.IO) { settings.setVodGroupsStamp(config.id, stamp) } }
             val savedAt = System.currentTimeMillis()
             catalogStamps[config.id] = savedAt to savedAt
             if (config.type == SourceType.DISPATCHARR && selection.all) {
@@ -466,10 +499,41 @@ class VodRepository(
             if (e is CancellationException) throw e
             tmdbIds[config.id].orEmpty()
         }
+        val popular = try {
+            dispatcharr(config).getVodPopular()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            popularIds[config.id].orEmpty()
+        }
+        if (popular != popularIds[config.id].orEmpty()) {
+            if (popular.isEmpty()) popularIds.remove(config.id) else popularIds[config.id] = popular
+            updateServerPopular()
+        }
         if (measured == measuredLanguages[config.id].orEmpty() && ids == tmdbIds[config.id].orEmpty()) return
         if (measured.isEmpty()) measuredLanguages.remove(config.id) else measuredLanguages[config.id] = measured
         if (ids.isEmpty()) tmdbIds.remove(config.id) else tmdbIds[config.id] = ids
         if (catalogs[config.id] != null) publish(loading = _library.value.loading)
+    }
+
+    /** Keys of the library titles most watched on the servers: their Dispatcharr ids found among the entries. */
+    private suspend fun updateServerPopular() {
+        val wanted = popularIds.entries.flatMap { (source, list) -> list.mapIndexed { rank, (kind, id) -> Triple("$source|$kind|$id", rank, source) } }
+        if (wanted.isEmpty()) {
+            _serverPopular.value = emptyList()
+            return
+        }
+        val titles = _library.value.titles
+        _serverPopular.value = withContext(Dispatchers.Default) {
+            val rank = wanted.associate { it.first to it.second }
+            val found = HashMap<String, Int>()
+            titles.forEach { title ->
+                title.entries.forEach { entry ->
+                    val kind = if (entry.kind == VodKind.MOVIE) "movie" else "series"
+                    rank["${entry.sourceId}|$kind|${entry.providerId}"]?.let { r -> found[title.key] = minOf(found[title.key] ?: r, r) }
+                }
+            }
+            found.entries.sortedBy { it.value }.map { it.key }
+        }
     }
 
     private suspend fun publish(loading: Boolean) {
@@ -510,6 +574,7 @@ class VodRepository(
         builtFrom = sources to hideTheater
         builtMeasured = measured
         builtTmdbIds = ids
+        val popularStale = popularIds.isNotEmpty()
         _library.value = VodLibraryState(
             titles = titles,
             byKey = byKey,
@@ -520,6 +585,7 @@ class VodRepository(
             toChoose = toChoose,
             newCategories = newCategories
         )
+        if (popularStale) updateServerPopular()
     }
 
     // Dispatcharr sources: VOD languages measured by the Télé API plugin, by category (DispatcharrVod.measuredKey)
@@ -611,7 +677,7 @@ class VodRepository(
             val store = settings.vodStore
             lastRows = VodRows.build(
                 titles, store.progress.value, store.myList.value, store.collections.value, rankings,
-                matcher(titles, rankings), settings.vodDisplay.value.hiddenRows
+                matcher(titles, rankings), settings.vodDisplay.value.hiddenRows, _serverPopular.value
             )
             // Kept: the next start shows them before its library is ready
             withContext(Dispatchers.IO) { settings.vodSnapshots.saveRows(lastRows) }
