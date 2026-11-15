@@ -56,6 +56,8 @@ class DispatcharrClient(
     @Volatile private var groupsCache: Map<Int, String>? = null
     @Volatile private var epgDataCache: Map<Int, DispatcharrEpgData>? = null
     @Volatile private var accountsCache: Map<Int, Pair<String, Boolean>>? = null
+    // Last guide of the plugin, with its URL and ETag: given again when the server answers 304
+    @Volatile private var guideCache: Triple<String, String, List<DispatcharrEpgChannel>>? = null
     // Features of the Télé API plugin of the server: null until probed, empty when not installed
     @Volatile private var teleApiFeatures: Set<String>? = null
 
@@ -70,6 +72,7 @@ class DispatcharrClient(
         epgDataCache = null
         accountsCache = null
         teleApiFeatures = null
+        guideCache = null
     }
 
     /**
@@ -326,6 +329,26 @@ class DispatcharrClient(
             return@withContext failure(R.string.error_dispatcharr_not_configured)
         }
 
+        // Télé API plugin: the programs of the user's channels only, and nothing sent again while unchanged (304)
+        if ("guide" in teleApi()) {
+            val url = "$baseUrl${TeleApi.GUIDE_PATH}?hours=${days.coerceIn(1, 2) * 24}"
+            val cached = guideCache?.takeIf { it.first == url }
+            val request = Request.Builder().url(url).get()
+                .apply { cached?.second?.let { header("If-None-Match", it) } }
+                .build()
+            try {
+                val (code, etag, channels) = readGrid(request)
+                if (code == 304 && cached != null) return@withContext Result.success(cached.third)
+                if (code in 200..299) {
+                    guideCache = etag?.let { Triple(url, it, channels) }
+                    return@withContext Result.success(channels)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Guide of the plugin unavailable (${e.javaClass.simpleName}), Dispatcharr grid used")
+            }
+        }
+
         val urlBuilder = "$baseUrl/api/epg/grid/".toHttpUrlOrNull()?.newBuilder()
             ?: return@withContext failure(R.string.error_invalid_address)
 
@@ -338,50 +361,52 @@ class DispatcharrClient(
             .build()
 
         try {
-            val epgMap = mutableMapOf<String, MutableList<GuideProgram>>()
-            client.newCall(request).executeCancellable { response ->
-                if (!response.isSuccessful) throw UserFacingException(UiText.Res(R.string.error_server_http, response.code))
-                var index = 0
-                JsonStreams.forEachObject(response.body.byteStream()) { item ->
-                    val i = index++
-                    // Case 1: channel object with a nested "programs" array
-                    if (item.has("programs")) {
-                        val channelKey = item.optStringOrNull("tvg_id")
-                            ?: item.optStringOrNull("channel_uuid")
-                            ?: item.optStringOrNull("uuid")
-                            ?: return@forEachObject
-                        val programsArray = item.optJSONArray("programs") ?: JSONArray()
-                        val progList = epgMap.getOrPut(channelKey) { mutableListOf() }
-
-                        for (j in 0 until programsArray.length()) {
-                            val progObj = programsArray.optJSONObject(j) ?: continue
-                            parseProgram(progObj, channelKey, "$channelKey-$j")?.let { progList.add(it) }
-                        }
-                    }
-                    // Case 2: flat array of individual programs (format of /api/epg/grid/)
-                    else if (item.has("title")) {
-                        val key = item.optStringOrNull("tvg_id")
-                            ?: item.optStringOrNull("channel_uuid")
-                            ?: item.optStringOrNull("channel_id")
-                            ?: return@forEachObject
-                        parseProgram(item, key, "$key-$i")?.let { epgMap.getOrPut(key) { mutableListOf() }.add(it) }
-                    }
-                }
-            }
-
-            val resultList = epgMap.map { (key, progs) ->
-                progs.sortBy { it.startMillis }
-                DispatcharrEpgChannel(
-                    channelUuid = key,
-                    channelName = key,
-                    programs = progs
-                )
-            }
-
-            Result.success(resultList)
+            val (code, _, channels) = readGrid(request)
+            if (code !in 200..299) throw UserFacingException(UiText.Res(R.string.error_server_http, code))
+            Result.success(channels)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /** HTTP code, ETag and channels of a grid answer (the Dispatcharr grid, or the guide of the plugin). */
+    private suspend fun readGrid(request: Request): Triple<Int, String?, List<DispatcharrEpgChannel>> {
+        val epgMap = mutableMapOf<String, MutableList<GuideProgram>>()
+        val (code, etag) = client.newCall(request).executeCancellable { response ->
+            if (!response.isSuccessful) return@executeCancellable response.code to null
+            var index = 0
+            JsonStreams.forEachObject(response.body.byteStream()) { item ->
+                val i = index++
+                // Case 1: channel object with a nested "programs" array
+                if (item.has("programs")) {
+                    val channelKey = item.optStringOrNull("tvg_id")
+                        ?: item.optStringOrNull("channel_uuid")
+                        ?: item.optStringOrNull("uuid")
+                        ?: return@forEachObject
+                    val programsArray = item.optJSONArray("programs") ?: JSONArray()
+                    val progList = epgMap.getOrPut(channelKey) { mutableListOf() }
+
+                    for (j in 0 until programsArray.length()) {
+                        val progObj = programsArray.optJSONObject(j) ?: continue
+                        parseProgram(progObj, channelKey, "$channelKey-$j")?.let { progList.add(it) }
+                    }
+                }
+                // Case 2: flat array of individual programs (format of /api/epg/grid/)
+                else if (item.has("title")) {
+                    val key = item.optStringOrNull("tvg_id")
+                        ?: item.optStringOrNull("channel_uuid")
+                        ?: item.optStringOrNull("channel_id")
+                        ?: return@forEachObject
+                    parseProgram(item, key, "$key-$i")?.let { epgMap.getOrPut(key) { mutableListOf() }.add(it) }
+                }
+            }
+            response.code to response.header("ETag")
+        }
+        val channels = epgMap.map { (key, progs) ->
+            progs.sortBy { it.startMillis }
+            DispatcharrEpgChannel(channelUuid = key, channelName = key, programs = progs)
+        }
+        return Triple(code, etag, channels)
     }
 
     private fun parseProgram(obj: JSONObject, channelKey: String, fallbackId: String): GuideProgram? {

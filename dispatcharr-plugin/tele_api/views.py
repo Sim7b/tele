@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -193,6 +193,20 @@ class ChannelsView(TeleView):
             },
             headers=headers,
         )
+
+
+class GuideView(TeleView):
+    """Programs of the caller's channels, from an hour ago to [hours] ahead (1-48, default 24), in the format of
+    the Dispatcharr grid (channel objects with their programs). The window moves by whole hours and the answer
+    has an ETag: If-None-Match answers 304 while the guide did not change."""
+
+    def get(self, request):
+        start, end = core.guide_window(time.time(), request.query_params.get("hours"))
+        results = data.guide(request.user, start, end)
+        tag = core.etag([start, end, results])
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        return Response({"api": core.API_VERSION, "start": start, "end": end, "results": results}, headers={"ETag": tag})
 
 
 class SlotsView(TeleView):

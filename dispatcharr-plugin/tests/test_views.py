@@ -94,6 +94,15 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(response.data["api"], core.API_VERSION)
         self.assertFalse(response.data["user"]["admin"])
 
+    def test_guide_answers_304_while_unchanged(self):
+        programs = [{"uuid": "u1", "programs": [{"id": "1", "title": "Journal", "start": "s", "end": "e"}]}]
+        with mock.patch.object(views.data, "guide", return_value=programs), \
+                mock.patch.object(views.time, "time", return_value=3600 * 1000.0):
+            first = self.call(views.GuideView, path="/?hours=24", who=user())
+            again = self.call(views.GuideView, path="/?hours=24", who=user(), HTTP_IF_NONE_MATCH=first["ETag"])
+        self.assertEqual(first.data["results"], programs)
+        self.assertEqual(again.status_code, 304)
+
     def test_slots(self):
         limits = [core.ProfileLimit(1, 1, "P", 2, True)]
         with mock.patch.object(views.data, "profile_limits", return_value=limits), \

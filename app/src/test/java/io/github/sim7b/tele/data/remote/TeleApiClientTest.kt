@@ -260,6 +260,38 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `the guide of the plugin is not sent again while unchanged`() = runBlocking {
+        val ifNoneMatch = mutableListOf<String?>()
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"api": 1, "features": ["guide"]}""")
+                TeleApi.GUIDE_PATH -> {
+                    ifNoneMatch.add(request.headers["If-None-Match"])
+                    if (request.headers["If-None-Match"] == "\"v1\"") {
+                        MockResponse.Builder().code(304).build()
+                    } else {
+                        MockResponse.Builder().addHeader("ETag", "\"v1\"").addHeader("Content-Type", "application/json").body(
+                            """{"api": 1, "results": [{"uuid": "u1", "programs": [
+                                {"id": "5", "title": "Journal", "start": "2026-11-09T20:00:00+00:00", "end": "2026-11-09T20:40:00+00:00"}]}]}"""
+                        ).build()
+                    }
+                }
+                else -> null
+            }
+        }
+        val client = client()
+
+        val first = client.getEpgGrid().getOrThrow()
+        val second = client.getEpgGrid().getOrThrow()
+
+        assertEquals("u1", first.single().channelUuid)
+        assertEquals("Journal", first.single().programs.single().title)
+        assertEquals(first, second)
+        assertEquals(listOf(null, "\"v1\""), ifNoneMatch)
+        assertTrue("/api/epg/grid/" !in paths)
+    }
+
+    @Test
     fun `parses the plugin answers defensively`() {
         assertNull(TeleApi.features(JSONObject("""{"api": 2, "features": ["channels"]}""")))
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))

@@ -4,6 +4,7 @@ A [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) plugin with endpoint
 [Télé](https://github.com/Sim7b/tele) Android TV player. They work with the API key of a **standard user**,
 no admin key needed:
 
+- **Compact guide**: the programs of the user's channels only, not sent again while unchanged (304).
 - **Channels in one call**: the channels of the user with their group, guide key and current / next program,
   by pages, in place of the channels, groups and EPG data lists.
 - **Free provider connections**: by account and in total, read from the counters Dispatcharr checks before
@@ -135,6 +136,14 @@ nothing changed.
 
 Channel overrides are applied (name, number, group, logo, guide). The logo is
 `/api/channels/logos/<logo_id>/cache/`, the stream `/proxy/ts/stream/<uuid>`.
+
+### `GET /api/tele/v1/guide/?hours=24`
+
+The programs of the caller's channels from an hour ago to `hours` ahead (1-48), in the format of the
+Dispatcharr grid: `{"results": [{"uuid": "<channel>", "programs": [{"id", "title", "sub_title",
+"description", "start", "end", "rating", "icon"}]}]}`. Only the channels the user may watch, descriptions cut at
+1000 characters. The window moves by whole hours and the answer has an `ETag`: `If-None-Match` answers 304
+while the guide did not change, and Télé keeps the guide it has.
 
 ### `GET /api/tele/v1/slots/`
 

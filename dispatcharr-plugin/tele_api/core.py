@@ -727,3 +727,52 @@ def peaks(days: Iterable[str], peaks_by_day: Iterable[Mapping[Any, Any]], limits
     for entry in result:
         entry["days"].sort(key=lambda d: d["day"])
     return result
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Compact guide
+
+GUIDE_LOOKBACK_HOURS = 1
+GUIDE_MAX_HOURS = 48
+MAX_PROGRAMS_PER_CHANNEL = 200
+MAX_DESCRIPTION = 1000
+
+
+def guide_window(now: float, hours: Any) -> Tuple[float, float]:
+    """(start, end) of the guide, on hour boundaries: the same window, so the same ETag, for a whole hour."""
+    span = query_int(hours, 24, 1, GUIDE_MAX_HOURS)
+    hour = int(now // 3600) * 3600
+    return float(hour - GUIDE_LOOKBACK_HOURS * 3600), float(hour + (span + 1) * 3600)
+
+
+def guide_program(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """A program of the compact guide, in the fields Télé reads in the Dispatcharr grid."""
+    title = to_text(row.get("title"))
+    start, end = iso(row.get("start_time")), iso(row.get("end_time"))
+    if not title or not start or not end:
+        return None
+    data: Dict[str, Any] = {"id": to_text(row.get("id")), "title": title[:255], "start": start, "end": end}
+    description = to_text(row.get("description"))
+    if description:
+        data["description"] = description[:MAX_DESCRIPTION]
+    sub_title = to_text(row.get("sub_title"))
+    if sub_title:
+        data["sub_title"] = sub_title[:512]
+    props = row.get("custom_properties") if isinstance(row.get("custom_properties"), dict) else {}
+    rating = props.get("rating")
+    if isinstance(rating, str) and rating.strip():
+        data["rating"] = rating.strip()[:32]
+    icon = props.get("icon")
+    if isinstance(icon, str) and icon.startswith(("https://", "http://")) and len(icon) <= 1000:
+        data["icon"] = icon
+    return data
+
+
+def guide_channels(channels: Iterable[Tuple[str, Any]], programs_by_epg: Mapping[Any, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """[(channel uuid, epg data id)] -> [{"uuid", "programs"}] (channels sharing a guide each get it)."""
+    result = []
+    for uuid, epg_id in channels:
+        programs = programs_by_epg.get(epg_id)
+        if programs:
+            result.append({"uuid": uuid, "programs": programs[:MAX_PROGRAMS_PER_CHANNEL]})
+    return result

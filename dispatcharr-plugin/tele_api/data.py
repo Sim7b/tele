@@ -132,6 +132,36 @@ def programs_now_and_next(epg_ids: Iterable[int], now) -> Dict[int, Dict[str, An
     )
 
 
+def guide(user, start: float, end: float):
+    """Programs of the user's channels between [start] and [end] (epoch seconds), for the compact guide."""
+    import datetime
+
+    from apps.epg.models import ProgramData
+
+    rows = channel_rows(visible_channels(user), 0, 100_000)
+    channels = []
+    for row in rows:
+        epg_id = core.effective(row.get("epg_data_id"), row.get("override__epg_data_id"))
+        if epg_id is not None:
+            channels.append((str(row["uuid"]), epg_id))
+    epg_ids = sorted({epg for _, epg in channels})
+    if not epg_ids:
+        return []
+    to_dt = lambda ts: datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)  # noqa: E731
+    programs: Dict[Any, List[Dict[str, Any]]] = {}
+    query = (
+        ProgramData.objects.filter(epg_id__in=epg_ids, end_time__gt=to_dt(start), start_time__lt=to_dt(end))
+        .order_by("epg_id", "start_time")
+        .values("id", "epg_id", "title", "sub_title", "description", "start_time", "end_time", "custom_properties")
+        .iterator(chunk_size=5000)
+    )
+    for row in query:
+        program = core.guide_program(row)
+        if program is not None:
+            programs.setdefault(row["epg_id"], []).append(program)
+    return core.guide_channels(channels, programs)
+
+
 # ---------------------------------------------------------------------------------------------------------
 # Provider connection slots
 
