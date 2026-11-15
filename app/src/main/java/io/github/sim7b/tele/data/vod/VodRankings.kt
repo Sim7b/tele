@@ -24,6 +24,21 @@ enum class StreamingPlatform(val tmdbId: Int, val label: String, val networkIds:
     PARAMOUNT_PLUS(531, "Paramount+", listOf(4330), listOf("Paramount+"));
 
     val networkId: Int get() = networkIds.first()
+
+    companion object {
+        /** Place of Canal+ at most (0-based) when the display language is French: among the first three. */
+        private const val FRENCH_CANAL_PLUS_PLACE = 2
+
+        /** [platforms] in their order, Canal+ moved up to the third place at most when [language] is French. */
+        fun forDisplay(platforms: List<StreamingPlatform>, language: String): List<StreamingPlatform> {
+            val index = platforms.indexOf(CANAL_PLUS)
+            if (language != "fr" || index <= FRENCH_CANAL_PLUS_PLACE) return platforms
+            return platforms.toMutableList().apply {
+                removeAt(index)
+                add(FRENCH_CANAL_PLUS_PLACE, CANAL_PLUS)
+            }
+        }
+    }
 }
 
 /** A streaming service opened on its screen: its titles by popularity, and its own productions. */

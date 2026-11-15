@@ -7,6 +7,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.ColorFilter
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import android.graphics.drawable.BitmapDrawable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -173,17 +176,31 @@ private fun SubviewTile(label: String, logo: String?, onClick: () -> Unit, onFoc
     }
 }
 
-/** A logo drawn in [color] (its shape only), else [label] in that color. */
+/**
+ * A logo drawn in [color] (its shape only), else [label] in that color: also when the logo has an opaque
+ * background, which the tint would turn into a filled rectangle.
+ */
 @Composable
 private fun SubviewLogo(label: String, logo: String?, color: Color, height: Dp, modifier: Modifier = Modifier) {
     var failed by remember(logo) { mutableStateOf(false) }
-    if (logo != null && !failed) {
+    val context = LocalContext.current
+    // Software bitmap: its pixels are read to find an opaque background
+    val request = remember(logo) { logo?.let { ImageRequest.Builder(context).data(it).allowHardware(false).build() } }
+    if (request != null && !failed) {
         AsyncImage(
-            model = logo,
+            model = request,
             contentDescription = label,
             contentScale = ContentScale.Fit,
             colorFilter = ColorFilter.tint(color, BlendMode.SrcIn),
             onError = { failed = true },
+            onSuccess = { state ->
+                val bitmap = (state.result.drawable as? BitmapDrawable)?.bitmap
+                if (bitmap != null &&
+                    (!bitmap.hasAlpha() || LogoBackground.isOpaque(bitmap.width, bitmap.height) { x, y -> bitmap.getPixel(x, y) ushr 24 })
+                ) {
+                    failed = true
+                }
+            },
             modifier = modifier.height(height)
         )
     } else {

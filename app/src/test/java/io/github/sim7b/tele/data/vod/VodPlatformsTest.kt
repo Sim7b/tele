@@ -112,4 +112,18 @@ class VodPlatformsTest {
         assertEquals(StreamingPlatform.NETFLIX, row.platform)
         assertNull(rows.firstOrNull { it.kind == VodRow.Kind.PLATFORM && it.platform == null })
     }
+
+    @Test
+    fun `canal plus comes among the first three services in french only`() {
+        val all = StreamingPlatform.entries.toList()
+        val french = StreamingPlatform.forDisplay(all, "fr")
+        assertEquals(StreamingPlatform.CANAL_PLUS, french[2])
+        assertEquals(all.toSet(), french.toSet())
+        assertEquals(all.size, french.size)
+        assertEquals(all, StreamingPlatform.forDisplay(all, "en"))
+        val short = listOf(StreamingPlatform.CANAL_PLUS, StreamingPlatform.NETFLIX)
+        assertEquals(short, StreamingPlatform.forDisplay(short, "fr"))
+        val without = all - StreamingPlatform.CANAL_PLUS
+        assertEquals(without, StreamingPlatform.forDisplay(without, "fr"))
+    }
 }
