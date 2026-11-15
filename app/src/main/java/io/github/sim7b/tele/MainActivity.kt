@@ -985,6 +985,7 @@ class MainActivity : ComponentActivity() {
                                 VodDetailScreen(
                                     title = title,
                                     details = details,
+                                    languagesMeasured = viewModel.vod.languagesMeasured(title),
                                     loadFailed = failed,
                                     progress = vodProgress,
                                     inMyList = title.key in vodMyList,

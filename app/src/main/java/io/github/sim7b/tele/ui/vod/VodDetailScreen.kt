@@ -117,7 +117,9 @@ fun VodDetailScreen(
     onSetEpisodeWatched: (episodeKey: String, watched: Boolean) -> Unit = { _, _ -> },
     subtitles: VodSubtitles? = null,
     // Trailer (its YouTube id) opened in the YouTube app
-    onPlayTrailer: (String) -> Unit = {}
+    onPlayTrailer: (String) -> Unit = {},
+    // The languages of the title were measured on the server (Télé API plugin), not estimated from the names
+    languagesMeasured: Boolean = false
 ) {
     BackHandler(onBack = onBack)
     val compact = LocalScreen.current.compact
@@ -295,7 +297,7 @@ fun VodDetailScreen(
                     if (versions.isEmpty()) {
                         Text(text = stringResource(R.string.vod_no_files), fontSize = 13.sp, color = TextSecondary)
                     } else {
-                        FileInfo(versions = versions, selected = versionIndex.coerceIn(0, versions.lastIndex), estimated = title.languages, downloaded = downloaded)
+                        FileInfo(versions = versions, selected = versionIndex.coerceIn(0, versions.lastIndex), estimated = title.languages, measured = languagesMeasured, downloaded = downloaded)
                     }
                 }
             }
@@ -347,6 +349,7 @@ fun VodDetailScreen(
                                     versions = episode.versions,
                                     selected = chosen?.let { episode.versions.indexOf(it) }?.takeIf { it >= 0 } ?: 0,
                                     estimated = title.languages,
+                                    measured = languagesMeasured,
                                     downloaded = downloaded
                                 )
                             }
@@ -436,6 +439,7 @@ fun VodDetailScreen(
             files = buttonFiles,
             selected = buttonFile,
             estimated = title.languages,
+            measured = languagesMeasured,
             onSelect = { file ->
                 if (title.kind == VodKind.MOVIE) versionIndex = versions.indexOf(file).coerceAtLeast(0) else preferredFile = file
                 pickingFile = false
@@ -448,6 +452,7 @@ fun VodDetailScreen(
             files = episode.versions,
             selected = matchingVersion(episode.versions, preferredFile) ?: episode.versions.first(),
             estimated = title.languages,
+            measured = languagesMeasured,
             onSelect = { file ->
                 // Kept for the next episodes, and this one played at once
                 preferredFile = file
@@ -477,6 +482,7 @@ private fun FileInfo(
     versions: List<VodVersion>,
     selected: Int,
     estimated: VodLanguages = VodLanguages(),
+    measured: Boolean = false,
     // Languages of the subtitles downloaded from OpenSubtitles
     downloaded: List<String> = emptyList()
 ) {
@@ -492,14 +498,14 @@ private fun FileInfo(
     }
     val audioBlock: @Composable (Modifier) -> Unit = { modifier ->
         InfoBlock(title = stringResource(R.string.vod_audio), modifier = modifier) {
-            ValueList(audioLabels(version, estimated))
+            ValueList(audioLabels(version, estimated, measured))
         }
     }
     val subtitlesBlock: @Composable (Modifier) -> Unit = { modifier ->
         InfoBlock(title = stringResource(R.string.vod_subtitles), modifier = modifier) {
             ValueList(
                 downloaded.map { stringResource(R.string.subtitles_online_label, languageName(it) ?: it) } +
-                    subtitleLabels(version, estimated)
+                    subtitleLabels(version, estimated, measured)
             )
         }
     }
@@ -551,6 +557,7 @@ internal fun FilePickerDialog(
     files: List<VodVersion>,
     selected: VodVersion,
     estimated: VodLanguages,
+    measured: Boolean = false,
     onSelect: (VodVersion) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -561,8 +568,8 @@ internal fun FilePickerDialog(
             items(files) { file ->
                 val details = listOfNotNull(
                     file.name.takeIf { it.isNotBlank() && it != versionLabel(file) },
-                    audioLabels(file, estimated).take(3).joinToString(", ").ifBlank { null }?.let { stringResource(R.string.vod_file_audio, it) },
-                    subtitleLabels(file, estimated).take(3).joinToString(", ").ifBlank { null }?.let { stringResource(R.string.vod_file_subtitles, it) },
+                    audioLabels(file, estimated, measured).take(3).joinToString(", ").ifBlank { null }?.let { stringResource(R.string.vod_file_audio, it) },
+                    subtitleLabels(file, estimated, measured).take(3).joinToString(", ").ifBlank { null }?.let { stringResource(R.string.vod_file_subtitles, it) },
                     file.bitrateKbps?.let { "%.1f Mb/s".format(it / 1000f) }
                 ).joinToString("  ·  ")
                 MenuRow(

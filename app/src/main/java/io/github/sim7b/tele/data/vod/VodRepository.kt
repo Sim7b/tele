@@ -447,6 +447,11 @@ class VodRepository(
         }
     }
 
+    /** The languages of [title] come from a measure on the server (Télé API plugin) for one of its files. */
+    fun languagesMeasured(title: VodTitle): Boolean = measuredLanguages.isNotEmpty() && title.entries.any { entry ->
+        DispatcharrVod.measuredKey(entry)?.let { measuredLanguages[entry.sourceId]?.containsKey(it) } == true
+    }
+
     /** Languages measured on a Dispatcharr server (Télé API plugin): the library is built again when they change. */
     private suspend fun refreshMeasuredLanguages(config: SourceConfig) {
         val measured = try {

@@ -675,6 +675,7 @@
     <string name="vod_subtitles">Subtitles</string>
     <string name="vod_not_specified">Not specified by the provider</string>
     <string name="vod_lang_estimated">%1$s (estimated)</string>
+    <string name="vod_lang_measured">%1$s (measured)</string>
     <string name="subtitles_search">Search subtitles online</string>
     <string name="subtitles_search_title">Subtitles from OpenSubtitles</string>
     <string name="subtitles_button">Subtitles</string>
