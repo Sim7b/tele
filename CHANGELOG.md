@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.3.29](https://github.com/Sim7b/tele/compare/v0.3.28...v0.3.29) (2026-11-15)
+
+### Features
+
+* **dispatcharr-plugin:** list of the Télé TVs in the admin page ([cdd27a7](https://github.com/Sim7b/tele/commit/cdd27a79a1e93f87b2167bac5759d40d2460f3de))
+* **dispatcharr-plugin:** measure the VOD languages with ffprobe, Télé page for admins ([0802901](https://github.com/Sim7b/tele/commit/080290128314ef83fb794784d798e5db652b989b))
+* **dispatcharr-plugin:** request limit per user, provider names for admins ([f71b0a2](https://github.com/Sim7b/tele/commit/f71b0a2b9ba103a862159409ee1d0883c4df4dd4))
+* **dispatcharr-plugin:** viewing statistics in the admin page ([737e9c5](https://github.com/Sim7b/tele/commit/737e9c5cfc6dab451638f3015ba6410d2e2dec41))
+* **dispatcharr:** message of the Dispatcharr admin on the home screen ([45f0b5a](https://github.com/Sim7b/tele/commit/45f0b5adebd21726cabb29be94c59083c184e6ff))
+* **dispatcharr:** replay through the Dispatcharr catch-up ([997bd3d](https://github.com/Sim7b/tele/commit/997bd3de3c68f8d8c1c8468931196515fb6101af))
+* **dispatcharr:** streams that failed lately are tried last ([6bf05a6](https://github.com/Sim7b/tele/commit/6bf05a655ddfd03ffb52898fd422a1fc1e4764ea))
+* **dispatcharr:** sync between the TVs of a Dispatcharr user ([2047994](https://github.com/Sim7b/tele/commit/20479943575119444d3ec613feb06a0ce91e40fc))
+* **vod:** languages measured on the server are labelled as such ([58724f8](https://github.com/Sim7b/tele/commit/58724f82c34cc42404d32e762cf4bb81531e45db))
+* **vod:** movie sheets measured on demand with ffprobe on the server ([4c71879](https://github.com/Sim7b/tele/commit/4c7187972828cef5199c705b37a091aeea314604))
+
+### Bug Fixes
+
+* **dispatcharr-plugin:** ffprobe limited to network protocols ([c262d3f](https://github.com/Sim7b/tele/commit/c262d3f28dd5bdb52494f9be8d6c9e69a306dbef))
+* **dispatcharr-plugin:** mature content hidden for users who hide it ([61f7cb2](https://github.com/Sim7b/tele/commit/61f7cb2795415641dab8777039d40e95004a20d2))
+* **dispatcharr-plugin:** probes never reach the local network ([931e2d9](https://github.com/Sim7b/tele/commit/931e2d9a60c082cc7df0b037dec559722798e85d))
+* **dispatcharr:** the version of Télé goes to the Dispatcharr server only ([77d18f4](https://github.com/Sim7b/tele/commit/77d18f4fd6c1419b1f5468bc5bcbe208ef2f7b3a))
+* server message state declared before the first sync ([6de2ad3](https://github.com/Sim7b/tele/commit/6de2ad3e1147ef06a7fb6ca17b3c8f7dd1f516a9))
+
+### Performance Improvements
+
+* **dispatcharr:** compact guide of the Télé API plugin, 304 while unchanged ([da1d519](https://github.com/Sim7b/tele/commit/da1d51972ed5259fe6a10ef03558f25de7c06d0f))
+* **dispatcharr:** current and next programs before the guide is loaded ([4afa3fb](https://github.com/Sim7b/tele/commit/4afa3fb7855313b9a78b00b21796a4c3465065da))
+
 ## [0.3.28](https://github.com/Sim7b/tele/compare/v0.3.27...v0.3.28) (2026-11-15)
 
 ### Features
