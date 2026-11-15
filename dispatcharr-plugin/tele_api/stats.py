@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from . import core
 
@@ -19,6 +19,11 @@ VIEWS_KEY = "tele_api:stats:views:{day}"
 PEAKS_KEY = "tele_api:stats:peaks:{day}"
 HOURS_KEY = "tele_api:stats:hours:{day}"
 NAMES_KEY = "tele_api:stats:names"
+VOD_KEY = "tele_api:stats:vod:{day}"
+VOD_USERS_KEY = "tele_api:stats:vod_users:{day}"
+VOD_NAMES_KEY = "tele_api:stats:vod_names"
+VOD_SEEN_KEY = "tele_api:stats:vod_seen:{session}"
+VOD_SEEN_TTL = 12 * 3600
 TTL = (core.STATS_DAYS + 1) * 86400
 
 
@@ -65,6 +70,40 @@ def sample_peaks(redis_client) -> None:
         logger.debug("Télé API: peaks not sampled", exc_info=True)
 
 
+def sample_vod(redis_client) -> int:
+    """Counts the movies and episodes being watched, once per playback session (sampled every 10 minutes)."""
+    from . import data
+
+    if redis_client is None:
+        return 0
+    counted = 0
+    try:
+        day = core.day_key(time.time())
+        for session in data.vod_sessions(redis_client):
+            if not redis_client.set(VOD_SEEN_KEY.format(session=session.client_id[:128]), "1", nx=True, ex=VOD_SEEN_TTL):
+                continue
+            kind, uuid = data.vod_content(redis_client, session.client_id)
+            key = core.vod_play_key(kind, uuid, session.title)
+            if key is None:
+                continue
+            redis_client.hincrby(VOD_KEY.format(day=day), key, 1)
+            redis_client.expire(VOD_KEY.format(day=day), TTL)
+            if session.title:
+                redis_client.hset(VOD_NAMES_KEY, key, session.title[:200])
+            if session.user_id:
+                redis_client.hincrby(VOD_USERS_KEY.format(day=day), session.user_id[:32], 1)
+                redis_client.expire(VOD_USERS_KEY.format(day=day), TTL)
+            counted += 1
+    except Exception:
+        logger.debug("Télé API: VOD plays not sampled", exc_info=True)
+    return counted
+
+
+def vod_counts(redis_client, days: int):
+    day_keys = core.last_days(time.time(), days)
+    return day_keys, [redis_client.hgetall(VOD_KEY.format(day=d)) or {} for d in day_keys]
+
+
 def report(redis_client, days: int) -> Dict[str, Any]:
     from . import data
 
@@ -83,4 +122,57 @@ def report(redis_client, days: int) -> Dict[str, Any]:
         "peaks": core.peaks(day_keys, peaks, limits),
         "daily_starts": core.daily_starts(day_keys, views),
         "hourly_starts_utc": core.hourly_starts(hours),
+        **vod_report(redis_client, day_keys),
     }
+
+
+def vod_report(redis_client, day_keys) -> Dict[str, Any]:
+    from . import data
+
+    vod = [redis_client.hgetall(VOD_KEY.format(day=d)) or {} for d in day_keys]
+    names = {core.to_text(k): v for k, v in (redis_client.hgetall(VOD_NAMES_KEY) or {}).items()}
+    users = [redis_client.hgetall(VOD_USERS_KEY.format(day=d)) or {} for d in day_keys]
+    user_ids = {core.to_text(u) for day in users for u in day}
+    return {
+        "top_vod": core.top_vod(vod, names),
+        "vod_by_user": core.users_plays(users, data.usernames(user_ids)),
+        "daily_vod": core.daily_starts(day_keys, vod),
+    }
+
+
+def popular(redis_client, days: int, limit: int = 40) -> List[Dict[str, Any]]:
+    """Movies and series most played on the server lately, for the TVs: adult titles and groups left out."""
+    from apps.vod.models import M3UMovieRelation, M3USeriesRelation, Movie
+
+    plays: Dict[str, int] = {}
+    for day in vod_counts(redis_client, days)[1]:
+        for key, count in day.items():
+            key = core.to_text(key) or ""
+            if key.startswith(("movie:", "episode:")):
+                plays[key] = plays.get(key, 0) + (core.to_int(count, 0) or 0)
+    top = sorted(plays, key=lambda k: -plays[k])[:500]
+    movie_uuids = [k.split(":", 1)[1] for k in top if k.startswith("movie:")]
+    episode_uuids = [k.split(":", 1)[1] for k in top if k.startswith("episode:")]
+    titles: Dict[str, Tuple[str, int]] = {}
+    adult = set()
+    for row in Movie.objects.filter(uuid__in=movie_uuids).values("id", "uuid", "is_adult"):
+        titles[f"movie:{row['uuid']}"] = ("movie", row["id"])
+        if row["is_adult"]:
+            adult.add(("movie", row["id"]))
+    try:
+        from apps.vod.models import Episode
+
+        for row in Episode.objects.filter(uuid__in=episode_uuids).values("uuid", "series_id"):
+            if row["series_id"]:
+                titles[f"episode:{row['uuid']}"] = ("series", row["series_id"])
+    except Exception:
+        logger.debug("Télé API: episodes not resolved", exc_info=True)
+    movie_ids = [i for kind, i in titles.values() if kind == "movie"]
+    series_ids = [i for kind, i in titles.values() if kind == "series"]
+    for movie_id, name in M3UMovieRelation.objects.filter(movie_id__in=movie_ids).values_list("movie_id", "category__name"):
+        if core.is_adult_group(name):
+            adult.add(("movie", movie_id))
+    for series_id, name in M3USeriesRelation.objects.filter(series_id__in=series_ids).values_list("series_id", "category__name"):
+        if core.is_adult_group(name):
+            adult.add(("series", series_id))
+    return core.popular_titles(plays, titles, adult, limit)

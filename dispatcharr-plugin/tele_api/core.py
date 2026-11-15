@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.2"
+PLUGIN_VERSION = "0.3.5"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -381,6 +381,253 @@ def category_needs_probe(name: Any) -> bool:
     return not (words & _LANGUAGE_HINTS)
 
 
+# What the name of a VOD group tells about its languages: a port of the estimation of the Télé app
+# (VodLanguageGuess), on the group name only, so that the admin page can filter the groups to process.
+_DUBBED = {
+    "VF": "fr", "VFF": "fr", "VFQ": "fr", "VFI": "fr", "VF2": "fr", "VFB": "fr", "VOF": "fr", "TRUEFRENCH": "fr",
+    "QUEBEC": "fr", "DUBLADO": "pt", "DUBLADOS": "pt", "DUBLADA": "pt", "DUBLADAS": "pt", "DUBLAGEM": "pt",
+    "DUBLAJ": "tr", "DUBLAJLI": "tr", "LEKTOR": "pl", "DOPPIATO": "it", "DOPPIATI": "it", "DOBLADO": "es",
+    "DOBLADOS": "es", "DOBLADA": "es", "SYNCHRO": "de",
+}
+_SUBTITLED = {
+    "VOSTFR": "fr", "VOSTF": "fr", "SUBFRENCH": "fr", "STFR": "fr", "SUBFR": "fr", "FRSUB": "fr", "FASTSUB": "fr",
+    "SME": "fr", "STSME": "fr", "VOSTA": "en", "VOSTEN": "en", "VOSTENG": "en", "VOSTANG": "en", "ENGSUB": "en",
+    "ENGSUBS": "en", "SUBENG": "en", "SUBBEDENG": "en", "VOSE": "es", "SUBESP": "es", "SUBTITULADO": "es",
+    "SUBTITULADA": "es", "SUBTITULADOS": "es", "SUBTITULADAS": "es", "LEGENDADO": "pt", "LEGENDADOS": "pt",
+    "LEGENDADA": "pt", "LEGENDADAS": "pt", "ALTYAZI": "tr", "ALTYAZILI": "tr", "NAPISY": "pl", "SUBITA": "it",
+    "SOTTOTITOLATO": "it", "GERSUB": "de", "UNTERTITEL": "de", "NLSUB": "nl",
+}
+_SUB_WORDS = {"SUB", "SUBS", "SUBBED", "SUBTITLE", "SUBTITLES", "SUBTITLED", "ST", "VOST", "HARDSUB", "HARDSUBS"}
+_DUB_WORDS = {"DUB", "DUBBED", "DUBBING", "DL"}
+_LOCAL_SUBTITLES = {"VOST", "SUBBED", "SUBTITLED", "HARDSUB", "HARDSUBS"}
+_MULTI_SUBTITLES = {"MULTISUB", "MULTISUBS", "MULTISUBTITLES"}
+_MULTI_AUDIO = {"MULTI", "DUAL"}
+_ORIGINAL = {"VO", "VOA", "ORIGINAL"}
+_LANGUAGE_WORDS = {
+    "FRENCH": "fr", "FRANCAIS": "fr", "ENGLISH": "en", "ANGLAIS": "en", "GERMAN": "de", "DEUTSCH": "de",
+    "ALLEMAND": "de", "SPANISH": "es", "ESPANOL": "es", "CASTELLANO": "es", "LATINO": "es", "ESPAGNOL": "es",
+    "ITALIAN": "it", "ITALIANO": "it", "ITALIEN": "it", "PORTUGUESE": "pt", "PORTUGUES": "pt", "BRAZIL": "pt",
+    "BRASIL": "pt", "ARABIC": "ar", "ARABE": "ar", "TURKISH": "tr", "TURK": "tr", "TURKCE": "tr", "DUTCH": "nl",
+    "NEDERLANDS": "nl", "POLISH": "pl", "POLSKI": "pl", "RUSSIAN": "ru", "HINDI": "hi", "KOREAN": "ko",
+    "JAPANESE": "ja", "CHINESE": "zh", "GREEK": "el", "ROMANIAN": "ro", "ALBANIAN": "sq", "PERSIAN": "fa",
+    "FARSI": "fa",
+}
+_CODES = {
+    "FR": "fr", "FRA": "fr", "QC": "fr", "EN": "en", "ENG": "en", "UK": "en", "GB": "en", "US": "en", "USA": "en",
+    "DE": "de", "GER": "de", "ES": "es", "SPA": "es", "IT": "it", "ITA": "it", "PT": "pt", "BR": "pt", "AR": "ar",
+    "TR": "tr", "NL": "nl", "PL": "pl", "RU": "ru", "GR": "el", "RO": "ro", "AL": "sq", "KR": "ko", "JP": "ja",
+}
+_CODES_NEXT_TO_TAGS = dict(_CODES, FRE="fr", ESP="es", POR="pt", JPN="ja", KOR="ko")
+# Uppercase words of 2-3 letters that are no country nor language prefix
+_NOT_PREFIXES = {"TV", "SD", "HD", "VO", "ST", "UHD", "FHD", "VF", "VFQ", "VFF", "SUB", "DUB", "THE", "AND", "NEW", "TOP", "ALL", "XXX"}
+_ARABIC_CONTENT = ("عرب", "مصر", "خليج", "سوري", "لبنان", "مغرب", "عراق", "جزائر", "تونس")
+_ARABIC_ORIGINS = (
+    ("ترك", "tr"), ("هند", "hi"), ("كوري", "ko"), ("يابان", "ja"), ("انمي", "ja"), ("صين", "zh"),
+    ("اجنب", "en"), ("امريك", "en"), ("انجليز", "en"), ("فرنس", "fr"), ("اسبان", "es"),
+)
+_STUDIO_WORDS = {
+    "NETFLIX", "DISNEY", "AMAZON", "PRIME", "APPLE", "HBO", "MAX", "PARAMOUNT", "PEACOCK", "HULU", "STARZ", "SHOWTIME",
+    "CANAL", "OCS", "MARVEL", "DC", "PIXAR", "DREAMWORKS", "WARNER", "UNIVERSAL", "SONY", "LIONSGATE", "MGM", "A24",
+    "CRUNCHYROLL", "SKY", "BBC", "DISCOVERY", "NATGEO", "MUBI", "SHUDDER", "AMC", "FOX", "VIAPLAY", "STAN", "HOTSTAR",
+    "ZEE5", "SHAHID", "OSN", "GHIBLI", "LUCASFILM", "MIRAMAX", "BLUMHOUSE",
+}
+_THEME_WORDS = {
+    "adult": {"XXX", "ADULT", "ADULTS", "ADULTE", "ADULTES", "PORN", "PORNO", "EROTIC", "EROTIQUE", "EROTICA", "HENTAI"},
+    "anime": {"ANIME", "ANIMES", "MANGA", "MANGAS", "JAPANIMATION", "CRUNCHYROLL"},
+    "kids": {"KIDS", "KID", "ENFANT", "ENFANTS", "JEUNESSE", "CHILDREN", "FAMILY", "FAMILLE", "CARTOON", "CARTOONS", "DESSINS"},
+    "4k": {"4K", "UHD", "2160P"},
+    "religious": {"RELIGION", "RELIGIOUS", "RELIGIEUX", "BIBLE", "ISLAM", "ISLAMIC", "CORAN", "QURAN", "GOSPEL"},
+}
+
+
+def _words(text: str) -> List[str]:
+    import unicodedata
+
+    plain = "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c))
+    return [w for w in re.split(r"[^\w]+", plain.upper().replace("MULTI-SUB", "MULTISUB")) if w and w != "_"]
+
+
+def _arabic_stem(word: str) -> str:
+    w = word.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ة", "ه").replace("ى", "ي").replace("ـ", "")
+    for prefix in ("وال", "بال", "ال", "و"):
+        if w.startswith(prefix) and len(w) - len(prefix) >= 3:
+            return w[len(prefix):]
+    return w
+
+
+def group_prefix(name: Any) -> Optional[str]:
+    """The country or language code a provider puts in a group name ("FR | FILMS", "|EN| NETFLIX"), uppercase only."""
+    for word in re.split(r"[^A-Za-z0-9]+", to_text(name) or ""):
+        if 2 <= len(word) <= 3 and word.isalpha() and word.isupper() and word not in _NOT_PREFIXES:
+            return word
+    return None
+
+
+def group_languages(name: Any) -> Dict[str, Any]:
+    """Audio and subtitle languages estimated from a VOD group name, its prefix, its tags and themes.
+
+    Same rules as the Télé app: dubbed versions (VF, DUBLADO), subtitled ones keep their original audio (VOSTFR,
+    VOST: the local language, French when nothing tells), MULTI: the local and the original language, MULTI-SUB:
+    several subtitles, VO: original audio only, the Arabic code alone ("[AR] FILMS"): Arabic audio, other Arabic
+    groups: original audio (English when nothing tells) with Arabic subtitles, unless dubbed or Arabic content.
+    """
+    text = (to_text(name) or "")[:200]
+    words = _words(text)
+    explicit, subtitles, tag_codes, local_default, tags = [], [], set(), [], []
+    multi = local = multi_subtitles = original = arabic = False
+
+    def add(target, value):
+        if value and value not in target:
+            target.append(value)
+
+    i = 0
+    while i < len(words):
+        word = words[i]
+        following = words[i + 1] if i + 1 < len(words) else None
+        next_language = (_LANGUAGE_WORDS.get(following) or _CODES_NEXT_TO_TAGS.get(following)) if following else None
+        language = _LANGUAGE_WORDS.get(word) or _CODES_NEXT_TO_TAGS.get(word)
+        if word == "MULTI" and following in ("SUB", "SUBS", "SUBTITLES"):
+            multi_subtitles = True
+            i += 1
+        elif word in _MULTI_SUBTITLES:
+            multi_subtitles = True
+        elif word in _SUB_WORDS and next_language:
+            add(subtitles, next_language)
+            tag_codes.add(following)
+            add(tags, "VOST" + next_language.upper())
+            i += 1
+        elif word in _DUB_WORDS and word != "DL" and next_language:
+            add(explicit, next_language)
+            tag_codes.add(following)
+            i += 1
+        elif language and following in _SUB_WORDS:
+            add(subtitles, language)
+            tag_codes.add(word)
+            add(tags, "VOST" + language.upper())
+            i += 1
+        elif language and following in _DUB_WORDS:
+            add(explicit, language)
+            multi = multi or following == "DL"
+            tag_codes.add(word)
+            i += 1
+        elif word in _DUBBED:
+            add(explicit, _DUBBED[word])
+            add(tags, "dubbed")
+        elif word in _SUBTITLED:
+            add(subtitles, _SUBTITLED[word])
+            add(tags, "VOST" + _SUBTITLED[word].upper())
+        elif word in _LOCAL_SUBTITLES:
+            local = True
+            if word == "VOST":
+                add(local_default, "fr")
+        elif word in _MULTI_AUDIO:
+            multi = True
+        elif word in _ORIGINAL:
+            original = True
+        elif word in _LANGUAGE_WORDS:
+            if _LANGUAGE_WORDS[word] == "ar":
+                arabic = True
+            else:
+                add(explicit, _LANGUAGE_WORDS[word])
+        i += 1
+
+    uppercase = [w for w in re.split(r"[^A-Za-z]+", text) if 2 <= len(w) <= 3 and w.isupper()]
+    country = []
+    for code in uppercase:
+        if code not in tag_codes and code in _CODES:
+            add(country, _CODES[code])
+    if "ar" in country:
+        # "[AR] FILMS": the Arabic code alone is Arabic audio; with another language or a subtitle tag
+        # ("AR | TURKISH SERIES", "AR | VOST"), read like a group written in Arabic
+        country.remove("ar")
+        if not explicit and not subtitles and not local and not original and not multi_subtitles:
+            add(explicit, "ar")
+        else:
+            arabic = True
+
+    dubbed_arabic = arabic_content = False
+    origins = []
+    if any("\u0600" <= c <= "\u06ff" for c in text):
+        arabic = True
+        for raw in re.split(r"[^\w]+", text):
+            if not raw or not any("\u0600" <= c <= "\u06ff" for c in raw):
+                continue
+            word = _arabic_stem(raw)
+            if word.startswith("مدبلج"):
+                dubbed_arabic = True
+            elif word.startswith("مترجم"):
+                add(subtitles, "ar")
+            elif any(word.startswith(stem) for stem in _ARABIC_CONTENT):
+                arabic_content = True
+            else:
+                for stem, code in _ARABIC_ORIGINS:
+                    if word.startswith(stem):
+                        add(origins, code)
+                        break
+    if arabic_content:
+        add(explicit, "ar")
+    if "DUBBED" in words and arabic:
+        dubbed_arabic = True
+
+    audio = list(explicit)
+    subs = list(subtitles)
+    if local:
+        for code in country or local_default:
+            add(subs, code)
+    if multi_subtitles:
+        for code in country:
+            add(subs, code)
+    subtitled = bool(subtitles) or local or multi_subtitles
+    if multi or (not subtitled and not original):
+        for code in country:
+            add(audio, code)
+    if arabic:
+        if dubbed_arabic:
+            add(audio, "ar")
+        elif "ar" not in audio:
+            for code in origins or ([] if audio else ["en"]):
+                add(audio, code)
+            add(subs, "ar")
+
+    if multi:
+        add(tags, "MULTI")
+    if multi_subtitles:
+        add(tags, "MULTISUB")
+    if local:
+        add(tags, "VOST")
+    if original:
+        add(tags, "VO")
+    word_set = set(words)
+    if word_set & _STUDIO_WORDS:
+        add(tags, "studio")
+    for theme, theme_words in _THEME_WORDS.items():
+        if word_set & theme_words or (theme == "adult" and re.search(r"(?<!\d)18\s*\+|\+\s*18(?!\d)", text)):
+            add(tags, theme)
+    return {"prefix": group_prefix(text), "audio": audio, "subtitles": subs, "tags": tags}
+
+
+MAX_SELECTED_GROUPS = 50000
+
+
+def parse_selection(body: Any) -> Optional[Dict[str, Any]]:
+    """{"mode": "all"} or {"mode": "selected", "ids": [category ids]} from an untrusted body; None when invalid."""
+    if not isinstance(body, Mapping):
+        return None
+    mode = body.get("mode")
+    if mode == "all":
+        return {"mode": "all", "ids": []}
+    ids = body.get("ids")
+    if mode != "selected" or not isinstance(ids, list) or len(ids) > MAX_SELECTED_GROUPS:
+        return None
+    parsed = set()
+    for value in ids:
+        number = to_int(value) if not isinstance(value, bool) else None
+        if number is None or number <= 0:
+            return None
+        parsed.add(number)
+    return {"mode": "selected", "ids": sorted(parsed)}
+
+
 def profile_has_room(max_streams: int, used: int, min_free: int) -> bool:
     """A probe may take a connection of this profile: unlimited, or at least min_free connections free."""
     if max_streams <= 0:
@@ -663,6 +910,7 @@ def devices_json(raw: Mapping[Any, Any], usernames: Mapping[str, str], sessions:
         devices.append({
             "id": device,
             "user": usernames.get(user or "", None),
+            "user_id": user,
             "version": app_version(data.get("version")),
             "ip": to_text(data.get("ip")),
             "last_seen": seen or None,
@@ -911,30 +1159,55 @@ def title_key(title: Any) -> str:
     return "".join(c for c in text if c.isalnum())
 
 
-def best_tmdb_match(results: Any, title: str, year: Optional[int], kind: str) -> Optional[int]:
-    """TMDB id of the search result that is this title: same title (or original title) and a year within one;
-    without a year, only a single result of that exact title. None when unsure (better no id than a wrong one)."""
+TMDB_MIN_CONFIDENCE = 85
+
+
+def tmdb_min_confidence(value: Any) -> int:
+    """The confidence a TMDB match needs to be kept, from the plugin setting (50 to 99 %, 85 by default)."""
+    number = to_int(value, TMDB_MIN_CONFIDENCE)
+    return TMDB_MIN_CONFIDENCE if number is None else max(50, min(99, number))
+
+
+def tmdb_candidate(results: Any, title: str, year: Optional[int], kind: str) -> Optional[Dict[str, Any]]:
+    """The search result most likely to be this title, with a confidence from 0 to 100.
+
+    Confidence: likeness of the title (or original title) times the agreement of the years (same year 100 %,
+    one year apart 97 %, two 85 %, more 50 %; no year to compare 90 %), minus 10 when another title scores
+    nearly as high (two movies of the same name, a remake).
+    """
+    import difflib
+
     if not isinstance(results, list):
         return None
     wanted = title_key(title)
     if not wanted:
         return None
     date_field = "release_date" if kind == "movie" else "first_air_date"
-    exact = []
+    scored = []
     for item in results[:20]:
         if not isinstance(item, Mapping):
             continue
-        names = [item.get("title"), item.get("original_title"), item.get("name"), item.get("original_name")]
-        if wanted not in {title_key(n) for n in names if n}:
+        tmdb_id = to_int(item.get("id"))
+        if not tmdb_id or tmdb_id <= 0:
             continue
+        names = [n for n in (item.get("title"), item.get("original_title"), item.get("name"), item.get("original_name")) if n]
+        keys = [title_key(n) for n in names]
+        likeness = max((1.0 if k == wanted else difflib.SequenceMatcher(None, wanted, k).ratio() for k in keys if k), default=0.0)
         item_year = to_int((to_text(item.get(date_field)) or "")[:4])
-        exact.append((item, item_year))
-    if year:
-        close = [item for item, item_year in exact if item_year and abs(item_year - year) <= 1]
-        if close:
-            return to_int(close[0].get("id"))
+        if year and item_year:
+            gap = abs(item_year - year)
+            agreement = 1.0 if gap == 0 else 0.97 if gap == 1 else 0.85 if gap == 2 else 0.5
+        else:
+            agreement = 0.9
+        label = to_text(names[0]) or ""
+        scored.append({"id": tmdb_id, "score": round(100 * likeness * agreement), "title": label[:200], "year": item_year})
+    if not scored:
         return None
-    return to_int(exact[0][0].get("id")) if len(exact) == 1 else None
+    scored.sort(key=lambda c: -c["score"])
+    best = dict(scored[0])
+    if any(c["id"] != best["id"] and c["score"] >= best["score"] - 5 for c in scored[1:]):
+        best["score"] = max(0, best["score"] - 10)
+    return best
 
 
 def tmdb_auth(key: str) -> Tuple[Dict[str, str], Dict[str, str]]:
@@ -957,3 +1230,149 @@ def language_codes(value: Any) -> Optional[List[str]]:
         if code not in codes:
             codes.append(code)
     return codes
+
+
+BACKUP_FORMAT = "tele-api-backup"
+MAX_BACKUP_ITEMS = 200000
+
+
+def parse_backup(data: Any) -> Optional[Dict[str, Any]]:
+    """A backup of the Télé page (groups, languages set by hand, TMDB ids), checked entry by entry: the malformed
+    entries are left out; None when it is no backup of this plugin."""
+    if not isinstance(data, Mapping) or data.get("format") != BACKUP_FORMAT or to_int(data.get("version")) != 1:
+        return None
+
+    def kind_of(value):
+        return value if value in ("movie", "series") else None
+
+    groups_in = data.get("groups") if isinstance(data.get("groups"), Mapping) else {}
+    groups = []
+    for item in (groups_in.get("groups") or [])[:MAX_BACKUP_ITEMS] if isinstance(groups_in.get("groups"), list) else []:
+        if isinstance(item, Mapping) and to_text(item.get("name")) and kind_of(item.get("type")):
+            groups.append({"id": to_int(item.get("id")), "name": to_text(item.get("name"))[:255], "type": item.get("type")})
+    languages = []
+    for item in data.get("languages")[:MAX_BACKUP_ITEMS] if isinstance(data.get("languages"), list) else []:
+        if not isinstance(item, Mapping) or not to_text(item.get("name")) or not kind_of(item.get("type")):
+            continue
+        status = item.get("status")
+        audio, subtitles = language_codes(item.get("audio") or []), language_codes(item.get("subtitles") or [])
+        if status == "excluded" or (status == "manual" and audio is not None and subtitles is not None and (audio or subtitles)):
+            languages.append({"id": to_int(item.get("id")), "name": to_text(item.get("name"))[:255], "type": item.get("type"),
+                              "status": status, "audio": audio or [], "subtitles": subtitles or []})
+    tmdb = []
+    for item in data.get("tmdb")[:MAX_BACKUP_ITEMS] if isinstance(data.get("tmdb"), list) else []:
+        if not isinstance(item, Mapping) or not kind_of(item.get("kind")):
+            continue
+        tmdb_id, item_id = to_int(item.get("tmdb")), to_int(item.get("item"))
+        if tmdb_id and tmdb_id > 0 and ((item_id and item_id > 0) or to_text(item.get("name"))):
+            tmdb.append({"kind": item.get("kind"), "item": item_id, "name": (to_text(item.get("name")) or "")[:255],
+                         "tmdb": tmdb_id, "manual": item.get("manual") is True})
+    return {
+        # No groups: a further part of a backup sent in pieces, the groups are left as they are
+        "mode": None if "groups" not in data else "selected" if groups_in.get("mode") == "selected" else "all",
+        "groups": groups, "languages": languages, "tmdb": tmdb,
+    }
+
+
+MAX_MESSAGE = 500
+MESSAGE_MAX_HOURS = 24 * 30
+_MESSAGE_TARGET_RE = re.compile(r"^(device:[0-9a-f]{12}|user:[0-9]{1,12})$")
+
+
+def message_target(kind: Any, target: Any) -> Optional[str]:
+    """Key of a targeted message: "device:<install id>" or "user:<user id>"; None when malformed."""
+    key = f"{kind}:{to_text(target) or ''}"
+    return key if kind in ("device", "user") and _MESSAGE_TARGET_RE.match(key) else None
+
+
+def pick_message(global_text: Any, targeted: Mapping[Any, Any], device: Optional[str], user_id: Any, now: float) -> Optional[str]:
+    """Message of a TV: the one sent to it, else to its user, else the one for every TV (expired ones skipped)."""
+    for key in (f"device:{device}" if device else None, f"user:{user_id}" if user_id is not None else None):
+        if not key:
+            continue
+        raw = targeted.get(key)
+        if raw is None:
+            raw = targeted.get(key.encode())
+        try:
+            entry = json.loads(to_text(raw) or "")
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and (to_float(entry.get("until"), 0.0) or 0.0) > now:
+            text = (to_text(entry.get("text")) or "").strip()[:MAX_MESSAGE]
+            if text:
+                return text
+    return (to_text(global_text) or "").strip()[:MAX_MESSAGE] or None
+
+
+def active_messages(targeted: Mapping[Any, Any], now: float) -> List[Dict[str, Any]]:
+    """Targeted messages still shown, for the Télé page."""
+    found = []
+    for key, raw in targeted.items():
+        key = to_text(key) or ""
+        try:
+            entry = json.loads(to_text(raw) or "")
+        except ValueError:
+            continue
+        if not _MESSAGE_TARGET_RE.match(key) or not isinstance(entry, dict):
+            continue
+        until = to_float(entry.get("until"), 0.0) or 0.0
+        if until > now:
+            kind, target = key.split(":", 1)
+            found.append({"kind": kind, "target": target, "text": to_text(entry.get("text")), "until": until})
+    return sorted(found, key=lambda m: m["until"])
+
+
+def vod_play_key(kind: Any, uuid: Any, name: Any) -> Optional[str]:
+    """Key a VOD play is counted under: "movie:<uuid>" / "episode:<uuid>", else "name:<name>" (older Dispatcharr)."""
+    kind, uuid = to_text(kind), valid_uuid(to_text(uuid))
+    if kind in MEDIA_KINDS and uuid:
+        return f"{kind}:{uuid}"
+    name = (to_text(name) or "").strip()
+    return f"name:{name[:200]}" if name else None
+
+
+def top_vod(counts_by_day: Iterable[Mapping[Any, Any]], names: Mapping[Any, Any], limit: int = 20) -> List[Dict[str, Any]]:
+    """Movies and episodes most played over the days given, with their name."""
+    totals: Dict[str, int] = {}
+    for day in counts_by_day:
+        for key, count in (day or {}).items():
+            key, value = to_text(key), to_int(count, 0) or 0
+            if key and value > 0:
+                totals[key] = totals.get(key, 0) + value
+    ranked = sorted(totals.items(), key=lambda item: (-item[1], item[0]))[: max(1, limit)]
+    found = []
+    for key, plays in ranked:
+        kind, _, rest = key.partition(":")
+        name = to_text(names.get(key)) or (rest if kind == "name" else None) or key
+        found.append({"key": key, "kind": kind, "name": name, "plays": plays})
+    return found
+
+
+def users_plays(counts_by_day: Iterable[Mapping[Any, Any]], usernames: Mapping[str, str]) -> List[Dict[str, Any]]:
+    totals: Dict[str, int] = {}
+    for day in counts_by_day:
+        for user, count in (day or {}).items():
+            user, value = to_text(user), to_int(count, 0) or 0
+            if user and value > 0:
+                totals[user] = totals.get(user, 0) + value
+    return [{"user": usernames.get(u, u), "plays": n} for u, n in sorted(totals.items(), key=lambda i: (-i[1], i[0]))]
+
+
+def is_adult_group(name: Any) -> bool:
+    """A group named for adults: XXX, ADULT(E)S, PORN, EROTIC, HENTAI, 18+."""
+    return "adult" in group_languages(name)["tags"]
+
+
+def popular_titles(plays: Mapping[str, int], titles: Mapping[str, Tuple[str, int]], adult: Iterable[Tuple[str, int]],
+                   limit: int = 40) -> List[Dict[str, Any]]:
+    """Titles most played: plays by "movie:<uuid>" / "episode:<uuid>", the (kind, id) of each uuid key (episodes count
+    for their series), adult titles left out."""
+    left_out = set(adult)
+    totals: Dict[Tuple[str, int], int] = {}
+    for key, count in plays.items():
+        title = titles.get(key)
+        if title is None or title in left_out:
+            continue
+        totals[title] = totals.get(title, 0) + (to_int(count, 0) or 0)
+    ranked = sorted(totals.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    return [{"kind": kind, "id": title_id, "plays": count} for (kind, title_id), count in ranked if count > 0]

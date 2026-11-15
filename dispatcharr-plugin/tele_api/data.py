@@ -276,6 +276,15 @@ def vod_session(client, session: str) -> Optional[core.Session]:
     )
 
 
+def vod_content(client, session: str):
+    """(content type, content uuid) of a VOD session ("movie" / "episode"); (None, None) when Dispatcharr keeps none."""
+    try:
+        kind, uuid = client.hmget(f"vod_persistent_connection:{session}", "content_type", "content_uuid")
+    except Exception:
+        return None, None
+    return core.to_text(kind), core.valid_uuid(core.to_text(uuid))
+
+
 def vod_sessions(client) -> List[core.Session]:
     sessions = []
     prefix = "vod_persistent_connection:"

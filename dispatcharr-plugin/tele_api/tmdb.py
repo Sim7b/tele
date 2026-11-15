@@ -40,9 +40,11 @@ def _db() -> sqlite3.Connection:
     )
     # Name and search of the titles, to see why some find no sure match (columns added by 0.3.1)
     columns = {row[1] for row in connection.execute("PRAGMA table_info(ids)")}
-    for column in ("name", "query", "year"):
+    # Best candidate and its confidence (0.3.4): kept when below the threshold, to accept it later
+    for column, kind in (("name", "TEXT"), ("query", "TEXT"), ("year", "INTEGER"), ("cand", "INTEGER"), ("cand_title", "TEXT"),
+                         ("cand_year", "INTEGER"), ("score", "INTEGER")):
         if column not in columns:
-            connection.execute(f"ALTER TABLE ids ADD COLUMN {column} {'INTEGER' if column == 'year' else 'TEXT'}")
+            connection.execute(f"ALTER TABLE ids ADD COLUMN {column} {kind}")
     return connection
 
 
@@ -75,9 +77,30 @@ def unmatched(limit: int = 50) -> List[Dict[str, Any]]:
     """Latest titles without a sure match: their name at the provider and what was searched."""
     with _lock, _connection() as connection:
         rows = connection.execute(
-            "SELECT kind, item, name, query, year FROM ids WHERE tmdb IS NULL AND name IS NOT NULL ORDER BY at DESC LIMIT ?", (limit,)
+            "SELECT kind, item, name, query, year, cand, cand_title, cand_year, score FROM ids "
+            "WHERE tmdb IS NULL AND name IS NOT NULL ORDER BY score IS NULL, score DESC, at DESC LIMIT ?", (limit,)
         ).fetchall()
-    return [{"kind": kind, "item": item, "name": name, "query": query, "year": year} for kind, item, name, query, year in rows]
+    return [
+        {"kind": kind, "item": item, "name": name, "query": query, "year": year,
+         "candidate": {"id": cand, "title": cand_title, "year": cand_year, "score": score} if cand else None}
+        for kind, item, name, query, year, cand, cand_title, cand_year, score in rows
+    ]
+
+
+def accept_candidates(min_confidence: int) -> int:
+    """Keeps the stored candidates that reach [min_confidence] (after the threshold was lowered): no new request."""
+    with _lock, _connection() as connection:
+        return connection.execute(
+            "UPDATE ids SET tmdb = cand WHERE tmdb IS NULL AND cand IS NOT NULL AND score >= ?", (min_confidence,)
+        ).rowcount
+
+
+def accept(kind: str, item: int) -> bool:
+    """Keeps the stored candidate of one title (an admin checked it on the Télé page)."""
+    with _lock, _connection() as connection:
+        return connection.execute(
+            "UPDATE ids SET tmdb = cand, query = 'manual' WHERE kind = ? AND item = ? AND cand IS NOT NULL", (kind, item)
+        ).rowcount > 0
 
 
 def set_manual(kind: str, item: int, tmdb_id: Optional[int]) -> None:
@@ -91,6 +114,24 @@ def set_manual(kind: str, item: int, tmdb_id: Optional[int]) -> None:
                 "ON CONFLICT(kind, item) DO UPDATE SET tmdb = excluded.tmdb, at = excluded.at, query = 'manual'",
                 (kind, item, tmdb_id, time.time()),
             )
+
+
+def export_rows() -> List[Dict[str, Any]]:
+    """The TMDB ids found or set by hand, with the provider name of each title (to find it on another server)."""
+    with _lock, _connection() as connection:
+        rows = connection.execute("SELECT kind, item, tmdb, name, query FROM ids WHERE tmdb IS NOT NULL").fetchall()
+    return [{"kind": kind, "item": item, "tmdb": tmdb_id, "name": name or "", "manual": query == "manual"}
+            for kind, item, tmdb_id, name, query in rows]
+
+
+def import_rows(rows: List[tuple]) -> None:
+    """(kind, item, tmdb id, name, manual) restored from a backup: they replace what is known of those titles."""
+    with _lock, _connection() as connection:
+        connection.executemany(
+            "INSERT OR REPLACE INTO ids (kind, item, tmdb, at, name, query) VALUES (?, ?, ?, ?, ?, ?)",
+            [(kind, item, tmdb_id, time.time(), name or None, "manual" if manual else name or None)
+             for kind, item, tmdb_id, name, manual in rows],
+        )
 
 
 def retry_unmatched() -> int:
@@ -144,6 +185,12 @@ def _pending(kind: str, limit: int) -> List[Dict[str, Any]]:
     from django.db.models import Q
 
     query = model.objects.filter(m3u_relations__m3u_account__is_active=True).filter(Q(tmdb_id__isnull=True) | Q(tmdb_id=""))
+    from . import probe
+
+    selected = probe.selected_ids()
+    if selected is not None:
+        # Only the titles of the groups an admin chose to process
+        query = query.filter(m3u_relations__category_id__in=selected)
     for row in query.distinct().values("id", "name", "year").order_by("-id").iterator(chunk_size=2000):
         if row["id"] not in done:
             pending.append(row)
@@ -158,7 +205,9 @@ def match_batch(settings: Dict[str, Any], should_stop) -> Dict[str, int]:
     if not key or not settings.get("tmdb_enabled", True):
         return {"matched": 0, "unmatched": 0}
     language = core.to_text(settings.get("tmdb_language")) or "fr-FR"
-    found = missed = 0
+    threshold = core.tmdb_min_confidence(settings.get("tmdb_min_confidence"))
+    found = accept_candidates(threshold)
+    missed = 0
     for kind, path in (("movie", "/search/movie"), ("series", "/search/tv")):
         for row in _pending(kind, BATCH):
             if should_stop():
@@ -171,23 +220,29 @@ def match_batch(settings: Dict[str, Any], should_stop) -> Dict[str, int]:
                 params["year" if kind == "movie" else "first_air_date_year"] = year
             try:
                 answer = _get(path, params, key)
-                tmdb_id = core.best_tmdb_match((answer or {}).get("results"), title, year, kind) if answer else None
-                if answer is not None and tmdb_id is None and year:
-                    # The year of the provider may be wrong: without it, only a single title of exactly that name
+                best = core.tmdb_candidate((answer or {}).get("results"), title, year, kind) if answer else None
+                if answer is not None and year and (best is None or best["score"] < threshold):
+                    # The year of the provider may be wrong: searched again without it
                     time.sleep(PAUSE)
                     params.pop("year", None)
                     params.pop("first_air_date_year", None)
                     again = _get(path, params, key)
-                    tmdb_id = core.best_tmdb_match((again or {}).get("results"), title, None, kind) if again else None
+                    other = core.tmdb_candidate((again or {}).get("results"), title, year, kind) if again else None
+                    if other and (best is None or other["score"] > best["score"]):
+                        best = other
             except PermissionError:
                 logger.warning("Télé API: TMDB refused the key, matching stopped")
                 return {"matched": found, "unmatched": missed}
             if answer is None:
                 continue  # TMDB unavailable: tried again at the next run
+            tmdb_id = best["id"] if best and best["score"] >= threshold else None
             with _lock, _connection() as connection:
                 connection.execute(
-                    "INSERT OR REPLACE INTO ids (kind, item, tmdb, at, name, query, year) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (kind, row["id"], tmdb_id, time.time(), (row["name"] or "")[:255], title[:255], year),
+                    "INSERT OR REPLACE INTO ids (kind, item, tmdb, at, name, query, year, cand, cand_title, cand_year, score) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (kind, row["id"], tmdb_id, time.time(), (row["name"] or "")[:255], title[:255], year,
+                     best["id"] if best else None, best["title"] if best else None, best["year"] if best else None,
+                     best["score"] if best else None),
                 )
             if tmdb_id:
                 found += 1
@@ -195,7 +250,7 @@ def match_batch(settings: Dict[str, Any], should_stop) -> Dict[str, int]:
                 missed += 1
             time.sleep(PAUSE)
     if found or missed:
-        logger.info("Télé API: TMDB ids found for %d titles, %d without a sure match", found, missed)
+        logger.info("Télé API: TMDB ids found for %d titles, %d below %d %% of confidence", found, missed, threshold)
     return {"matched": found, "unmatched": missed}
 
 

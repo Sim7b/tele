@@ -202,3 +202,119 @@ class GuideTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GroupLanguagesTest(unittest.TestCase):
+    def guess(self, name):
+        found = core.group_languages(name)
+        return found["audio"], found["subtitles"]
+
+    def test_country_dubbed_and_subtitled_groups(self):
+        self.assertEqual(self.guess("FR | FILMS"), (["fr"], []))
+        self.assertEqual(self.guess("FR | FILMS VOSTFR"), ([], ["fr"]))
+        self.assertEqual(self.guess("|EN| NETFLIX"), (["en"], []))
+        self.assertEqual(self.guess("TR | DUBLAJ"), (["tr"], []))
+        self.assertEqual(self.guess("EN SERIES SUB FR"), ([], ["fr"]))
+        self.assertEqual(self.guess("FR - MULTI"), (["fr"], []))
+        self.assertEqual(self.guess("VO SERIES"), ([], []))
+        self.assertEqual(self.guess("Action"), ([], []))
+
+    def test_arabic_groups_are_english_with_arabic_subtitles(self):
+        self.assertEqual(self.guess("ARABIC MOVIES"), (["en"], ["ar"]))
+        self.assertEqual(self.guess("AR | TURKISH SERIES"), (["tr"], ["ar"]))
+
+    def test_the_arabic_code_alone_is_arabic_audio(self):
+        self.assertEqual(self.guess("AR | FILMS"), (["ar"], []))
+        self.assertEqual(self.guess("[AR] SERIES"), (["ar"], []))
+        self.assertEqual(self.guess("[AR] يعرض الآن أجنبي"), (["ar"], []))
+        self.assertEqual(self.guess("[AR] VOST"), ([], ["ar"]))
+        self.assertEqual(self.guess("افلام اجنبية مترجمة"), (["en"], ["ar"]))
+        self.assertEqual(self.guess("افلام تركية"), (["tr"], ["ar"]))
+        self.assertEqual(self.guess("افلام عربية"), (["ar"], []))
+
+    def test_prefix_and_tags(self):
+        found = core.group_languages("|FR| KIDS 4K")
+        self.assertEqual(found["prefix"], "FR")
+        self.assertEqual(set(found["tags"]), {"kids", "4k"})
+        self.assertIn("MULTISUB", core.group_languages("MULTI-SUB 4K")["tags"])
+        self.assertIn("adult", core.group_languages("FR XXX 18+")["tags"])
+        self.assertIn("studio", core.group_languages("|EN| NETFLIX")["tags"])
+        self.assertIsNone(core.group_prefix("HD Movies"))
+        self.assertEqual(core.group_languages("x" * 10000)["audio"], [])
+
+    def test_selection_is_validated(self):
+        self.assertEqual(core.parse_selection({"mode": "all", "ids": [1]}), {"mode": "all", "ids": []})
+        self.assertEqual(core.parse_selection({"mode": "selected", "ids": [3, "2", 3]}), {"mode": "selected", "ids": [2, 3]})
+        for bad in ({"mode": "selected", "ids": [0]}, {"mode": "selected", "ids": [True]}, {"mode": "selected"},
+                    {"mode": "x"}, [], {"mode": "selected", "ids": [1] * (core.MAX_SELECTED_GROUPS + 1)}):
+            self.assertIsNone(core.parse_selection(bad))
+
+
+class BackupTest(unittest.TestCase):
+    def test_backup_is_checked_entry_by_entry(self):
+        data = {
+            "format": "tele-api-backup", "version": 1,
+            "groups": {"mode": "selected", "groups": [{"id": 3, "name": "FR | FILMS", "type": "movie"}, {"name": "x", "type": "live"}]},
+            "languages": [
+                {"id": 4, "name": "MULTI", "type": "movie", "status": "manual", "audio": ["fr", "en"], "subtitles": []},
+                {"name": "VO", "type": "series", "status": "excluded"},
+                {"name": "bad", "type": "movie", "status": "manual", "audio": ["french"]},
+                {"name": "empty", "type": "movie", "status": "manual", "audio": [], "subtitles": []},
+            ],
+            "tmdb": [{"kind": "movie", "item": 5, "name": "Dune", "tmdb": 438631, "manual": True},
+                     {"kind": "movie", "item": "x", "name": "", "tmdb": 1}, {"kind": "tv", "item": 1, "tmdb": 1}],
+        }
+        parsed = core.parse_backup(data)
+        self.assertEqual(parsed["mode"], "selected")
+        self.assertEqual(parsed["groups"], [{"id": 3, "name": "FR | FILMS", "type": "movie"}])
+        self.assertEqual([item["name"] for item in parsed["languages"]], ["MULTI", "VO"])
+        self.assertEqual(parsed["tmdb"], [{"kind": "movie", "item": 5, "name": "Dune", "tmdb": 438631, "manual": True}])
+        self.assertIsNone(core.parse_backup({"format": "other", "version": 1}))
+        self.assertIsNone(core.parse_backup([]))
+        # A further part: the groups are left as they are
+        self.assertIsNone(core.parse_backup({"format": "tele-api-backup", "version": 1, "tmdb": []})["mode"])
+
+
+class TargetedMessageTest(unittest.TestCase):
+    def test_tv_then_user_then_everyone(self):
+        import json
+
+        targeted = {
+            "device:0a1b2c3d4e5f": json.dumps({"text": "For this TV", "until": 200}),
+            b"user:7": json.dumps({"text": "For you", "until": 200}).encode(),
+            "user:8": json.dumps({"text": "Old", "until": 50}),
+        }
+        self.assertEqual(core.pick_message("All", targeted, "0a1b2c3d4e5f", 7, 100), "For this TV")
+        self.assertEqual(core.pick_message("All", targeted, "ffffffffffff", 7, 100), "For you")
+        self.assertEqual(core.pick_message("All", targeted, None, 8, 100), "All")  # expired
+        self.assertIsNone(core.pick_message("  ", {}, None, None, 100))
+        self.assertEqual([m["target"] for m in core.active_messages(targeted, 100)], ["0a1b2c3d4e5f", "7"])
+
+    def test_targets_are_checked(self):
+        self.assertEqual(core.message_target("device", "0a1b2c3d4e5f"), "device:0a1b2c3d4e5f")
+        self.assertEqual(core.message_target("user", 12), "user:12")
+        for kind, target in (("device", "x"), ("user", "abc"), ("all", "1"), ("device", "0a1b2c3d4e5f:x")):
+            self.assertIsNone(core.message_target(kind, target))
+
+
+class VodStatsTest(unittest.TestCase):
+    def test_play_keys(self):
+        uuid = "0a1b2c3d-0000-4000-8000-000000000001"
+        self.assertEqual(core.vod_play_key("movie", uuid, "Dune"), f"movie:{uuid}")
+        self.assertEqual(core.vod_play_key(None, None, " Dune "), "name:Dune")
+        self.assertIsNone(core.vod_play_key("movie", "../x", ""))
+
+    def test_top_and_users(self):
+        top = core.top_vod([{"movie:a": "3", "name:Dune": 1}, {b"movie:a": b"2"}], {"movie:a": "Parasite"})
+        self.assertEqual(top[0], {"key": "movie:a", "kind": "movie", "name": "Parasite", "plays": 5})
+        self.assertEqual(top[1]["name"], "Dune")
+        self.assertEqual(core.users_plays([{"7": 2}, {b"7": b"1", "8": 1}], {"7": "salon"}), [{"user": "salon", "plays": 3}, {"user": "8", "plays": 1}])
+
+    def test_popular_leaves_adult_titles_out(self):
+        plays = {"movie:a": 5, "episode:e1": 3, "episode:e2": 4, "movie:x": 9, "movie:gone": 7}
+        titles = {"movie:a": ("movie", 1), "episode:e1": ("series", 2), "episode:e2": ("series", 2), "movie:x": ("movie", 3)}
+        found = core.popular_titles(plays, titles, {("movie", 3)})
+        self.assertEqual(found, [{"kind": "series", "id": 2, "plays": 7}, {"kind": "movie", "id": 1, "plays": 5}])
+        self.assertTrue(core.is_adult_group("FR | XXX"))
+        self.assertTrue(core.is_adult_group("PORN 18+"))
+        self.assertFalse(core.is_adult_group("FR | FILMS"))

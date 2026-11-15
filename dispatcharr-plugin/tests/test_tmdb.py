@@ -17,19 +17,33 @@ class SearchTitleTest(unittest.TestCase):
         self.assertEqual(core.search_title("It (2017)"), ("It", 2017))
         self.assertEqual(core.search_title(None), ("", None))
 
-    def test_only_a_sure_match(self):
+    def test_confidence_of_the_best_result(self):
         results = [
             {"id": 1, "title": "Dune", "release_date": "1984-12-14"},
             {"id": 2, "title": "Dune", "original_title": "Dune", "release_date": "2021-09-15"},
             {"id": 3, "title": "Dune: Part Two", "release_date": "2024-02-27"},
         ]
-        self.assertEqual(core.best_tmdb_match(results, "Dune", 2021, "movie"), 2)
-        self.assertEqual(core.best_tmdb_match(results, "Dune", 2022, "movie"), 2)  # a year within one
-        self.assertIsNone(core.best_tmdb_match(results, "Dune", 2010, "movie"))
-        self.assertIsNone(core.best_tmdb_match(results, "Dune", None, "movie"))  # two of that title: unsure
-        self.assertEqual(core.best_tmdb_match(results, "Dune Part Two", None, "movie"), 3)
-        self.assertEqual(core.best_tmdb_match([{"id": 9, "name": "Été", "first_air_date": "2020-01-01"}], "Ete", 2020, "series"), 9)
-        self.assertIsNone(core.best_tmdb_match("garbage", "Dune", 2021, "movie"))
+        best = core.tmdb_candidate(results, "Dune", 2021, "movie")
+        self.assertEqual((best["id"], best["score"]), (2, 100))
+        self.assertEqual(core.tmdb_candidate(results, "Dune", 2022, "movie")["score"], 97)  # a year within one
+        self.assertLess(core.tmdb_candidate(results, "Dune", 2010, "movie")["score"], 60)
+        # Two of that title without a year: unsure
+        self.assertLess(core.tmdb_candidate(results, "Dune", None, "movie")["score"], 85)
+        self.assertEqual(core.tmdb_candidate(results, "Dune Part Two", None, "movie")["id"], 3)
+        self.assertEqual(core.tmdb_candidate([{"id": 9, "name": "Été", "first_air_date": "2020-01-01"}], "Ete", 2020, "series")["score"], 100)
+        # A close title passes the default threshold, a part of a title does not
+        office = core.tmdb_candidate([{"id": 5, "name": "The Office", "first_air_date": "2005-03-24"}], "The Office US", 2005, "series")
+        self.assertGreaterEqual(office["score"], 85)
+        diner = core.tmdb_candidate([{"id": 6, "title": "Le Dîner de cons", "release_date": "1998-04-15"}], "Le Dîner", 1998, "movie")
+        self.assertLess(diner["score"], 75)
+        self.assertIsNone(core.tmdb_candidate("garbage", "Dune", 2021, "movie"))
+        self.assertIsNone(core.tmdb_candidate([{"id": "x", "title": "Dune"}], "Dune", 2021, "movie"))
+
+    def test_threshold_setting_is_bounded(self):
+        self.assertEqual(core.tmdb_min_confidence(None), 85)
+        self.assertEqual(core.tmdb_min_confidence("30"), 50)
+        self.assertEqual(core.tmdb_min_confidence(120), 99)
+        self.assertEqual(core.tmdb_min_confidence("x"), 85)
 
     def test_v3_key_and_v4_token(self):
         self.assertEqual(core.tmdb_auth("a" * 32), ({}, {"api_key": "a" * 32}))
@@ -62,7 +76,7 @@ class StorageTest(unittest.TestCase):
             connection.execute("INSERT INTO ids (kind, item, tmdb, at) VALUES ('series', 7, 1399, 1.0)")
         self.assertEqual(tmdb.ids("movie"), {"5": "438631"})
         self.assertEqual(tmdb.counts(), {"matched": 2, "unmatched": 1})
-        self.assertEqual(tmdb.unmatched(), [{"kind": "movie", "item": 6, "name": "FR | Truc (1999)", "query": "Truc", "year": 1999}])
+        self.assertEqual(tmdb.unmatched(), [{"kind": "movie", "item": 6, "name": "FR | Truc (1999)", "query": "Truc", "year": 1999, "candidate": None}])
         # Set by hand, then searched again
         tmdb.set_manual("movie", 6, 12345)
         self.assertEqual(tmdb.ids("movie"), {"5": "438631", "6": "12345"})
@@ -73,6 +87,26 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(tmdb.retry_unmatched(), 1)
         tmdb.forget()
         self.assertEqual(tmdb.counts(), {"matched": 0, "unmatched": 0})
+
+    def test_candidates_are_kept_and_accepted(self):
+        with tmdb._connection() as connection:
+            connection.execute("INSERT INTO ids (kind, item, tmdb, at, name, query, year, cand, cand_title, cand_year, score) "
+                               "VALUES ('series', 1, NULL, 1.0, 'The Office US', 'The Office US', NULL, 2316, 'The Office', 2005, 81)")
+            connection.execute("INSERT INTO ids (kind, item, tmdb, at, name, query, year, cand, cand_title, cand_year, score) "
+                               "VALUES ('movie', 2, NULL, 1.0, 'Truc', 'Truc', NULL, 77, 'Truc 2', 2001, 60)")
+        listed = tmdb.unmatched()
+        self.assertEqual(listed[0]["candidate"], {"id": 2316, "title": "The Office", "year": 2005, "score": 81})
+        self.assertEqual(tmdb.accept_candidates(80), 1)
+        self.assertEqual(tmdb.ids("series"), {"1": "2316"})
+        self.assertTrue(tmdb.accept("movie", 2))
+        self.assertFalse(tmdb.accept("movie", 3))
+        self.assertEqual(tmdb.ids("movie"), {"2": "77"})
+
+    def test_rows_exported_and_imported(self):
+        tmdb.import_rows([("movie", 5, 438631, "Dune", True), ("series", 7, 1399, "GoT", False)])
+        rows = sorted(tmdb.export_rows(), key=lambda r: r["item"])
+        self.assertEqual(rows, [{"kind": "movie", "item": 5, "tmdb": 438631, "name": "Dune", "manual": True},
+                                {"kind": "series", "item": 7, "tmdb": 1399, "name": "GoT", "manual": False}])
 
     def test_no_key_no_request(self):
         with mock.patch.object(tmdb, "_get") as get:

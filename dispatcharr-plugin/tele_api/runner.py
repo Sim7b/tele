@@ -57,6 +57,7 @@ def _loop(token: object) -> None:
             from . import stats
 
             stats.sample_peaks(client)
+            stats.sample_vod(client)
             probe.run(settings)
             from . import tmdb
 
