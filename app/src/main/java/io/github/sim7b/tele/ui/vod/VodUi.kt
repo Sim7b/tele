@@ -315,17 +315,24 @@ private fun providerAudioLabels(version: VodVersion): List<String> {
             "MULTI" -> stringResource(R.string.vod_lang_multi)
             "VF" -> stringResource(R.string.vod_lang_vf)
             "VFQ" -> stringResource(R.string.vod_lang_vfq)
-            "VO", "VOSTFR" -> stringResource(R.string.vod_lang_vo)
+            "VO", "VOSTFR", "VOSTEN" -> stringResource(R.string.vod_lang_vo)
             else -> null
         }
     }
 }
 
-/** Subtitles of a file: its tracks, else "French" for a VOSTFR file. */
+/** Subtitles of a file: its tracks, else what its name says (VOSTFR, VOSTEN, MULTI-SUB). */
 @Composable
 private fun providerSubtitleLabels(version: VodVersion): List<String> {
     if (version.subtitles.isNotEmpty()) return version.subtitles.mapNotNull { languageName(it) }
-    return if ("VOSTFR" in version.languageTags) listOf(stringResource(R.string.vod_lang_vf)) else emptyList()
+    return version.languageTags.mapNotNull { tag ->
+        when (tag) {
+            "VOSTFR" -> stringResource(R.string.vod_lang_vf)
+            "VOSTEN" -> languageName("en")
+            "MULTISUB" -> stringResource(R.string.vod_lang_multi)
+            else -> null
+        }
+    }
 }
 
 @Composable

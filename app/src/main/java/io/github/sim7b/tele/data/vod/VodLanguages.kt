@@ -15,21 +15,58 @@ data class VodLanguages(val audio: Set<String> = emptySet(), val subtitles: Set<
  * Estimation of the languages of a movie or an episode from its playlist group ("FR | FILMS VOSTFR",
  * "|EN| NETFLIX", "ARABIC MOVIES") and from its name ("FR - Dune (2024) MULTI"): the whole group, but only
  * the prefix and the recognized tags of a name ("The French Connection" is no French version). Country codes
- * count in uppercase only, so that "It" or "De Gaulle" are never read as languages. Subtitled versions
- * (VOSTFR) keep their original audio.
+ * count in uppercase only, so that "It" or "De Gaulle" are never read as languages.
+ *
+ * What the playlists write:
+ * - dubbed versions: VF, VFF, VFQ, TRUEFRENCH, DUBLADO, DUBLAJ, LEKTOR, "ENGLISH DUB", "GERMAN DL";
+ * - subtitled versions keep their original audio, the country of the group is then the language of the
+ *   subtitles: VOSTFR, VOST (French acronym: French when nothing else tells), VOSTA / VOSTEN (English),
+ *   VOSE (Spanish), LEGENDADO (Portuguese), ALTYAZILI (Turkish), NAPISY (Polish), "SUB FR", "ENG SUBS";
+ * - MULTI / DUAL: the local language and the original one; MULTI-SUB / MULTISUB: several subtitle languages
+ *   (not several audio tracks), the local one most likely among them; VO: the original audio only;
+ * - written in Arabic: foreign movies and series subtitled in Arabic, so the original audio (English when
+ *   nothing tells) with Arabic subtitles, unless dubbed (مدبلج) or Arabic content (عربي, مصري, خليجي).
  */
 object VodLanguageGuess {
 
     private val TOKENS = Regex("""[^\p{L}\p{N}]+""")
     private val DIACRITICS = Regex("""\p{Mn}+""")
 
-    // French versions: dubbed, or subtitled with the original audio
-    private val FRENCH_AUDIO = setOf("VF", "VFF", "VFQ", "VFI", "VF2", "FRENCH", "TRUEFRENCH", "FRANCAIS", "QUEBEC")
-    private val FRENCH_SUBTITLES = setOf("VOSTFR", "VOSTF", "SUBFRENCH", "STFR")
+    // Versions dubbed in a language
+    private val DUBBED = mapOf(
+        "VF" to "fr", "VFF" to "fr", "VFQ" to "fr", "VFI" to "fr", "VF2" to "fr", "VFB" to "fr", "VOF" to "fr",
+        "TRUEFRENCH" to "fr", "QUEBEC" to "fr",
+        "DUBLADO" to "pt", "DUBLADOS" to "pt", "DUBLADA" to "pt", "DUBLADAS" to "pt", "DUBLAGEM" to "pt",
+        "DUBLAJ" to "tr", "DUBLAJLI" to "tr", "LEKTOR" to "pl", "DOPPIATO" to "it", "DOPPIATI" to "it",
+        "DOBLADO" to "es", "DOBLADOS" to "es", "DOBLADA" to "es", "SYNCHRO" to "de"
+    )
+
+    // Versions subtitled in a language (original audio)
+    private val SUBTITLED = mapOf(
+        "VOSTFR" to "fr", "VOSTF" to "fr", "SUBFRENCH" to "fr", "STFR" to "fr", "SUBFR" to "fr", "FRSUB" to "fr",
+        "FASTSUB" to "fr", "SME" to "fr", "STSME" to "fr",
+        "VOSTA" to "en", "VOSTEN" to "en", "VOSTENG" to "en", "VOSTANG" to "en", "ENGSUB" to "en",
+        "ENGSUBS" to "en", "SUBENG" to "en", "SUBBEDENG" to "en",
+        "VOSE" to "es", "SUBESP" to "es", "SUBTITULADO" to "es", "SUBTITULADA" to "es",
+        "SUBTITULADOS" to "es", "SUBTITULADAS" to "es",
+        "LEGENDADO" to "pt", "LEGENDADOS" to "pt", "LEGENDADA" to "pt", "LEGENDADAS" to "pt", "ALTYAZI" to "tr", "ALTYAZILI" to "tr", "NAPISY" to "pl",
+        "SUBITA" to "it", "SOTTOTITOLATO" to "it", "GERSUB" to "de", "UNTERTITEL" to "de", "NLSUB" to "nl"
+    )
+
+    // Words before a language ("SUB FR", "VOST EN", "DUB PL") or after it ("ENG SUBS", "ENGLISH DUB")
+    private val SUB_WORDS = setOf("SUB", "SUBS", "SUBBED", "SUBTITLE", "SUBTITLES", "SUBTITLED", "ST", "VOST", "HARDSUB", "HARDSUBS")
+    private val DUB_WORDS = setOf("DUB", "DUBBED", "DUBBING", "DL")
+
+    // Subtitled in the local language, whatever it is: the country of the group ("FR | FILMS VOST")
+    private val LOCAL_SUBTITLES = setOf("VOST", "SUBBED", "SUBTITLED", "HARDSUB", "HARDSUBS")
+    private val MULTI_SUBTITLES = setOf("MULTISUB", "MULTISUBS", "MULTISUBTITLES")
+    private val MULTI_AUDIO = setOf("MULTI", "DUAL")
+    private val ORIGINAL = setOf("VO", "VOA", "ORIGINAL")
 
     // Language names, in English and in their own language
     private val WORDS = mapOf(
-        "ENGLISH" to "en", "ANGLAIS" to "en", "GERMAN" to "de", "DEUTSCH" to "de", "ALLEMAND" to "de",
+        "FRENCH" to "fr", "FRANCAIS" to "fr", "ENGLISH" to "en", "ANGLAIS" to "en",
+        "GERMAN" to "de", "DEUTSCH" to "de", "ALLEMAND" to "de",
         "SPANISH" to "es", "ESPANOL" to "es", "CASTELLANO" to "es", "LATINO" to "es", "ESPAGNOL" to "es",
         "ITALIAN" to "it", "ITALIANO" to "it", "ITALIEN" to "it", "PORTUGUESE" to "pt", "PORTUGUES" to "pt",
         "BRAZIL" to "pt", "BRASIL" to "pt", "ARABIC" to "ar", "ARABE" to "ar", "TURKISH" to "tr", "TURK" to "tr",
@@ -44,6 +81,16 @@ object VodLanguageGuess {
         "US" to "en", "USA" to "en", "DE" to "de", "GER" to "de", "ES" to "es", "SPA" to "es", "IT" to "it",
         "ITA" to "it", "PT" to "pt", "BR" to "pt", "AR" to "ar", "TR" to "tr", "NL" to "nl", "PL" to "pl",
         "RU" to "ru", "GR" to "el", "RO" to "ro", "AL" to "sq", "KR" to "ko", "JP" to "ja"
+    )
+
+    // Codes next to a subtitle or dub word, in any case ("sub fr", "VOST ENG"): ISO 639-2 ones too
+    private val CODES_NEXT_TO_TAGS = CODES + mapOf("FRE" to "fr", "ESP" to "es", "POR" to "pt", "JPN" to "ja", "KOR" to "ko")
+
+    // Arabic stems (after "ال" / "و" and hamza variants are removed): Arabic content, and original languages
+    private val ARABIC_CONTENT = listOf("عرب", "مصر", "خليج", "سوري", "لبنان", "مغرب", "عراق", "جزائر", "تونس")
+    private val ARABIC_ORIGINS = listOf(
+        "ترك" to "tr", "هند" to "hi", "كوري" to "ko", "يابان" to "ja", "انمي" to "ja", "صين" to "zh",
+        "اجنب" to "en", "امريك" to "en", "انجليز" to "en", "فرنس" to "fr", "اسبان" to "es"
     )
 
     /** Languages of a file from its [name], the language [tags] read in it ([VodNames]) and its playlist [group]. */
@@ -65,7 +112,9 @@ object VodLanguageGuess {
             val prefix = if (mayHavePrefix(name)) namePrefix(name) else null
             val fromName = if (prefix == null) NOTHING else prefixes.getOrPut(prefix) { read(prefix, codes = uppercaseWords(prefix)) }
             val fromTags = if (tags.isEmpty()) NOTHING else tagReadings.getOrPut(tags) { fromTags(tags) }
-            val reading = fromGroup + fromName + fromTags
+            // A name written in Arabic tells through its words ("مترجم", "مدبلج"), and its script itself
+            val fromArabic = if (hasArabic(name)) readArabic(name) else NOTHING
+            val reading = fromGroup + fromName + fromTags + fromArabic
             return if (reading == NOTHING) EMPTY else combined.getOrPut(reading) { combine(reading) }
         }
 
@@ -120,13 +169,18 @@ object VodLanguageGuess {
     private val NOTHING = Reading()
     private val EMPTY = VodLanguages()
 
-    /** Tags of [VodNames]: VF, VFQ, VOSTFR, MULTI, VO. */
+    /** Tags of [VodNames]: VF, VFQ, VOSTFR, VOSTEN, MULTI, MULTISUB, VO. */
     private fun fromTags(tags: List<String>): Reading {
         if (tags.isEmpty()) return NOTHING
+        val subtitles = HashSet<String>(1)
+        if ("VOSTFR" in tags) subtitles.add("fr")
+        if ("VOSTEN" in tags) subtitles.add("en")
         return Reading(
             explicitAudio = if (tags.any { it == "VF" || it == "VFQ" }) setOf("fr") else emptySet(),
-            subtitles = if ("VOSTFR" in tags) setOf("fr") else emptySet(),
-            multi = "MULTI" in tags
+            subtitles = subtitles,
+            multi = "MULTI" in tags,
+            multiSubtitles = "MULTISUB" in tags,
+            original = "VO" in tags
         )
     }
 
@@ -135,43 +189,164 @@ object VodLanguageGuess {
         val explicitAudio: Set<String> = emptySet(),
         val countryAudio: Set<String> = emptySet(),
         val subtitles: Set<String> = emptySet(),
-        val multi: Boolean = false
+        // MULTI / DUAL: the local language and the original one
+        val multi: Boolean = false,
+        // VOST, SUBBED: subtitled in the local language (French when nothing tells, for VOST)
+        val localSubtitles: Boolean = false,
+        val localSubtitlesDefault: Set<String> = emptySet(),
+        // MULTI-SUB: several subtitle languages
+        val multiSubtitles: Boolean = false,
+        // VO: the original audio only
+        val original: Boolean = false,
+        // Written in Arabic: original audio ([arabicOrigins], else English) with Arabic subtitles, unless dubbed
+        val arabic: Boolean = false,
+        val arabicDubbed: Boolean = false,
+        val arabicOrigins: Set<String> = emptySet()
     ) {
         operator fun plus(other: Reading) = if (other == NOTHING) this else if (this == NOTHING) other else Reading(
             explicitAudio + other.explicitAudio,
             countryAudio + other.countryAudio,
             subtitles + other.subtitles,
-            multi || other.multi
+            multi || other.multi,
+            localSubtitles || other.localSubtitles,
+            localSubtitlesDefault + other.localSubtitlesDefault,
+            multiSubtitles || other.multiSubtitles,
+            original || other.original,
+            arabic || other.arabic,
+            arabicDubbed || other.arabicDubbed,
+            arabicOrigins + other.arabicOrigins
         )
     }
 
     private fun read(text: String, codes: Set<String>): Reading {
+        val words = normalize(text).split(TOKENS).filter { it.isNotEmpty() }
         val explicit = HashSet<String>(2)
         val subtitles = HashSet<String>(1)
+        // Codes read as the language of a subtitle or a dub: not the country of the group
+        val tagCodes = HashSet<String>(1)
         var multi = false
-        val words = normalize(text).split(TOKENS)
-        words.forEach { word ->
+        var local = false
+        val localDefault = HashSet<String>(1)
+        var multiSubtitles = false
+        var original = false
+        var i = 0
+        while (i < words.size) {
+            val word = words[i]
+            val next = words.getOrNull(i + 1)
+            val nextLanguage = next?.let { WORDS[it] ?: CODES_NEXT_TO_TAGS[it] }
+            val language = WORDS[word] ?: CODES_NEXT_TO_TAGS[word]
             when {
-                word.isEmpty() -> Unit
-                word in FRENCH_AUDIO -> explicit.add("fr")
-                word in FRENCH_SUBTITLES -> subtitles.add("fr")
-                word == "MULTI" -> multi = true
+                // "MULTI SUB", "MULTI-SUBS": several subtitle languages, not several audio tracks
+                word == "MULTI" && (next == "SUB" || next == "SUBS" || next == "SUBTITLES") -> {
+                    multiSubtitles = true
+                    i++
+                }
+                word in MULTI_SUBTITLES -> multiSubtitles = true
+                // "SUB FR", "VOST EN", "ST FR", "HARDSUB ENG"
+                word in SUB_WORDS && nextLanguage != null -> {
+                    subtitles.add(nextLanguage)
+                    tagCodes.add(next)
+                    i++
+                }
+                // "DUB PL", "DUBBED EN"
+                word in DUB_WORDS && word != "DL" && nextLanguage != null -> {
+                    explicit.add(nextLanguage)
+                    tagCodes.add(next)
+                    i++
+                }
+                // "ENG SUBS", "ENGLISH SUBTITLES", "FR SUB"
+                language != null && next != null && next in SUB_WORDS -> {
+                    subtitles.add(language)
+                    tagCodes.add(word)
+                    i++
+                }
+                // "ENGLISH DUB", "GERMAN DL" (dual language: German and the original)
+                language != null && next != null && next in DUB_WORDS -> {
+                    explicit.add(language)
+                    if (next == "DL") multi = true
+                    tagCodes.add(word)
+                    i++
+                }
+                word in DUBBED -> explicit.add(DUBBED.getValue(word))
+                word in SUBTITLED -> subtitles.add(SUBTITLED.getValue(word))
+                word in LOCAL_SUBTITLES -> {
+                    local = true
+                    if (word == "VOST") localDefault.add("fr")
+                }
+                word in MULTI_AUDIO -> multi = true
+                word in ORIGINAL -> original = true
                 else -> WORDS[word]?.let(explicit::add)
             }
+            i++
         }
-        // "VOST FR", "SUB FR", "ST FR": French subtitles
-        words.zipWithNext().forEach { (a, b) -> if ((a == "VOST" || a == "SUB" || a == "ST") && b in setOf("FR", "FRA", "FRENCH")) subtitles.add("fr") }
-        val country = codes.mapNotNull { CODES[it] }.toSet()
-        return Reading(explicit, country, subtitles, multi)
+        val country = codes.filter { it !in tagCodes }.mapNotNull { CODES[it] }.toSet()
+        val arabic = if (hasArabic(text)) readArabic(text) else NOTHING
+        return Reading(explicit, country, subtitles, multi, local, localDefault, multiSubtitles, original) + arabic
+    }
+
+    private fun hasArabic(text: String): Boolean = text.any { it in '\u0600'..'\u06FF' }
+
+    /** Arabic words of a text: "مترجم" (subtitled), "مدبلج" (dubbed), the origin ("تركي", "هندي", "عربي"). */
+    private fun readArabic(text: String): Reading {
+        var dubbed = false
+        var arabicContent = false
+        val origins = HashSet<String>(1)
+        val subtitles = HashSet<String>(1)
+        // Normalized: the hamza and the short vowels are combining marks, removed with the diacritics
+        for (raw in normalize(text).split(TOKENS)) {
+            if (raw.isEmpty() || !hasArabic(raw)) continue
+            val word = arabicStem(raw)
+            when {
+                word.startsWith("مدبلج") -> dubbed = true
+                word.startsWith("مترجم") -> subtitles.add("ar")
+                ARABIC_CONTENT.any { word.startsWith(it) } -> arabicContent = true
+                else -> ARABIC_ORIGINS.firstOrNull { word.startsWith(it.first) }?.let { origins.add(it.second) }
+            }
+        }
+        return Reading(
+            explicitAudio = if (arabicContent) setOf("ar") else emptySet(),
+            subtitles = subtitles,
+            arabic = true,
+            arabicDubbed = dubbed,
+            arabicOrigins = origins
+        )
+    }
+
+    /** An Arabic word without its hamza variants, final ta marbuta and "ال" / "و" / "ب" prefixes. */
+    internal fun arabicStem(word: String): String {
+        var w = word.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه').replace('ى', 'ي').replace("ـ", "")
+        for (prefix in listOf("وال", "بال", "ال", "و")) {
+            if (w.startsWith(prefix) && w.length - prefix.length >= 3) {
+                w = w.substring(prefix.length)
+                break
+            }
+        }
+        return w
     }
 
     private fun combine(reading: Reading): VodLanguages {
         val audio = LinkedHashSet<String>(reading.explicitAudio)
-        // A subtitled version keeps its original audio: the country of the group is not its language
-        if (reading.subtitles.isEmpty()) audio.addAll(reading.countryAudio)
-        // MULTI: French and original audio in French playlists
-        if (reading.multi && (reading.countryAudio.contains("fr") || reading.explicitAudio.contains("fr"))) audio.add("fr")
-        return VodLanguages(audio, reading.subtitles)
+        val subtitles = LinkedHashSet<String>(reading.subtitles)
+        if (reading.localSubtitles) subtitles.addAll(reading.countryAudio.ifEmpty { reading.localSubtitlesDefault })
+        // Several subtitle languages: the local one most likely among them
+        if (reading.multiSubtitles) subtitles.addAll(reading.countryAudio)
+        val subtitled = reading.subtitles.isNotEmpty() || reading.localSubtitles || reading.multiSubtitles
+        // A subtitled or original version keeps its original audio: the country of the group is not its language.
+        // MULTI: the local language and the original one
+        if (reading.multi || (!subtitled && !reading.original)) audio.addAll(reading.countryAudio)
+        if (reading.arabic) {
+            when {
+                reading.arabicDubbed -> audio.add("ar")
+                // Arabic content (عربي), or the Arabic of a group: no subtitles to tell
+                "ar" in audio -> Unit
+                else -> {
+                    // Foreign movies and series subtitled in Arabic: English when nothing tells the origin
+                    if (reading.arabicOrigins.isNotEmpty()) audio.addAll(reading.arabicOrigins) else if (audio.isEmpty()) audio.add("en")
+                    subtitles.add("ar")
+                }
+            }
+        }
+        return VodLanguages(audio, subtitles)
     }
 
     private fun uppercaseWords(text: String): Set<String> =

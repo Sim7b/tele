@@ -40,6 +40,60 @@ class VodLanguagesTest {
         assertEquals(VodLanguages(setOf("de")), guess("IT (2017)", "DE | HORROR"))
     }
 
+    @Test
+    fun `several subtitle languages are no several audio tracks`() {
+        // MULTI-SUB: original audio, the local language likely among the subtitles
+        assertEquals(VodLanguages(subtitles = setOf("fr")), guess("Dune (2024) MULTI-SUB", "FR | FILMS"))
+        assertEquals(VodLanguages(subtitles = setOf("fr")), guess("Dune (2024)", "FR | FILMS MULTI SUB"))
+        assertEquals(VodLanguages(subtitles = setOf("fr")), guess("Dune (2024)", "FR | MULTISUBS"))
+        assertEquals(listOf("MULTISUB"), VodNames.parse("Dune (2024) MULTI-SUB").languageTags)
+        // MULTI: the local audio and the original one
+        assertEquals(VodLanguages(setOf("de")), guess("Dune (2024)", "DE | FILME MULTI"))
+        assertEquals(VodLanguages(setOf("fr"), setOf("fr")), guess("Dune (2024) MULTI", "FR | FILMS VOSTFR"))
+    }
+
+    @Test
+    fun `subtitles in other languages than French`() {
+        assertEquals(VodLanguages(subtitles = setOf("en")), guess("Parasite (2019) VOSTA", "KR | MOVIES"))
+        assertEquals(VodLanguages(subtitles = setOf("en")), guess("Parasite (2019)", "KR | MOVIES ENG SUBS"))
+        assertEquals(VodLanguages(setOf("ko"), setOf("en")), guess("Parasite (2019)", "Korean movies - English subtitles"))
+        assertEquals(VodLanguages(subtitles = setOf("es")), guess("Parasite (2019)", "Películas VOSE"))
+        assertEquals(VodLanguages(subtitles = setOf("pt")), guess("Parasite (2019)", "BR | FILMES LEGENDADOS"))
+        assertEquals(VodLanguages(subtitles = setOf("tr")), guess("Parasite (2019)", "TR | ALTYAZILI FILMLER"))
+        assertEquals(VodLanguages(subtitles = setOf("fr")), guess("Parasite (2019)", "films sub fr"))
+        // VOST alone: French, or the language of the group
+        assertEquals(VodLanguages(subtitles = setOf("fr")), guess("Parasite (2019)", "Films VOST"))
+        assertEquals(VodLanguages(subtitles = setOf("de")), guess("Parasite (2019)", "DE | FILME SUBBED"))
+    }
+
+    @Test
+    fun `dubbed versions and original versions`() {
+        assertEquals(VodLanguages(setOf("pt")), guess("Dune (2024)", "Filmes Dublados DUBLADO"))
+        assertEquals(VodLanguages(setOf("tr")), guess("Dune (2024)", "Yabancı Filmler Türkçe Dublaj"))
+        assertEquals(VodLanguages(setOf("pl")), guess("Dune (2024)", "PL | FILMY LEKTOR"))
+        assertEquals(VodLanguages(setOf("en")), guess("Dune (2024)", "Movies English dub"))
+        assertEquals(VodLanguages(setOf("de")), guess("Dune (2024)", "Filme GERMAN DL"))
+        // VO: the country of the group is not the audio
+        assertTrue(guess("Dune (2024) VO", "FR | FILMS").isEmpty)
+        assertTrue(guess("Dune (2024)", "FR | FILMS VO").isEmpty)
+    }
+
+    @Test
+    fun `written in Arabic, the original audio is English with Arabic subtitles`() {
+        val subtitled = VodLanguages(setOf("en"), setOf("ar"))
+        assertEquals(subtitled, guess("فيلم الحارس 2020", null))
+        assertEquals(subtitled, guess("Dune (2024)", "أفلام أجنبية"))
+        assertEquals(subtitled, guess("Dune (2024)", "افلام اجنبية مترجمة"))
+        // The origin when told: Turkish series subtitled in Arabic
+        assertEquals(VodLanguages(setOf("tr"), setOf("ar")), guess("Kuruluş Osman S01E01", "مسلسلات تركية مترجمة"))
+        assertEquals(VodLanguages(setOf("hi"), setOf("ar")), guess("Pathaan (2023)", "أفلام هندية"))
+        // Dubbed in Arabic, or Arabic content: Arabic audio, no subtitles
+        assertEquals(VodLanguages(setOf("ar")), guess("Kuruluş Osman S01E01", "مسلسلات تركية مدبلجة"))
+        assertEquals(VodLanguages(setOf("ar")), guess("فيلم الفيل الأزرق", "أفلام عربية"))
+        assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "أفلام مصرية"))
+        assertEquals("عربيه", VodLanguageGuess.arabicStem("العربية"))
+    }
+
     @Test(timeout = 2_000)
     fun `long uppercase names are read at once`() {
         val name = "THE LORD OF THE RINGS THE RETURN OF THE KING EXTENDED EDITION REMASTERED ".repeat(4) + "(2003)"
