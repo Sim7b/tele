@@ -213,6 +213,22 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(list(scores.call_args.args[1]), [7, 8])
         self.assertEqual(self.call(views.StreamHealthView, path="/?ids=x", who=user()).status_code, 400)
 
+    def test_a_tv_is_recorded_and_its_sessions_closed_by_an_admin(self):
+        agent = "TV-AndroidTV/1.0 (Android TV; Tele-0a1b2c3d4e5f)"
+        with mock.patch("tele_api.devices.seen") as seen:
+            request = self.factory.get("/", HTTP_USER_AGENT=agent, HTTP_X_TELE_VERSION="0.3.27", REMOTE_ADDR="10.0.0.2")
+            force_authenticate(request, user=user())
+            views.InfoView.as_view()(request)
+        self.assertEqual(seen.call_args.args[1:4], (agent, 7, "0.3.27"))
+        tv = session("tv", ua=agent)
+        with mock.patch.object(views.data, "all_sessions", return_value=[tv, session("other")]), \
+                mock.patch.object(views.data, "stop_session", return_value=True):
+            response = self.call(views.AdminDeviceReleaseView, "post", who=user(level=10), body={"device": "0a1b2c3d4e5f"})
+            bad = self.call(views.AdminDeviceReleaseView, "post", who=user(level=10), body={"device": "../x"})
+            refused = self.call(views.AdminDeviceReleaseView, "post", who=user(), body={"device": "0a1b2c3d4e5f"})
+        self.assertEqual(response.data["released"], ["live:abc:tv"])
+        self.assertEqual((bad.status_code, refused.status_code), (400, 403))
+
     def test_admin_endpoints_are_for_admins_only(self):
         for view in (views.AdminProbesView, views.AdminExportView):
             self.assertEqual(self.call(view, who=user()).status_code, 403)

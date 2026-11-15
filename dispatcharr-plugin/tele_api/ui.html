@@ -95,6 +95,16 @@
       </div>
     </section>
 
+    <section class="card" aria-labelledby="devices-title" style="margin-top: 16px">
+      <h2 id="devices-title">Télé TVs</h2>
+      <div class="table">
+        <table>
+          <thead><tr><th>TV</th><th>User</th><th>Télé</th><th>Address</th><th>Last seen</th><th>Sessions</th><th></th></tr></thead>
+          <tbody id="devices"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="categories-title" style="margin-top: 16px">
       <div class="row">
         <h2 id="categories-title">Probed categories</h2>
@@ -203,6 +213,30 @@
     if (!list.length) body.appendChild(el("tr", {}, [el("td", { colspan: "6", class: "muted", text: "No session open." })]));
   }
 
+  function showDevices(list) {
+    var body = document.getElementById("devices");
+    clear(body);
+    list.forEach(function (device) {
+      var button = el("button", { class: "danger", type: "button", text: "Close its sessions", onclick: function () {
+        button.disabled = true;
+        call("admin/devices/release/", { method: "POST", body: { device: device.id } })
+          .then(function (data) { say((data.released || []).length + " session(s) closed"); load(); })
+          .catch(function (error) { button.disabled = false; say("Not closed: " + error.message); });
+      } });
+      if (!device.sessions) button.disabled = true;
+      body.appendChild(el("tr", {}, [
+        el("td", { text: device.id }),
+        el("td", { text: device.user || "" }),
+        el("td", { text: device.version || "" }),
+        el("td", { class: "muted", text: device.ip || "" }),
+        el("td", { class: "muted", text: since(device.last_seen) }),
+        el("td", { text: String(device.sessions || 0) }),
+        el("td", { class: "actions" }, [button])
+      ]));
+    });
+    if (!list.length) body.appendChild(el("tr", {}, [el("td", { colspan: "7", class: "muted", text: "No Télé TV seen yet." })]));
+  }
+
   function chips(codes) {
     var cell = el("td", {});
     (codes || []).forEach(function (code) {
@@ -269,7 +303,8 @@
       return Promise.all([
         call("slots/").then(showSlots).catch(function () { showSlots({}); }),
         call("sessions/?all=1").then(function (data) { showSessions(data.sessions || []); }),
-        call("admin/probes/").then(showProbes)
+        call("admin/probes/").then(showProbes),
+        call("admin/devices/").then(function (data) { showDevices(data.devices || []); })
       ]);
     }).catch(function (error) {
       if (error.message === "signed out" || error.message === "forbidden") {

@@ -18,7 +18,8 @@ no admin key needed:
   the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
   marks them in its stream picker.
 - **A page for admins** (`/api/tele/ui/`, the link of the plugin card): free connections, every open session
-  (with a button to close it), and the probed categories with their languages.
+  (with a button to close it), the Télé TVs seen (install id, user, version of Télé, address, last request,
+  with a button closing all their sessions), and the probed categories with their languages and quality.
 
 Télé uses the plugin when it is installed and falls back to the standard Dispatcharr API otherwise.
 
@@ -189,7 +190,8 @@ it when a movie sheet has no description from the provider, and builds the sheet
 
 Admin endpoints of the Télé page: `GET admin/probes/` (every result and the counts),
 `POST admin/probes/run/`, `POST admin/probes/reset/` (`{"id": <category>}` or `{}` for all),
-`GET admin/probes/export/` (the test case file).
+`GET admin/probes/export/` (the test case file), `GET admin/devices/` (the TVs seen in the last 90 days),
+`POST admin/devices/release/` (`{"device": <install id>}`: closes every session of that TV).
 
 ### `POST /api/tele/v1/sessions/release/`
 

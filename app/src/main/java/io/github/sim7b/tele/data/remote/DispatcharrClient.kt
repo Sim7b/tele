@@ -2,6 +2,7 @@ package io.github.sim7b.tele.data.remote
 
 import io.github.sim7b.tele.data.epg.EpgText
 import android.util.Log
+import io.github.sim7b.tele.BuildConfig
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UserFacingException
 import io.github.sim7b.tele.data.UiText
@@ -37,6 +38,8 @@ class DispatcharrClient(
             val requestBuilder = chain.request().newBuilder()
                 .header("User-Agent", userAgent)
                 .header("Accept", "application/json")
+                // Shown with the TV in the admin page of the Télé API plugin
+                .header(TELE_VERSION_HEADER, BuildConfig.VERSION_NAME)
             config?.let { ApiKeyAuth.of(it) }?.let { requestBuilder.tag(ApiKeyAuth::class.java, it) }
 
             chain.proceed(requestBuilder.build())
@@ -689,6 +692,7 @@ class DispatcharrClient(
 
     companion object {
         private const val TAG = "Dispatcharr"
+        private const val TELE_VERSION_HEADER = "X-Tele-Version"
         const val DEFAULT_USER_AGENT = HttpClients.DEFAULT_USER_AGENT
         private const val ARTWORK_PAGE_SIZE = 500
         private const val MAX_ARTWORK_PAGES = 6

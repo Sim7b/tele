@@ -617,3 +617,67 @@ def parse_ids(value: Any) -> Optional[List[int]]:
             return None
         ids.append(number)
     return ids
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Télé TVs seen
+
+_DEVICE_RE = re.compile(r"; Tele-([0-9a-f]{12})\)")
+_VERSION_RE = re.compile(r"^[0-9A-Za-z.+_-]{1,32}$")
+DEVICE_FORGET_AFTER = 90 * 24 * 3600
+
+
+def device_id(user_agent: Any) -> Optional[str]:
+    """Install id of a Télé TV, from its User-Agent ("TV-AndroidTV/1.0 (Android TV; Tele-1a2b3c4d5e6f)")."""
+    match = _DEVICE_RE.search(to_text(user_agent) or "")
+    return match.group(1) if match else None
+
+
+def app_version(value: Any) -> Optional[str]:
+    text = to_text(value)
+    return text if text and _VERSION_RE.match(text) else None
+
+
+def devices_json(raw: Mapping[Any, Any], usernames: Mapping[str, str], sessions: Iterable[Session], now: float) -> List[Dict[str, Any]]:
+    """TVs seen in the last DEVICE_FORGET_AFTER, most recent first, with their open sessions."""
+    open_by_device: Dict[str, int] = {}
+    for session in sessions:
+        device = device_id(session.user_agent)
+        if device:
+            open_by_device[device] = open_by_device.get(device, 0) + 1
+    devices = []
+    for key, value in raw.items():
+        device = to_text(key)
+        try:
+            data = json.loads(to_text(value) or "")
+        except ValueError:
+            continue
+        if not device or not isinstance(data, dict):
+            continue
+        seen = to_float(data.get("seen"), 0.0) or 0.0
+        if now - seen > DEVICE_FORGET_AFTER:
+            continue
+        user = to_text(data.get("user"))
+        devices.append({
+            "id": device,
+            "user": usernames.get(user or "", None),
+            "version": app_version(data.get("version")),
+            "ip": to_text(data.get("ip")),
+            "last_seen": seen or None,
+            "sessions": open_by_device.get(device, 0),
+        })
+    devices.sort(key=lambda d: -(d["last_seen"] or 0))
+    return devices
+
+
+def device_users(raw: Mapping[Any, Any]) -> List[str]:
+    """User ids of the TVs recorded (to look their names up)."""
+    users = []
+    for value in raw.values():
+        try:
+            data = json.loads(to_text(value) or "")
+        except ValueError:
+            continue
+        if isinstance(data, dict) and to_text(data.get("user")):
+            users.append(to_text(data.get("user")))
+    return users

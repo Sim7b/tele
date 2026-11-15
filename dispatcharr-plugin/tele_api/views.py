@@ -119,6 +119,15 @@ class TeleView(APIView):
     permission_classes = [IsStandardUser, PluginEnabled]
     throttle_classes = [PerUserLimit]
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        # A Télé TV (install id in its User-Agent): recorded for the list of the TVs of the admin page
+        if core.device_id(request.headers.get("User-Agent")):
+            from . import devices
+
+            devices.seen(data.redis_client(), request.headers.get("User-Agent"), request.user.pk,
+                         request.headers.get("X-Tele-Version"), data.client_ip(request))
+
     @staticmethod
     def setting(name, default):
         return plugin_state.get()[1].get(name, default)
@@ -335,6 +344,37 @@ class IsAdminUser(permissions.BasePermission):
 
 class AdminView(TeleView):
     permission_classes = [IsAdminUser, PluginEnabled]
+
+
+class AdminDevicesView(AdminView):
+    """Télé TVs seen lately, with their user, version, address and open sessions."""
+
+    def get(self, request):
+        from . import devices
+
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        raw = devices.all_raw(client)
+        sessions = data.all_sessions() or []
+        users = data.usernames(core.device_users(raw))
+        return Response({"api": core.API_VERSION, "devices": core.devices_json(raw, users, sessions, time.time())})
+
+
+class AdminDeviceReleaseView(AdminView):
+    """Closes every session of one TV ({"device": install id})."""
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        device = core.to_text(body.get("device"))
+        if not device or core.device_id(f"; Tele-{device})") != device:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        sessions = data.all_sessions()
+        if sessions is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        released = [s.id for s in sessions if core.device_id(s.user_agent) == device and data.stop_session(s)]
+        logger.info("Télé API: %d session(s) of a TV closed by an admin", len(released))
+        return Response({"api": core.API_VERSION, "released": released})
 
 
 class AdminProbesView(AdminView):

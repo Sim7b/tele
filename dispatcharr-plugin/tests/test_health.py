@@ -82,3 +82,25 @@ class HealthStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DevicesTest(unittest.TestCase):
+    def test_install_id_and_list(self):
+        from tele_api import core, devices
+
+        agent = "TV-AndroidTV/1.0 (Android TV; Tele-0a1b2c3d4e5f)"
+        self.assertEqual(core.device_id(agent), "0a1b2c3d4e5f")
+        self.assertIsNone(core.device_id("TV-AndroidTV/1.0 (Android TV)"))
+        store = FakeHash()
+        store.hgetall = lambda key: dict(store.values)
+        devices.seen(store, agent, 7, "0.3.27", "10.0.0.2")
+        devices.seen(store, agent, 7, "<script>", "10.0.0.2")  # within a minute: not written again
+        devices.seen(store, "VLC/3.0", 7, "x", "10.0.0.3")
+        session = core.Session("live", "c", "abc", "TF1", "7", "10.0.0.2", agent, 1.0, 3)
+        listed = core.devices_json(devices.all_raw(store), {"7": "salon"}, [session], 2e9 - 1)
+        self.assertEqual(listed, [])  # forgotten after 90 days
+        listed = core.devices_json(devices.all_raw(store), {"7": "salon"}, [session], json.loads(store.values["0a1b2c3d4e5f"])["seen"])
+        self.assertEqual(len(listed), 1)
+        self.assertEqual((listed[0]["user"], listed[0]["version"], listed[0]["sessions"]), ("salon", "0.3.27", 1))
+        self.assertEqual(core.device_users(devices.all_raw(store)), ["7"])
+        self.assertIsNone(core.app_version("<script>"))
