@@ -14,12 +14,15 @@ data class VodDisplay(
     val hiddenRows: Set<VodRow.Kind> = emptySet(),
     val posterSize: PosterSize = PosterSize.NORMAL,
     val hideTheater: Boolean = false,
-    val defaults: Map<VodKind, VodFilter> = emptyMap()
+    val defaults: Map<VodKind, VodFilter> = emptyMap(),
+    // File played when none is chosen: the language of the TV first by default
+    val versionOrder: VersionOrder = VersionOrder.LANGUAGE_FIRST
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("hiddenRows", JSONArray(hiddenRows.map { it.name }))
         put("posterSize", posterSize.name)
         put("hideTheater", hideTheater)
+        put("versionOrder", versionOrder.name)
         put("defaults", JSONObject().apply {
             defaults.forEach { (kind, filter) ->
                 put(
@@ -60,7 +63,8 @@ data class VodDisplay(
                 hiddenRows = hidden,
                 posterSize = PosterSize.entries.firstOrNull { it.name == json.optString("posterSize") } ?: PosterSize.NORMAL,
                 hideTheater = json.optBoolean("hideTheater", false),
-                defaults = defaults
+                defaults = defaults,
+                versionOrder = VersionOrder.entries.firstOrNull { it.name == json.optString("versionOrder") } ?: VersionOrder.LANGUAGE_FIRST
             )
         }
 
