@@ -77,9 +77,24 @@ class DispatcharrClient(
     private suspend fun teleApi(): Set<String> {
         teleApiFeatures?.let { return it }
         if (baseUrl.isBlank()) return emptySet()
-        val features = TeleApi.features(getObject("$baseUrl${TeleApi.INFO_PATH}")) ?: emptySet()
+        val features = TeleApi.features(getPluginInfo()) ?: emptySet()
         if (features.isNotEmpty()) Log.i(TAG, "Télé API plugin: $features")
         return features.also { teleApiFeatures = it }
+    }
+
+    /** Answer of the plugin info endpoint; null, silently, when it is not a JSON object (plugin missing). */
+    private suspend fun getPluginInfo(): JSONObject? = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("$baseUrl${TeleApi.INFO_PATH}").get().build()
+        try {
+            client.newCall(request).executeCancellable { response ->
+                // Without the plugin, the web interface of Dispatcharr answers with its HTML page: not an error
+                if (!response.isSuccessful) null
+                else runCatching { JSONObject(HttpClients.jsonString(response.body)) }.getOrNull()
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        }
     }
 
     /** Channels of the plugin, read by pages; null when a page failed (the standard API takes over). */
