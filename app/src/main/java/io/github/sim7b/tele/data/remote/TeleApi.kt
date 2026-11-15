@@ -19,6 +19,8 @@ object TeleApi {
     const val SLOTS_PATH = "/api/tele/v1/slots/"
     const val VOD_LANGUAGES_PATH = "/api/tele/v1/vod/languages/"
     const val VOD_MEDIA_PATH = "/api/tele/v1/vod/media/"
+    const val STREAM_HEALTH_PATH = "/api/tele/v1/streams/health/"
+    const val MAX_HEALTH_IDS = 100
     const val RELEASE_PATH = "/api/tele/v1/sessions/release/"
     const val CHANNELS_PAGE_SIZE = 2000
 
@@ -80,6 +82,14 @@ object TeleApi {
     }
 
     private const val MAX_TITLE = 512
+
+    /** Ids of the streams that failed lately, from the answer of [STREAM_HEALTH_PATH]. */
+    fun unhealthyStreams(answer: JSONObject?): Set<String> {
+        val streams = answer?.optJSONObject("streams") ?: return emptySet()
+        return streams.keys().asSequence().take(MAX_HEALTH_IDS)
+            .filter { streams.optJSONObject(it)?.optBoolean("unhealthy", false) == true }
+            .toSet()
+    }
 
     /** Body asking to close every session of this TV (same address and User-Agent as the request). */
     fun releaseThisDeviceBody(): String = JSONObject().put("this_device", true).toString()

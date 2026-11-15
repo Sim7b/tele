@@ -205,6 +205,14 @@ class VodLanguagesViewTest(ViewTest):
         for bad in ("/?kind=movie&uuid=../x", "/?kind=series&uuid=" + uuid, "/"):
             self.assertEqual(self.call(views.VodMediaView, path=bad, who=user()).status_code, 400)
 
+    def test_stream_health(self):
+        with mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch("tele_api.health.scores", return_value={"7": {"score": 1.0, "unhealthy": True}}) as scores:
+            response = self.call(views.StreamHealthView, path="/?ids=7,8", who=user())
+        self.assertTrue(response.data["streams"]["7"]["unhealthy"])
+        self.assertEqual(list(scores.call_args.args[1]), [7, 8])
+        self.assertEqual(self.call(views.StreamHealthView, path="/?ids=x", who=user()).status_code, 400)
+
     def test_admin_endpoints_are_for_admins_only(self):
         for view in (views.AdminProbesView, views.AdminExportView):
             self.assertEqual(self.call(view, who=user()).status_code, 403)

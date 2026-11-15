@@ -539,3 +539,81 @@ def quality_summary(info: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any
         "audio_channels": max((a.get("channels") or 0 for a in audio), default=0) or None,
         "audio_codecs": sorted({a["codec_name"] for a in audio if a.get("codec_name")}),
     }
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Stream health, from the Dispatcharr events
+
+HEALTH_HALF_LIFE = 6 * 3600
+# Weight of an event: a failure counts fully, a buffering stall less
+HEALTH_WEIGHTS = {"failure": 1.0, "buffering": 0.3}
+# Decayed failures from which a stream is put after the others (about one failure in the last hours)
+UNHEALTHY_SCORE = 0.8
+MAX_HEALTH_IDS = 100
+
+
+def _decayed(value: float, since: float, now: float) -> float:
+    if since <= 0 or now <= since:
+        return value
+    return value * 0.5 ** ((now - since) / HEALTH_HALF_LIFE)
+
+
+def health_update(state: Optional[Mapping[str, Any]], kind: str, now: float) -> Dict[str, Any]:
+    """A stream health after one event ("failure", "buffering" or "play"), failures decaying by half every
+    HEALTH_HALF_LIFE."""
+    state = state or {}
+    failures = _decayed(to_float(state.get("f"), 0.0) or 0.0, to_float(state.get("t"), 0.0) or 0.0, now)
+    plays = _decayed(to_float(state.get("p"), 0.0) or 0.0, to_float(state.get("t"), 0.0) or 0.0, now)
+    last_failure = to_float(state.get("lf"), 0.0) or 0.0
+    if kind == "play":
+        plays += 1.0
+    else:
+        failures += HEALTH_WEIGHTS.get(kind, 0.0)
+        last_failure = now
+    return {"f": round(failures, 4), "p": round(plays, 4), "t": now, "lf": last_failure}
+
+
+def health_score(state: Optional[Mapping[str, Any]], now: float) -> float:
+    if not state:
+        return 0.0
+    return _decayed(to_float(state.get("f"), 0.0) or 0.0, to_float(state.get("t"), 0.0) or 0.0, now)
+
+
+def health_json(state: Optional[Mapping[str, Any]], now: float) -> Dict[str, Any]:
+    score = health_score(state, now)
+    last = to_float((state or {}).get("lf"), 0.0) or 0.0
+    return {"score": round(score, 3), "unhealthy": score >= UNHEALTHY_SCORE, "last_failure": last or None}
+
+
+def event_health(event: Any, payload: Any) -> Optional[Tuple[int, str]]:
+    """(stream id, kind of event) of a Dispatcharr system event, None when it says nothing of a stream's health.
+
+    A switch asked for by a viewer says nothing of the stream left, so stream_switch is not counted; a failover
+    (the stream stopped sending) and an error are failures, buffering a lesser one, a start a play.
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    kinds = {"channel_error": ("stream_id", "failure"), "channel_failover": ("previous_stream_id", "failure"),
+             "channel_buffering": ("stream_id", "buffering"), "channel_start": ("stream_id", "play")}
+    rule = kinds.get(to_text(event) or "")
+    if rule is None:
+        return None
+    stream_id = to_int(payload.get(rule[0]))
+    if stream_id is None or stream_id <= 0:
+        return None
+    return stream_id, rule[1]
+
+
+def parse_ids(value: Any) -> Optional[List[int]]:
+    """"1,2,3" -> [1, 2, 3]; None when malformed or too many."""
+    text = to_text(value) or ""
+    parts = [p for p in text.split(",") if p.strip()]
+    if not parts or len(parts) > MAX_HEALTH_IDS:
+        return None
+    ids = []
+    for part in parts:
+        number = to_int(part)
+        if number is None or number <= 0:
+            return None
+        ids.append(number)
+    return ids

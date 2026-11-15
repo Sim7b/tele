@@ -377,7 +377,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             client.getChannelStreams(serverId).getOrNull()
         }?.also { streamsCache[key] = SystemClock.elapsedRealtime() to it }
         if (streams.isNullOrEmpty()) return emptyList()
-        return preference.sort(streams).map { it.url } + channel.streamUrl
+        // The streams that failed lately on the server (Télé API plugin) come last, in the same order
+        val (failing, healthy) = preference.sort(streams).partition { it.recentFailures }
+        return (healthy + failing).map { it.url } + channel.streamUrl
     }
 
     /**

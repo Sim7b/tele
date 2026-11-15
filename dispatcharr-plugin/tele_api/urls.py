@@ -8,6 +8,7 @@ urlpatterns = [
     path("v1/slots/", views.SlotsView.as_view(), name="slots"),
     path("v1/sessions/", views.SessionsView.as_view(), name="sessions"),
     path("v1/sessions/release/", views.ReleaseSessionsView.as_view(), name="sessions-release"),
+    path("v1/streams/health/", views.StreamHealthView.as_view(), name="streams-health"),
     path("v1/vod/languages/", views.VodLanguagesView.as_view(), name="vod-languages"),
     path("v1/vod/media/", views.VodMediaView.as_view(), name="vod-media"),
     path("v1/admin/probes/", views.AdminProbesView.as_view(), name="admin-probes"),

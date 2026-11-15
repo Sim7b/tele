@@ -13,7 +13,9 @@ data class StreamSource(
     // Video height measured by Dispatcharr the last time the stream went through its proxy
     val measuredHeight: Int? = null,
     // One of the provider streams of a version of a grouped channel, listed under that version
-    val subStream: Boolean = false
+    val subStream: Boolean = false,
+    // Failed lately on the server (Télé API plugin, from the Dispatcharr events): tried after the others
+    val recentFailures: Boolean = false
 )
 
 data class EpgProgram(

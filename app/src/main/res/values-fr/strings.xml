@@ -681,6 +681,7 @@
     <string name="vod_not_specified">Non précisé par le fournisseur</string>
     <string name="vod_lang_estimated">%1$s (estimé)</string>
     <string name="vod_lang_measured">%1$s (mesuré)</string>
+    <string name="stream_recent_failures">Échecs récents</string>
     <string name="subtitles_search">Chercher des sous-titres en ligne</string>
     <string name="subtitles_search_title">Sous-titres OpenSubtitles</string>
     <string name="subtitles_button">Sous-titres</string>

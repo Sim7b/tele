@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -275,6 +275,21 @@ class ReleaseSessionsView(TeleView):
         if released:
             logger.info("Télé API: %d session(s) released by user %s", len(released), user.pk)
         return Response({"api": core.API_VERSION, "released": released})
+
+
+class StreamHealthView(TeleView):
+    """Recent health of provider streams (?ids=1,2,3, at most 100): decayed failures, unhealthy flag."""
+
+    def get(self, request):
+        from . import health
+
+        ids = core.parse_ids(request.query_params.get("ids"))
+        if ids is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"api": core.API_VERSION, "streams": health.scores(client, ids)})
 
 
 class VodLanguagesView(TeleView):

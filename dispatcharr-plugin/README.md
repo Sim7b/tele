@@ -14,6 +14,9 @@ no admin key needed:
 - **VOD languages measured**: `ffprobe` reads the audio and subtitle tracks of one file per category whose
   name leaves its languages uncertain, without ever taking a connection a viewer needs (below). Télé uses the
   measure in place of what the category name tells.
+- **Stream health**: the failures of each provider stream (errors, failovers, buffering) are counted from
+  the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
+  marks them in its stream picker.
 - **A page for admins** (`/api/tele/ui/`, the link of the plugin card): free connections, every open session
   (with a button to close it), and the probed categories with their languages.
 
@@ -153,6 +156,17 @@ and is left out of the total.
 User-Agent for Dispatcharr (`TV-AndroidTV/1.0 (Android TV; Tele-1a2b3c4d5e6f)`), so two TVs behind the same
 address never look the same; with a custom User-Agent, Télé does not close sessions on its own. Admins also get `ip` and `user_agent`, and with `?all=1` the sessions of
 every user with their `user`.
+
+### `GET /api/tele/v1/streams/health/?ids=7,8`
+
+```json
+{"api": 1, "streams": {"7": {"score": 1.4, "unhealthy": true, "last_failure": 1762720000.0},
+                       "8": {"score": 0.0, "unhealthy": false, "last_failure": null}}}
+```
+
+At most 100 ids. The score is the number of failures weighted by age (half every 6 hours; a buffering stall
+counts 0.3); a stream is unhealthy from 0.8. The counts come from the **Stream health** action, which
+Dispatcharr runs on its `channel_error`, `channel_failover`, `channel_buffering` and `channel_start` events.
 
 ### `GET /api/tele/v1/vod/languages/`
 

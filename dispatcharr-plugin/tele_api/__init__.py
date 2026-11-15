@@ -33,6 +33,14 @@ class Plugin:
     def run(self, action, params, context):
         if action == "status":
             return {"status": "ok", "message": status_message()}
+        if action == "stream_health":
+            from . import data, health
+
+            client = data.redis_client()
+            if params and "event" in params:
+                health.record(client, params.get("event"), params.get("payload"))
+                return {"status": "ok"}
+            return {"status": "ok", "message": f"{health.tracked(client) if client else 0} streams with recent failures or plays"}
         if action == "probe_now":
             tasks.probe_vod_languages.delay()
             return {"status": "queued", "message": "VOD language probes started"}

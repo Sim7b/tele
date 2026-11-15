@@ -498,11 +498,20 @@ class DispatcharrClient(
                         )
                     )
                 }
-                Result.success(streams)
+                Result.success(withHealth(streams))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /** [streams] with the ones that failed lately on the server marked (Télé API plugin); unchanged without it. */
+    private suspend fun withHealth(streams: List<StreamSource>): List<StreamSource> {
+        val ids = streams.mapNotNull { it.id?.takeIf { id -> id.toIntOrNull() != null } }.take(TeleApi.MAX_HEALTH_IDS)
+        if (ids.isEmpty() || "stream_health" !in teleApi()) return streams
+        val failing = TeleApi.unhealthyStreams(getObject("$baseUrl${TeleApi.STREAM_HEALTH_PATH}?ids=${ids.joinToString(",")}"))
+        if (failing.isEmpty()) return streams
+        return streams.map { if (it.id in failing) it.copy(recentFailures = true) else it }
     }
 
     /**

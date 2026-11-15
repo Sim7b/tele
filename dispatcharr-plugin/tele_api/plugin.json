@@ -86,6 +86,19 @@
       "button_variant": "outline"
     },
     {
+      "id": "stream_health",
+      "label": "Stream health",
+      "description": "Counts the recent failures of each provider stream from the Dispatcharr events (errors, failovers, buffering): Télé tries the failing ones last. Runs by itself.",
+      "button_label": "Show",
+      "button_variant": "outline",
+      "events": [
+        "channel_error",
+        "channel_failover",
+        "channel_buffering",
+        "channel_start"
+      ]
+    },
+    {
       "id": "probe_now",
       "label": "Probe VOD languages now",
       "description": "Starts a run at once instead of waiting for the next one. Same rules: a free connection, one probe at a time.",

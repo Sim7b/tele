@@ -237,6 +237,29 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `streams that failed lately are marked`() = runBlocking {
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"api": 1, "features": ["stream_health"]}""")
+                "/api/m3u/accounts/" -> json("""[{"id": 1, "name": "P", "is_active": true}]""")
+                "/api/channels/channels/42/streams/" -> json(
+                    """[{"id": 7, "name": "A", "m3u_account": 1, "stream_hash": "a"},
+                        {"id": 8, "name": "B", "m3u_account": 1, "stream_hash": "b"}]"""
+                )
+                TeleApi.STREAM_HEALTH_PATH -> {
+                    assertEquals("7,8", request.url.queryParameter("ids"))
+                    json("""{"api": 1, "streams": {"7": {"score": 1.2, "unhealthy": true}, "8": {"score": 0, "unhealthy": false}}}""")
+                }
+                else -> null
+            }
+        }
+
+        val streams = client().getChannelStreams("42").getOrThrow()
+
+        assertEquals(listOf(true, false), streams.map { it.recentFailures })
+    }
+
+    @Test
     fun `parses the plugin answers defensively`() {
         assertNull(TeleApi.features(JSONObject("""{"api": 2, "features": ["channels"]}""")))
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))
