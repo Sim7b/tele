@@ -24,7 +24,8 @@ data class VodLanguages(val audio: Set<String> = emptySet(), val subtitles: Set<
  *   VOSE (Spanish), LEGENDADO (Portuguese), ALTYAZILI (Turkish), NAPISY (Polish), "SUB FR", "ENG SUBS";
  * - MULTI / DUAL: the local language and the original one; MULTI-SUB / MULTISUB: several subtitle languages
  *   (not several audio tracks), the local one most likely among them; VO: the original audio only;
- * - written in Arabic, or an Arabic group in Latin letters ("ARABIC MOVIES", "AR | FILMS"): foreign movies and
+ * - the Arabic code alone ("[AR] FILMS", "AR | SERIES"): Arabic audio;
+ * - written in Arabic, or an Arabic group in Latin letters ("ARABIC MOVIES", "AR | TURKISH SERIES"): foreign movies and
  *   series subtitled in Arabic, so the original audio (English when nothing tells) with Arabic subtitles,
  *   unless dubbed (مدبلج, "ARABIC DUBBED") or Arabic content (عربي, مصري, خليجي).
  */
@@ -283,8 +284,11 @@ object VodLanguageGuess {
             i++
         }
         val country = codes.filter { it !in tagCodes }.mapNotNull { CODES[it] }.toMutableSet()
-        // "AR | FILMS": the Arabic country code too
-        if (country.remove("ar")) arabicGroup = true
+        // "[AR] FILMS", "AR | SERIES": the Arabic code alone is Arabic audio; with another language or a subtitle tag
+        // ("AR | TURKISH SERIES", "AR | VOST"), read like a group written in Arabic
+        if (country.remove("ar")) {
+            if (explicit.isEmpty() && subtitles.isEmpty() && !local && !original && !multiSubtitles) explicit.add("ar") else arabicGroup = true
+        }
         val arabic = if (hasArabic(text)) readArabic(text) else NOTHING
         return Reading(
             explicit, country, subtitles, multi, local, localDefault, multiSubtitles, original, arabic = arabicGroup
