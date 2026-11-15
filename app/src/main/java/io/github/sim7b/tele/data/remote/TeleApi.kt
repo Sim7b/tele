@@ -52,7 +52,8 @@ object TeleApi {
             streamUrl = "$baseUrl/proxy/ts/stream/$uuid",
             tvgId = item.optStringOrNull("tvg_id") ?: "",
             isRadio = item.optBoolean("is_radio", false),
-            programs = listOfNotNull(program(item.optJSONObject("now"), uuid), program(item.optJSONObject("next"), uuid))
+            programs = listOfNotNull(program(item.optJSONObject("now"), uuid), program(item.optJSONObject("next"), uuid)),
+            catchupDays = item.optInt("catchup_days", 0).coerceIn(0, io.github.sim7b.tele.data.epg.Catchup.MAX_DAYS)
         )
     }
 

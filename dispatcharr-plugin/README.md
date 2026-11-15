@@ -137,9 +137,10 @@ nothing changed.
 Channel overrides are applied (name, number, group, logo, guide). The logo is
 `/api/channels/logos/<logo_id>/cache/`, the stream `/proxy/ts/stream/<uuid>`.
 
-### `GET /api/tele/v1/guide/?hours=24`
+### `GET /api/tele/v1/guide/?hours=24&past=1`
 
-The programs of the caller's channels from an hour ago to `hours` ahead (1-48), in the format of the
+The programs of the caller's channels from `past` hours ago (1-24: Télé asks for a day when channels have
+catch-up, for the replay) to `hours` ahead (1-48), in the format of the
 Dispatcharr grid: `{"results": [{"uuid": "<channel>", "programs": [{"id", "title", "sub_title",
 "description", "start", "end", "rating", "icon"}]}]}`. Only the channels the user may watch, descriptions cut at
 1000 characters. The window moves by whole hours and the answer has an `ETag`: `If-None-Match` answers 304

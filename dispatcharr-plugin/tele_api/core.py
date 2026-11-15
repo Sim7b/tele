@@ -738,11 +738,16 @@ MAX_PROGRAMS_PER_CHANNEL = 200
 MAX_DESCRIPTION = 1000
 
 
-def guide_window(now: float, hours: Any) -> Tuple[float, float]:
-    """(start, end) of the guide, on hour boundaries: the same window, so the same ETag, for a whole hour."""
+GUIDE_MAX_PAST_HOURS = 24
+
+
+def guide_window(now: float, hours: Any, past: Any = None) -> Tuple[float, float]:
+    """(start, end) of the guide, on hour boundaries: the same window, so the same ETag, for a whole hour.
+    [past]: hours of past programs (1-24, a day for the replay)."""
     span = query_int(hours, 24, 1, GUIDE_MAX_HOURS)
+    lookback = query_int(past, GUIDE_LOOKBACK_HOURS, 1, GUIDE_MAX_PAST_HOURS)
     hour = int(now // 3600) * 3600
-    return float(hour - GUIDE_LOOKBACK_HOURS * 3600), float(hour + (span + 1) * 3600)
+    return float(hour - lookback * 3600), float(hour + (span + 1) * 3600)
 
 
 def guide_program(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:

@@ -201,7 +201,7 @@ class GuideView(TeleView):
     has an ETag: If-None-Match answers 304 while the guide did not change."""
 
     def get(self, request):
-        start, end = core.guide_window(time.time(), request.query_params.get("hours"))
+        start, end = core.guide_window(time.time(), request.query_params.get("hours"), request.query_params.get("past"))
         results = data.guide(request.user, start, end)
         tag = core.etag([start, end, results])
         if core.etag_matches(request.headers.get("If-None-Match"), tag):

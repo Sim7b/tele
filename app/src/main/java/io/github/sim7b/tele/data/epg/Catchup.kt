@@ -71,7 +71,35 @@ object Catchup {
      */
     fun replayUrl(channel: Channel, startMillis: Long, endMillis: Long, now: Long): String? = when (val mode = channel.catchupMode) {
         null, "xc" -> xtreamReplayUrl(channel.streamUrl, startMillis, endMillis, channel.catchupZone)
+        DISPATCHARR -> dispatcharrReplayUrl(channel.streamUrl, startMillis, endMillis)
         else -> m3uReplayUrl(mode, channel.catchupSource, channel.streamUrl, startMillis, endMillis, now)
+    }
+
+    /** [Channel.catchupMode] of the Dispatcharr channels with catch-up (its timeshift, /proxy/catchup/). */
+    const val DISPATCHARR = "dispatcharr"
+
+    /**
+     * Catch-up URL of Dispatcharr from the live URL of a channel (`…/proxy/ts/stream/<uuid>` →
+     * `…/proxy/catchup/<uuid>?start=<epoch seconds>&duration=<minutes>`), played with the API key like the live
+     * stream. Null when the URL is not the one of a Dispatcharr channel.
+     */
+    fun dispatcharrReplayUrl(liveUrl: String, startMillis: Long, endMillis: Long): String? {
+        val url = liveUrl.toHttpUrlOrNull() ?: return null
+        val segments = url.pathSegments
+        val stream = segments.lastIndexOf("stream")
+        if (endMillis <= startMillis || stream < 2 || segments.size != stream + 2 ||
+            segments[stream - 1] != "ts" || segments[stream - 2] != "proxy"
+        ) return null
+        val uuid = segments[stream + 1].takeIf { it.isNotEmpty() } ?: return null
+        val builder = url.newBuilder().encodedPath("/").query(null)
+        segments.take(stream - 1).filter { it.isNotEmpty() }.forEach { builder.addPathSegment(it) }
+        return builder
+            .addPathSegment("catchup")
+            .addPathSegment(uuid)
+            .addQueryParameter("start", (startMillis / 1000).toString())
+            .addQueryParameter("duration", ((endMillis - startMillis + 59_999L) / 60_000L).toString())
+            .build()
+            .toString()
     }
 
     /**

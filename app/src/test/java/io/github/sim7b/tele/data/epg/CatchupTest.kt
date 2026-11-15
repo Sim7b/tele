@@ -57,4 +57,28 @@ class CatchupTest {
         assertEquals(0, XtreamClient.catchupDays(JSONObject("""{"tv_archive": 1, "tv_archive_duration": "999"}""")))
         assertEquals(0, XtreamClient.catchupDays(JSONObject("""{"tv_archive": 1}""")))
     }
+
+    @Test
+    fun `dispatcharr catch-up url from the live url of the channel`() {
+        val start = 1_794_254_400_000L
+        val url = Catchup.dispatcharrReplayUrl("https://tv.example/proxy/ts/stream/abc-123", start, start + 40 * 60_000L)
+        assertEquals("https://tv.example/proxy/catchup/abc-123?start=1794254400&duration=40", url)
+        // Behind a path prefix
+        assertEquals(
+            "https://example.org/dispatcharr/proxy/catchup/u1?start=1794254400&duration=1",
+            Catchup.dispatcharrReplayUrl("https://example.org/dispatcharr/proxy/ts/stream/u1", start, start + 30_000L)
+        )
+        assertNull(Catchup.dispatcharrReplayUrl("https://tv.example/proxy/ts/stream/", start, start + 60_000L))
+        assertNull(Catchup.dispatcharrReplayUrl("http://provider.example/live/u/p/1.ts", start, start + 60_000L))
+        assertNull(Catchup.dispatcharrReplayUrl("https://tv.example/proxy/ts/stream/abc", start, start))
+
+        val channel = io.github.sim7b.tele.data.model.DispatcharrChannel(
+            id = "1", uuid = "abc", name = "TF1", group = "", streamUrl = "https://tv.example/proxy/ts/stream/abc", catchupDays = 7
+        ).toChannel()
+        assertEquals(Catchup.DISPATCHARR, channel.catchupMode)
+        assertEquals(
+            "https://tv.example/proxy/catchup/abc?start=1794254400&duration=40",
+            Catchup.replayUrl(channel, start, start + 40 * 60_000L, start + 3_600_000L)
+        )
+    }
 }

@@ -183,6 +183,9 @@ class GuideTest(unittest.TestCase):
         self.assertEqual((start, end), (3600 * 99.0, 3600 * 125.0))
         self.assertEqual(core.guide_window(3600 * 100 + 3000, None), (start, end))
         self.assertEqual(core.guide_window(0, "9999")[1], 3600.0 * (core.GUIDE_MAX_HOURS + 1))
+        # A day of past programs for the replay, no more
+        self.assertEqual(core.guide_window(3600 * 100, "24", "24")[0], 3600 * 76.0)
+        self.assertEqual(core.guide_window(3600 * 100, "24", "999")[0], 3600 * 76.0)
 
     def test_program_and_channels(self):
         row = {"id": 5, "title": "Journal", "sub_title": None, "description": "x" * 5000, "start_time": NOW,

@@ -576,7 +576,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Program artwork in parallel with channels and guide: it only depends on the time
         val now = System.currentTimeMillis()
         val artworkDeferred = async { client.getProgramArtwork(now, now + ARTWORK_WINDOW_MS) }
-        val epgDeferred = async { client.getEpgGrid() }
+        // A day of past programs for the replay when the channels (of the cache) have catch-up
+        val pastHours = if (source.channels.any { it.catchupDays > 0 }) CATCHUP_PAST_HOURS else 1
+        val epgDeferred = async { client.getEpgGrid(pastHours = pastHours) }
         val channelsResult = client.getChannels()
         // Télé API plugin: the channels come with their current and next program, shown while the guide loads
         val nowNext = channelsResult.getOrNull()?.let { list ->
@@ -589,7 +591,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (source.programs.isEmpty()) source.programs = nowNext
             publishAll()
         }
-        val epgResult = epgDeferred.await()
+        // Catch-up found with the channels but not in the cache: the guide again, with the past day
+        val catchup = channelsResult.getOrNull()?.any { it.catchupDays > 0 } == true
+        val epgResult = if (catchup && pastHours == 1) {
+            epgDeferred.cancel()
+            client.getEpgGrid(pastHours = CATCHUP_PAST_HOURS)
+        } else {
+            epgDeferred.await()
+        }
         Log.i(TvPlayerManager.PERF_TAG, "Load: channels + guide in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
         channelsResult.onSuccess { dChannels ->
@@ -860,6 +869,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Channel streams kept for the automatic choice: zapping back to a channel costs no request
         private const val STREAMS_CACHE_MS = 10 * 60 * 1000L
         private const val SERVER_MESSAGE_EVERY_MS = 5 * 60 * 1000L
+        private const val CATCHUP_PAST_HOURS = 24
         // Past this delay the channel plays in server order rather than making the user wait
         private const val STREAMS_TIMEOUT_MS = 2_000L
     }

@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.remote
 
+import io.github.sim7b.tele.data.epg.Catchup
 import io.github.sim7b.tele.data.epg.EpgText
 import android.util.Log
 import io.github.sim7b.tele.BuildConfig
@@ -308,7 +309,8 @@ class DispatcharrClient(
             streamUrl = "$baseUrl/proxy/ts/stream/$uuid",
             // Replaced by the tvg_id of the linked EPGData when there is one
             tvgId = item.optStringOrNull("effective_tvg_id") ?: item.optStringOrNull("tvg_id") ?: "",
-            isRadio = item.optBoolean("effective_is_radio", item.optBoolean("is_radio", false))
+            isRadio = item.optBoolean("effective_is_radio", item.optBoolean("is_radio", false)),
+            catchupDays = if (item.optBoolean("is_catchup", false)) item.optInt("catchup_days", 0).coerceIn(0, Catchup.MAX_DAYS) else 0
         )
         return ParsedChannel(
             channel = channel,
@@ -323,7 +325,9 @@ class DispatcharrClient(
      */
     suspend fun getEpgGrid(
         days: Int = 1,
-        channelProfileId: String? = null
+        channelProfileId: String? = null,
+        // Hours of past programs: a day for the channels with catch-up, else the hour of the server grid
+        pastHours: Int = 1
     ): Result<List<DispatcharrEpgChannel>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext failure(R.string.error_dispatcharr_not_configured)
@@ -331,7 +335,7 @@ class DispatcharrClient(
 
         // Télé API plugin: the programs of the user's channels only, and nothing sent again while unchanged (304)
         if ("guide" in teleApi()) {
-            val url = "$baseUrl${TeleApi.GUIDE_PATH}?hours=${days.coerceIn(1, 2) * 24}"
+            val url = "$baseUrl${TeleApi.GUIDE_PATH}?hours=${days.coerceIn(1, 2) * 24}&past=${pastHours.coerceIn(1, 24)}"
             val cached = guideCache?.takeIf { it.first == url }
             val request = Request.Builder().url(url).get()
                 .apply { cached?.second?.let { header("If-None-Match", it) } }
@@ -353,6 +357,7 @@ class DispatcharrClient(
             ?: return@withContext failure(R.string.error_invalid_address)
 
         urlBuilder.addQueryParameter("days", days.toString())
+        if (pastHours > 1) urlBuilder.addQueryParameter("prev_days", "1")
         channelProfileId?.let { urlBuilder.addQueryParameter("channel_profile_id", it) }
 
         val request = Request.Builder()
