@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.32](https://github.com/Sim7b/tele/compare/v0.3.31...v0.3.32) (2026-11-15)
+
+### Features
+
+* **dispatcharr-plugin:** OpenSubtitles with the key of the server for every TV ([34e53f7](https://github.com/Sim7b/tele/commit/34e53f7a15b43fcd2af71812d1333b61bef769e1))
+* **vod:** subtitles through the Dispatcharr server when the TV has no OpenSubtitles key ([83e1afd](https://github.com/Sim7b/tele/commit/83e1afdddf85c1e21983e204c9069ba193701ba7))
+* **vod:** the file played first is in the language of the TV, then the best quality ([d7ff79d](https://github.com/Sim7b/tele/commit/d7ff79df7662e3b7d3588d81780f6f04ae11d3e7))
+
 ## [0.3.31](https://github.com/Sim7b/tele/compare/v0.3.30...v0.3.31) (2026-11-15)
 
 ### Features
