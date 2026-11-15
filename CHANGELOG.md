@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.30](https://github.com/Sim7b/tele/compare/v0.3.29...v0.3.30) (2026-11-15)
+
+### Features
+
+* **dispatcharr-plugin:** TMDB ids, background probes and a dashboard admin page ([e04d401](https://github.com/Sim7b/tele/commit/e04d4016460bde9438a2017a5f28f63bdd44fba1))
+* **vod:** Canal+ among the first three services in French, and no white box for an opaque logo ([9276b60](https://github.com/Sim7b/tele/commit/9276b60163d70e6a6554ecae0997637cbe10b1d3))
+* **vod:** group the Dispatcharr titles by the TMDB ids of the Télé API plugin ([0a6fb10](https://github.com/Sim7b/tele/commit/0a6fb101d718803fa247a98e8682edc9313e7d3b))
+
 ## [0.3.29](https://github.com/Sim7b/tele/compare/v0.3.28...v0.3.29) (2026-11-15)
 
 ### Features
