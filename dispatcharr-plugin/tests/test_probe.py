@@ -31,9 +31,100 @@ class FakeRedis:
     def delete(self, key):
         self.values.pop(key, None)
 
+    def lrange(self, key, start, end):
+        return list(self.values.get(key, []))
+
+    def rpush(self, key, value):
+        self.values.setdefault(key, []).append(value)
+
+    def lindex(self, key, index):
+        items = self.values.get(key, [])
+        return items[index] if items else None
+
+    def lrem(self, key, count, value):
+        if value in self.values.get(key, []):
+            self.values[key].remove(value)
+
 
 def ffprobe_output(*streams):
     return json.dumps({"streams": list(streams)})
+
+
+class MediaInfoTest(unittest.TestCase):
+    def test_xtream_info_format_with_quality(self):
+        output = json.dumps({
+            "streams": [
+                {"codec_type": "video", "codec_name": "hevc", "width": 3840, "height": 1600, "color_transfer": "smpte2084"},
+                {"codec_type": "video", "codec_name": "mjpeg", "disposition": {"attached_pic": 1}},
+                {"codec_type": "audio", "codec_name": "eac3", "channels": 6, "tags": {"language": "fre"}},
+                {"codec_type": "audio", "codec_name": "truehd", "channels": 8, "profile": "Dolby TrueHD + Dolby Atmos",
+                 "tags": {"language": "eng"}},
+                {"codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "fre"}, "disposition": {"forced": 1}},
+            ],
+            "format": {"bit_rate": "25000000", "duration": "7260.5", "filename": "http://u:p@provider/x.mkv"},
+        })
+        info = core.media_info(output)
+        self.assertEqual(info["video"]["codec_name"], "hevc")
+        self.assertEqual(info["video"]["height"], 1600)
+        self.assertEqual([a["tags"] for a in info["audio"]], [{"language": "fr"}, {"language": "en"}])
+        self.assertTrue(info["subtitles"][0]["forced"])
+        self.assertEqual((info["bitrate"], info["duration_secs"]), (25000, 7260))
+        # The address of the file (credentials) is never kept
+        self.assertNotIn("provider", json.dumps(info))
+        summary = core.quality_summary(info)
+        self.assertEqual((summary["height"], summary["hdr"], summary["audio_channels"]), (1600, True, 8))
+        self.assertEqual(summary["audio_codecs"], ["eac3", "truehd"])
+
+    def test_uuids(self):
+        self.assertEqual(core.valid_uuid("0A1B2C3D-0000-4000-8000-000000000000"), "0a1b2c3d-0000-4000-8000-000000000000")
+        for value in (None, "", "x", "../../etc", "0a1b2c3d-0000-4000-8000-00000000000g"):
+            self.assertIsNone(core.valid_uuid(value))
+
+
+class TitleQueueTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        patcher = mock.patch.object(probe, "data_dir", return_value=self.dir.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.redis = FakeRedis()
+        for patcher in (mock.patch.object(probe.time, "sleep"),
+                        mock.patch.object(probe, "free_profile", return_value=SimpleNamespace(id=1))):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_queue_is_deduplicated_and_bounded(self):
+        self.assertEqual(probe.request_title(self.redis, "movie", "a"), "queued")
+        self.assertEqual(probe.request_title(self.redis, "movie", "a"), "queued")
+        self.assertEqual(len(self.redis.values[probe.TITLE_QUEUE]), 1)
+        for i in range(probe.MAX_QUEUED_TITLES):
+            probe.request_title(self.redis, "movie", f"t{i}")
+        self.assertEqual(probe.request_title(self.redis, "movie", "late"), "full")
+
+    def test_queued_titles_are_probed_and_kept(self):
+        uuid = "0a1b2c3d-0000-4000-8000-000000000000"
+        probe.request_title(self.redis, "movie", uuid)
+        info = {"audio": [{"tags": {"language": "en"}}], "subtitles": []}
+        with mock.patch.object(probe, "title_relation", return_value=SimpleNamespace(m3u_account=None)), \
+                mock.patch.object(probe, "probe_file", return_value=(True, info)):
+            self.assertEqual(probe.probe_titles(self.redis, 1, 5, time.monotonic()), 1)
+        self.assertEqual(probe.title_result("movie", uuid)["info"], info)
+        self.assertEqual(self.redis.values[probe.TITLE_QUEUE], [])
+
+    def test_no_room_keeps_the_title_queued(self):
+        uuid = "0a1b2c3d-0000-4000-8000-000000000000"
+        probe.request_title(self.redis, "movie", uuid)
+        with mock.patch.object(probe, "title_relation", return_value=SimpleNamespace(m3u_account=None)), \
+                mock.patch.object(probe, "free_profile", return_value=None):
+            self.assertEqual(probe.probe_titles(self.redis, 1, 5, time.monotonic()), 0)
+        self.assertEqual(len(self.redis.values[probe.TITLE_QUEUE]), 1)
+
+    def test_kept_titles_are_bounded(self):
+        with mock.patch.object(probe, "MAX_KEPT_TITLES", 3):
+            for i in range(5):
+                probe.save_title("movie", f"t{i}", {"status": "ok", "at": float(i), "info": {}})
+        self.assertEqual(sorted(probe._read(probe.titles_path())), ["movie:t2", "movie:t3", "movie:t4"])
 
 
 class ParseTest(unittest.TestCase):
@@ -125,7 +216,7 @@ class StorageTest(unittest.TestCase):
 class RunTest(unittest.TestCase):
     def setUp(self):
         self.redis = FakeRedis()
-        for target, value in (("load_results", {}), ("free_profile", SimpleNamespace(id=1))):
+        for target, value in (("load_results", {}), ("free_profile", SimpleNamespace(id=1)), ("probe_titles", 0)):
             patcher = mock.patch.object(probe, target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)

@@ -18,6 +18,7 @@ object TeleApi {
     const val CHANNELS_PATH = "/api/tele/v1/channels/"
     const val SLOTS_PATH = "/api/tele/v1/slots/"
     const val VOD_LANGUAGES_PATH = "/api/tele/v1/vod/languages/"
+    const val VOD_MEDIA_PATH = "/api/tele/v1/vod/media/"
     const val RELEASE_PATH = "/api/tele/v1/sessions/release/"
     const val CHANNELS_PAGE_SIZE = 2000
 

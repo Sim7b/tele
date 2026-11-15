@@ -668,6 +668,9 @@ class VodRepository(
         return buildDetails(title)
     }
 
+    /** Sheet of [title] built again (a file was being measured on the server: its description may be there). */
+    suspend fun refreshDetails(title: VodTitle): VodDetails = buildDetails(title)
+
     /** The same files of the same sources: a sheet kept for one is still right for the other. */
     private fun sameFiles(kept: VodTitle, current: VodTitle): Boolean =
         kept.entries.map { it.sourceId to it.providerId }.toSet() == current.entries.map { it.sourceId to it.providerId }.toSet()
@@ -726,13 +729,15 @@ class VodRepository(
             director = parts.firstNotNullOfOrNull { it.director },
             cast = parts.firstOrNull { it.cast.isNotEmpty() }?.cast.orEmpty(),
             versions = versions,
-            seasons = seasons(episodes)
+            seasons = seasons(episodes),
+            mediaPending = parts.any { it.mediaPending }
         )
         val enrichment = VodMetadata.enrich(merged, episodes.map { it.season }.toSet(), settings.tmdbKey.value.takeIf { it.isNotBlank() })
         val result = enrichment?.let { enrich(base, it, preferEnrichment = settings.tmdbKey.value.isNotBlank()) } ?: base
         synchronized(details) { details[title.key] = result }
-        // Kept only when a source answered: a sheet without its files is not worth showing again
-        if (parts.isNotEmpty() || m3uEntries.isNotEmpty()) {
+        // Kept only when a source answered: a sheet without its files is not worth showing again; nor while a
+        // file is being measured (the sheet is built again once it is)
+        if ((parts.isNotEmpty() || m3uEntries.isNotEmpty()) && !result.mediaPending) {
             withContext(Dispatchers.IO) { settings.vodSnapshots.saveDetails(title.key, result) }
         }
         return result

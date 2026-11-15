@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 TASK_NAME = "tele_api.probe_vod_languages"
 SCHEDULE_NAME = "Télé API: VOD languages"
 LOCK_KEY = "tele_api:probe:lock"
+# Titles asked for by a sheet of Télé: probed before the categories
+TITLE_QUEUE = "tele_api:probe:titles"
+MAX_QUEUED_TITLES = 50
+MAX_KEPT_TITLES = 5000
 YIELD_KEY = "tele_api:probe:yield"
 LOCK_TTL = 15 * 60
 # A run stops after this long, the next one goes on (every 10 minutes)
@@ -57,10 +61,13 @@ def results_path() -> str:
     return os.path.join(data_dir(), "vod_languages.json")
 
 
-def load_results() -> Dict[str, Dict[str, Any]]:
-    """Results by category id; empty when the file is missing or damaged."""
+def titles_path() -> str:
+    return os.path.join(data_dir(), "vod_media.json")
+
+
+def _read(path: str) -> Dict[str, Dict[str, Any]]:
     try:
-        with open(results_path(), encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError):
         return {}
@@ -68,23 +75,63 @@ def load_results() -> Dict[str, Dict[str, Any]]:
     return categories if isinstance(categories, dict) else {}
 
 
+def _write(path: str, results: Dict[str, Dict[str, Any]]) -> None:
+    os.makedirs(data_dir(), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=data_dir(), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"version": FILE_VERSION, "categories": results}, fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def title_key(kind: str, uuid: str) -> str:
+    return f"{kind}:{uuid}"
+
+
+def title_result(kind: str, uuid: str) -> Optional[Dict[str, Any]]:
+    return _read(titles_path()).get(title_key(kind, uuid))
+
+
+def save_title(kind: str, uuid: str, entry: Dict[str, Any]) -> None:
+    """Keeps the result of a title probe; the oldest ones go beyond MAX_KEPT_TITLES."""
+    with _file_lock:
+        results = _read(titles_path())
+        results[title_key(kind, uuid)] = entry
+        if len(results) > MAX_KEPT_TITLES:
+            for key, _ in sorted(results.items(), key=lambda item: item[1].get("at") or 0)[: len(results) - MAX_KEPT_TITLES]:
+                results.pop(key, None)
+        _write(titles_path(), results)
+
+
+def request_title(redis_client, kind: str, uuid: str) -> str:
+    """Asks for a title to be probed: "queued", or "full" when too many titles wait already."""
+    key = title_key(kind, uuid)
+    queued = [core.to_text(k) for k in redis_client.lrange(TITLE_QUEUE, 0, -1)]
+    if key in queued:
+        return "queued"
+    if len(queued) >= MAX_QUEUED_TITLES:
+        return "full"
+    redis_client.rpush(TITLE_QUEUE, key)
+    return "queued"
+
+
+def load_results() -> Dict[str, Dict[str, Any]]:
+    """Results by category id; empty when the file is missing or damaged."""
+    return _read(results_path())
+
+
 def save_result(category_id: int, entry: Dict[str, Any]) -> None:
     """Writes one result (atomic replace of the file)."""
     with _file_lock:
         results = load_results()
         results[str(category_id)] = entry
-        os.makedirs(data_dir(), exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=data_dir(), suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"version": FILE_VERSION, "categories": results}, fh, ensure_ascii=False)
-            os.replace(tmp, results_path())
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        _write(results_path(), results)
 
 
 def measured_categories() -> List[Dict[str, Any]]:
@@ -195,7 +242,7 @@ def run_ffprobe(url: str, user_agent: Optional[str], redis_client) -> Optional[s
         "-protocol_whitelist", PROTOCOLS,
         "-rw_timeout", "15000000",
         "-probesize", "5000000", "-analyzeduration", "5000000",
-        "-show_streams", "-of", "json",
+        "-show_streams", "-show_format", "-of", "json",
     ]
     if user_agent:
         command += ["-user_agent", user_agent]
@@ -270,13 +317,13 @@ def safe_url(url: str, trusted_host: Optional[str], user_agent: Optional[str]) -
     return None
 
 
-def probe_one(category, relation, profile, redis_client, previous: Dict[str, Any]) -> bool:
-    """Probes one file of [category] on [profile]; False when the slot could not be reserved."""
+def probe_file(relation, profile, redis_client) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """(slot reserved, media info) of the file of [relation] probed on [profile]."""
     from apps.m3u.connection_pool import release_profile_slot, reserve_profile_slot
 
     reserved, _, _ = reserve_profile_slot(profile, redis_client)
     if not reserved:
-        return False
+        return False, None
     try:
         url = relation.get_stream_url(profile)
         account = relation.m3u_account
@@ -288,8 +335,15 @@ def probe_one(category, relation, profile, redis_client, previous: Dict[str, Any
         output = run_ffprobe(url, user_agent, redis_client) if url else None
     finally:
         release_profile_slot(profile.id, redis_client)
+    return True, core.media_info(output) if output else None
 
-    languages = core.parse_probe(output) if output else None
+
+def probe_one(category, relation, profile, redis_client, previous: Dict[str, Any]) -> bool:
+    """Probes one file of [category] on [profile]; False when the slot could not be reserved."""
+    reserved, info = probe_file(relation, profile, redis_client)
+    if not reserved:
+        return False
+    languages = {"audio": core.languages_of(info["audio"]), "subtitles": core.languages_of(info["subtitles"])} if info else None
     entry = {
         "name": category.name,
         "type": category.category_type,
@@ -302,7 +356,7 @@ def probe_one(category, relation, profile, redis_client, previous: Dict[str, Any
             return True  # Stopped for a viewer: tried again later, not counted as a failure
         entry.update(status="failed", attempts=(previous.get("attempts") or 0) + 1)
     else:
-        entry.update(status="ok", attempts=0, **languages)
+        entry.update(status="ok", attempts=0, quality=core.quality_summary(info), **languages)
     save_result(category.id, entry)
     logger.info("Télé API: category %s probed (%s)", category.id, entry["status"])
     return True
@@ -327,11 +381,7 @@ def forget(category_id: Optional[int] = None) -> None:
     with _file_lock:
         results = {} if category_id is None else load_results()
         results.pop(str(category_id), None)
-        os.makedirs(data_dir(), exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=data_dir(), suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump({"version": FILE_VERSION, "categories": results}, fh, ensure_ascii=False)
-        os.replace(tmp, results_path())
+        _write(results_path(), results)
 
 
 def summary() -> Dict[str, int]:
@@ -354,6 +404,48 @@ def export() -> Dict[str, Any]:
     return core.export_cases(load_results(), time.time())
 
 
+def title_relation(kind: str, uuid: str):
+    """A file of the movie or episode [uuid] at an active Xtream account, None when unknown."""
+    from apps.vod.models import M3UEpisodeRelation, M3UMovieRelation
+
+    model, field = (M3UMovieRelation, "movie__uuid") if kind == "movie" else (M3UEpisodeRelation, "episode__uuid")
+    return (
+        model.objects.filter(**{field: uuid}, m3u_account__is_active=True, m3u_account__account_type="XC")
+        .select_related("m3u_account").order_by("-updated_at").first()
+    )
+
+
+def probe_titles(redis_client, min_free: int, pause: int, started: float) -> int:
+    """Probes the titles asked for by Télé sheets, oldest first, then removes them from the queue."""
+    probed = 0
+    while time.monotonic() - started <= RUN_BUDGET and not must_yield(redis_client):
+        key = core.to_text(redis_client.lindex(TITLE_QUEUE, 0))
+        if not key:
+            break
+        kind, _, uuid = key.partition(":")
+        relation = title_relation(kind, uuid) if kind in core.MEDIA_KINDS and core.valid_uuid(uuid) else None
+        if relation is None:
+            redis_client.lrem(TITLE_QUEUE, 1, key)
+            continue
+        profile = free_profile(relation.m3u_account, redis_client, min_free)
+        if profile is None:
+            break  # No room now: the title waits for the next run
+        reserved, info = probe_file(relation, profile, redis_client)
+        if not reserved:
+            break
+        if info is None and must_yield(redis_client):
+            break  # Stopped for a viewer: probed at the next run
+        previous = title_result(kind, uuid) or {}
+        if info is None:
+            save_title(kind, uuid, {"status": "failed", "at": time.time(), "attempts": (previous.get("attempts") or 0) + 1})
+        else:
+            save_title(kind, uuid, {"status": "ok", "at": time.time(), "info": info})
+        redis_client.lrem(TITLE_QUEUE, 1, key)
+        probed += 1
+        time.sleep(pause)
+    return probed
+
+
 def run(settings: Dict[str, Any]) -> int:
     """One run: probes categories one at a time until done, the time budget is spent or a viewer needs room."""
     from django.db import close_old_connections
@@ -372,6 +464,7 @@ def run(settings: Dict[str, Any]) -> int:
     started = time.monotonic()
     probed = 0
     try:
+        probed += probe_titles(redis_client, min_free, pause, started)
         results = load_results()
         for category, relation in candidates(settings, results, time.time()):
             if time.monotonic() - started > RUN_BUDGET or must_yield(redis_client):

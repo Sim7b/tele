@@ -174,6 +174,9 @@ private const val FRAME_RATE_SETTLE_MS = 1_500L
 private const val WATCH_NEXT_SIZE = 10
 private const val WATCH_NEXT_DELAY_MS = 3_000L
 private const val WELCOME_MAX_MS = 15_000L
+// Sheet whose file is being measured on the server: built again every 20 s, 4 times at most
+private const val MEDIA_REFRESH_DELAY_MS = 20_000L
+private const val MEDIA_REFRESH_ATTEMPTS = 4
 // After the live TV is loaded: the movies and series library is prepared without slowing the startup
 private const val VOD_PRELOAD_DELAY_MS = 15_000L
 // Replays of TV programs go through the movie player, with this prefix on their key
@@ -972,6 +975,21 @@ class MainActivity : ComponentActivity() {
                                 var details by remember(screen.titleKey) { mutableStateOf(viewModel.vod.cachedDetails(screen.titleKey)) }
                                 var failed by remember(screen.titleKey) { mutableStateOf(false) }
                                 var attempt by remember(screen.titleKey) { mutableIntStateOf(0) }
+                                // A file being measured on the server (Télé API plugin): the sheet is built again a few times
+                                LaunchedEffect(screen.titleKey, details?.mediaPending) {
+                                    if (details?.mediaPending != true) return@LaunchedEffect
+                                    repeat(MEDIA_REFRESH_ATTEMPTS) {
+                                        delay(MEDIA_REFRESH_DELAY_MS)
+                                        val fresh = try {
+                                            viewModel.vod.refreshDetails(title)
+                                        } catch (e: Exception) {
+                                            if (e is CancellationException) throw e
+                                            return@LaunchedEffect
+                                        }
+                                        details = fresh
+                                        if (!fresh.mediaPending) return@LaunchedEffect
+                                    }
+                                }
                                 LaunchedEffect(screen.titleKey, attempt) {
                                     if (details != null) return@LaunchedEffect
                                     failed = false

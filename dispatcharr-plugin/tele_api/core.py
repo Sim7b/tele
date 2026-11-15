@@ -334,36 +334,21 @@ def track_language(value: Any) -> Optional[str]:
 def parse_probe(output: Any) -> Optional[Dict[str, List[str]]]:
     """Audio and subtitle languages of an `ffprobe -show_streams -of json` output; None when unreadable.
 
-    Tracks without a language tag are counted (has_audio) but give no language.
+    Tracks without a language tag are counted (the file has audio) but give no language.
     """
-    text = to_text(output)
-    if not text or len(text) > MAX_PROBE_OUTPUT:
+    info = media_info(output)
+    if info is None:
         return None
-    try:
-        data = json.loads(text)
-    except (ValueError, RecursionError):
-        return None
-    streams = data.get("streams") if isinstance(data, dict) else None
-    if not isinstance(streams, list):
-        return None
-    audio: List[str] = []
-    subtitles: List[str] = []
-    has_audio = False
-    for stream in streams[:64]:
-        if not isinstance(stream, dict):
-            continue
-        kind = stream.get("codec_type")
-        tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
-        language = track_language(tags.get("language"))
-        if kind == "audio":
-            has_audio = True
-            if language and language not in audio:
-                audio.append(language)
-        elif kind == "subtitle" and language and language not in subtitles:
-            subtitles.append(language)
-    if not has_audio:
-        return None
-    return {"audio": audio, "subtitles": subtitles}
+    return {"audio": languages_of(info["audio"]), "subtitles": languages_of(info["subtitles"])}
+
+
+def languages_of(tracks: Iterable[Mapping[str, Any]]) -> List[str]:
+    found: List[str] = []
+    for track in tracks:
+        language = (track.get("tags") or {}).get("language")
+        if language and language not in found:
+            found.append(language)
+    return found
 
 
 _CLEAR_MARKERS = {
@@ -423,6 +408,7 @@ def export_cases(results: Mapping[str, Any], now: float) -> Dict[str, Any]:
                 "kind": "series" if entry.get("type") == "series" else "movie",
                 "audio": sorted({a for a in entry.get("audio") or [] if isinstance(a, str)}),
                 "subtitles": sorted({s for s in entry.get("subtitles") or [] if isinstance(s, str)}),
+                **({"quality": entry["quality"]} if isinstance(entry.get("quality"), dict) else {}),
             }
         )
     cases.sort(key=lambda c: (c["group"].lower(), c["name"].lower()))
@@ -459,3 +445,97 @@ def host_allowed(addresses: Iterable[Any], trusted: Iterable[Any] = ()) -> bool:
 def over_limit(count: Any, limit: int) -> bool:
     """A request beyond [limit] in its minute ([count]: its rank in the minute)."""
     return limit > 0 and (to_int(count, 0) or 0) > limit
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Technical description of one file (on-demand probes)
+
+_HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+MEDIA_KINDS = ("movie", "episode")
+
+
+def valid_uuid(value: Any) -> Optional[str]:
+    text = to_text(value)
+    return text.lower() if text and _UUID_RE.match(text) else None
+
+
+def _short(value: Any, limit: int = 32) -> Optional[str]:
+    text = to_text(value)
+    return text[:limit] if text else None
+
+
+def media_info(output: Any) -> Optional[Dict[str, Any]]:
+    """An `ffprobe -show_streams -show_format -of json` output in the format of the Xtream get_vod_info "info"
+    (the one Télé already reads): "video", "audio", "subtitles", "bitrate" (kb/s). Only the fields Télé uses,
+    bounded; None when unreadable or without audio."""
+    text = to_text(output)
+    if not text or len(text) > MAX_PROBE_OUTPUT:
+        return None
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError):
+        return None
+    streams = data.get("streams") if isinstance(data, dict) else None
+    if not isinstance(streams, list):
+        return None
+    video: Optional[Dict[str, Any]] = None
+    audio: List[Dict[str, Any]] = []
+    subtitles: List[Dict[str, Any]] = []
+    for stream in streams[:64]:
+        if not isinstance(stream, dict):
+            continue
+        tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
+        disposition = stream.get("disposition") if isinstance(stream.get("disposition"), dict) else {}
+        language = track_language(tags.get("language"))
+        kind = stream.get("codec_type")
+        if kind == "video" and video is None and not disposition.get("attached_pic"):
+            video = {
+                "codec_name": _short(stream.get("codec_name")),
+                "width": to_int(stream.get("width"), 0) or 0,
+                "height": to_int(stream.get("height"), 0) or 0,
+                "color_transfer": _short(stream.get("color_transfer")),
+                "profile": _short(stream.get("profile"), 64),
+            }
+        elif kind == "audio":
+            audio.append({
+                "codec_name": _short(stream.get("codec_name")),
+                "channels": to_int(stream.get("channels"), 0) or 0,
+                "profile": _short(stream.get("profile"), 64),
+                "tags": {"language": language} if language else {},
+            })
+        elif kind == "subtitle":
+            subtitles.append({
+                "codec_name": _short(stream.get("codec_name")),
+                "tags": {"language": language} if language else {},
+                "forced": bool(disposition.get("forced")),
+                "hearing_impaired": bool(disposition.get("hearing_impaired")),
+            })
+    if not audio:
+        return None
+    info: Dict[str, Any] = {"audio": audio, "subtitles": subtitles}
+    if video:
+        info["video"] = video
+    fmt = data.get("format") if isinstance(data.get("format"), dict) else {}
+    bitrate = to_int(fmt.get("bit_rate"), 0) or 0
+    if bitrate > 0:
+        info["bitrate"] = bitrate // 1000
+    duration = to_float(fmt.get("duration"))
+    if duration and duration > 0:
+        info["duration_secs"] = int(duration)
+    return info
+
+
+def quality_summary(info: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Short quality of a probed file, for the admin page and the export: height, codec, HDR, audio channels."""
+    if not info:
+        return None
+    video = info.get("video") or {}
+    audio = info.get("audio") or []
+    return {
+        "height": video.get("height") or None,
+        "video_codec": video.get("codec_name"),
+        "hdr": (video.get("color_transfer") or "") in _HDR_TRANSFERS or "dolby vision" in (video.get("profile") or "").lower(),
+        "audio_channels": max((a.get("channels") or 0 for a in audio), default=0) or None,
+        "audio_codecs": sorted({a["codec_name"] for a in audio if a.get("codec_name")}),
+    }

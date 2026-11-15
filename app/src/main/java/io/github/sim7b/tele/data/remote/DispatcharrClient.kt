@@ -642,6 +642,25 @@ class DispatcharrClient(
         TeleApi.parseVodLanguages(getObject("$baseUrl${TeleApi.VOD_LANGUAGES_PATH}"))
     }
 
+    /** What the plugin knows of a file: measured ([info] in the Xtream "info" format), being measured, or not. */
+    data class VodMedia(val pending: Boolean, val info: JSONObject?)
+
+    /**
+     * Technical description of a movie or an episode ("movie" / "episode", its uuid) measured with ffprobe by
+     * the Télé API plugin; asking for an unknown one queues it on the server. Null without the plugin.
+     */
+    suspend fun getVodMedia(kind: String, uuid: String): VodMedia? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_media" !in teleApi()) return@withContext null
+        val url = "$baseUrl${TeleApi.VOD_MEDIA_PATH}".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("kind", kind)?.addQueryParameter("uuid", uuid)?.build() ?: return@withContext null
+        val answer = getObject(url.toString()) ?: return@withContext null
+        when (answer.optString("status")) {
+            "ok" -> VodMedia(pending = false, info = answer.optJSONObject("info"))
+            "queued" -> VodMedia(pending = true, info = null)
+            else -> VodMedia(pending = false, info = null)
+        }
+    }
+
     /**
      * First name and username of the account linked to the API key (null if unavailable).
      */

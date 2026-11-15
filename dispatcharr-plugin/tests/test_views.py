@@ -188,6 +188,23 @@ class VodLanguagesViewTest(ViewTest):
             response = self.call(views.VodLanguagesView, who=user())
         self.assertEqual(response.data["categories"], measured)
 
+    def test_media_of_a_title_is_measured_on_demand(self):
+        uuid = "0a1b2c3d-0000-4000-8000-000000000000"
+        query = f"/?kind=movie&uuid={uuid}"
+        with mock.patch.object(views.probe, "title_result", return_value={"status": "ok", "info": {"audio": []}}):
+            self.assertEqual(self.call(views.VodMediaView, path=query, who=user()).data["status"], "ok")
+        with mock.patch.object(views.probe, "title_result", return_value=None), \
+                mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch.object(views.probe, "request_title", return_value="queued") as queue, \
+                mock.patch("tele_api.tasks.probe_vod_languages") as task:
+            self.assertEqual(self.call(views.VodMediaView, path=query, who=user()).data["status"], "queued")
+        queue.assert_called_once()
+        task.delay.assert_called_once()
+        with mock.patch.object(views.probe, "title_result", return_value={"status": "failed", "attempts": 3}):
+            self.assertEqual(self.call(views.VodMediaView, path=query, who=user()).data["status"], "failed")
+        for bad in ("/?kind=movie&uuid=../x", "/?kind=series&uuid=" + uuid, "/"):
+            self.assertEqual(self.call(views.VodMediaView, path=bad, who=user()).status_code, 400)
+
     def test_admin_endpoints_are_for_admins_only(self):
         for view in (views.AdminProbesView, views.AdminExportView):
             self.assertEqual(self.call(view, who=user()).status_code, 403)

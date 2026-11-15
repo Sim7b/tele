@@ -208,6 +208,35 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `a movie without description is measured on the server`() = runBlocking {
+        var status = "queued"
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"api": 1, "features": ["vod_media"]}""")
+                TeleApi.VOD_MEDIA_PATH -> {
+                    assertEquals("movie", request.url.queryParameter("kind"))
+                    if (status == "ok") {
+                        json("""{"api": 1, "status": "ok", "info": {"video": {"codec_name": "hevc", "width": 3840, "height": 2160},
+                            "audio": [{"codec_name": "eac3", "channels": 6, "tags": {"language": "fr"}}], "subtitles": []}}""")
+                    } else {
+                        json("""{"api": 1, "status": "$status"}""")
+                    }
+                }
+                else -> null
+            }
+        }
+        val client = client()
+
+        assertEquals(DispatcharrClient.VodMedia(pending = true, info = null), client.getVodMedia("movie", "u"))
+        status = "ok"
+        val media = io.github.sim7b.tele.data.vod.ProviderMedia.from(client.getVodMedia("movie", "u")?.info)
+        assertEquals("2160p", media.resolution)
+        assertEquals("fr", media.audio.single().language)
+        status = "failed"
+        assertEquals(DispatcharrClient.VodMedia(pending = false, info = null), client.getVodMedia("movie", "u"))
+    }
+
+    @Test
     fun `parses the plugin answers defensively`() {
         assertNull(TeleApi.features(JSONObject("""{"api": 2, "features": ["channels"]}""")))
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))

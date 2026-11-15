@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -284,6 +284,34 @@ class VodLanguagesView(TeleView):
         return Response({"api": core.API_VERSION, "categories": probe.measured_categories()})
 
 
+class VodMediaView(TeleView):
+    """Technical description of a movie or an episode measured with ffprobe (?kind=movie|episode&uuid=...).
+
+    Unknown yet: the title is queued for a probe (same rules as the category probes: a free connection, after
+    the viewers) and the answer says "queued"; Télé asks again a little later.
+    """
+
+    def get(self, request):
+        kind = request.query_params.get("kind")
+        uuid = core.valid_uuid(request.query_params.get("uuid"))
+        if kind not in core.MEDIA_KINDS or uuid is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        result = probe.title_result(kind, uuid) or {}
+        if result.get("status") == "ok":
+            return Response({"api": core.API_VERSION, "status": "ok", "info": result.get("info") or {}})
+        if (result.get("attempts") or 0) >= probe.MAX_ATTEMPTS or not self.setting("probe_enabled", True):
+            return Response({"api": core.API_VERSION, "status": "failed"})
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        queued = probe.request_title(client, kind, uuid)
+        if queued == "queued":
+            from . import tasks
+
+            tasks.probe_vod_languages.delay()
+        return Response({"api": core.API_VERSION, "status": queued})
+
+
 class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         user = request.user
@@ -313,6 +341,7 @@ class AdminProbesView(AdminView):
                     "audio": list(entry.get("audio") or []),
                     "subtitles": list(entry.get("subtitles") or []),
                     "sample": entry.get("sample"),
+                    "quality": entry.get("quality"),
                     "probed_at": entry.get("at"),
                 }
             )

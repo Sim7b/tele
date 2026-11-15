@@ -86,7 +86,9 @@ A probe opens a real provider connection, so it never comes before a viewer:
   stops at once, gives its connection back, and probes pause for 2 minutes.
 
 A file that cannot be probed is tried again at the next runs, 3 times at most; a measure is redone after 30
-days. Results are kept in `/data/tele_api/vod_languages.json`. The provider address of the file (it holds the
+days. The quality of the probed file (height, HDR, codecs, audio channels) is kept too, shown on the Télé page
+and exported, but not given to the titles of the category: unlike the language, it changes from one file to
+the next (a sheet asks for its own file, below). Results are kept in `/data/tele_api/vod_languages.json`. The provider address of the file (it holds the
 credentials) is never logged nor kept, only the name of the file.
 
 ### Export for Télé
@@ -161,7 +163,17 @@ every user with their `user`.
 ]}
 ```
 
-Measured categories only. Admin endpoints of the Télé page: `GET admin/probes/` (every result and the counts),
+Measured categories only.
+
+### `GET /api/tele/v1/vod/media/?kind=movie&uuid=<uuid>`
+
+The technical description of one movie or episode, measured with ffprobe, in the format of the Xtream
+`get_vod_info` "info" (`video`, `audio`, `subtitles`, `bitrate`, `duration_secs`), so Télé reads it like the
+provider ones. Unknown yet: `{"status": "queued"}`, the title is probed before the categories at the next
+run (same rules: a free connection, after the viewers); `{"status": "failed"}` after 3 attempts. Télé asks for
+it when a movie sheet has no description from the provider, and builds the sheet again a few times.
+
+Admin endpoints of the Télé page: `GET admin/probes/` (every result and the counts),
 `POST admin/probes/run/`, `POST admin/probes/reset/` (`{"id": <category>}` or `{}` for all),
 `GET admin/probes/export/` (the test case file).
 

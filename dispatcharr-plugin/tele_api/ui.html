@@ -103,7 +103,7 @@
       </div>
       <div class="table">
         <table>
-          <thead><tr><th>Category</th><th>File probed</th><th>Audio</th><th>Subtitles</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Category</th><th>File probed</th><th>Quality</th><th>Audio</th><th>Subtitles</th><th>Status</th><th></th></tr></thead>
           <tbody id="categories"></tbody>
         </table>
       </div>
@@ -213,6 +213,16 @@
     return cell;
   }
 
+  function quality(q) {
+    if (!q) return "";
+    var parts = [];
+    if (q.height) parts.push(q.height >= 2000 ? "4K" : q.height >= 1000 ? "1080p" : q.height >= 700 ? "720p" : q.height + "p");
+    if (q.hdr) parts.push("HDR");
+    if (q.video_codec) parts.push(String(q.video_codec).toUpperCase());
+    if (q.audio_channels) parts.push(q.audio_channels >= 6 ? (q.audio_channels - 1) + ".1" : q.audio_channels + ".0");
+    return parts.join(" · ");
+  }
+
   function showCategories() {
     var filter = document.getElementById("find").value.trim().toLowerCase();
     var body = document.getElementById("categories");
@@ -229,13 +239,14 @@
         body.appendChild(el("tr", {}, [
           el("td", { text: c.name || "" }),
           el("td", { class: "muted", text: c.sample || "" }),
+          el("td", { text: quality(c.quality) }),
           chips(c.audio),
           chips(c.subtitles),
           el("td", { class: state[1], text: state[0] }),
           el("td", { class: "actions" }, [again])
         ]));
       });
-    if (!body.firstChild) body.appendChild(el("tr", {}, [el("td", { colspan: "6", class: "muted", text: "No category probed yet." })]));
+    if (!body.firstChild) body.appendChild(el("tr", {}, [el("td", { colspan: "7", class: "muted", text: "No category probed yet." })]));
   }
 
   function showProbes(data) {
