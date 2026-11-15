@@ -103,6 +103,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Free / total playback slots of the Dispatcharr provider accounts, all servers together (null: not shown)
     private val _streamSlots = MutableStateFlow<StreamSlots?>(null)
     val streamSlots: StateFlow<StreamSlots?> = _streamSlots.asStateFlow()
+    // Messages of the Dispatcharr admins for the TVs (Télé API plugin), read again every few minutes. Declared
+    // before the init block: its first sync refreshes them
+    private val _serverMessage = MutableStateFlow<String?>(null)
+    val serverMessage: StateFlow<String?> = _serverMessage.asStateFlow()
+    private var serverMessageAt = 0L
     private var slotsJob: Job? = null
 
     /** One enabled source with its client, channels and guide. Read and written on the main thread. */
@@ -218,11 +223,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Reloads the Dispatcharr playback slots (cheap request), added up over the enabled servers. Called every
      * 30 s and when the home screen is shown again, since leaving the player frees a slot.
      */
-    // Messages of the Dispatcharr admins for the TVs (Télé API plugin), read again every few minutes
-    private val _serverMessage = MutableStateFlow<String?>(null)
-    val serverMessage: StateFlow<String?> = _serverMessage.asStateFlow()
-    private var serverMessageAt = 0L
-
     private fun refreshServerMessage(clients: List<DispatcharrClient>) {
         val now = SystemClock.elapsedRealtime()
         if (serverMessageAt != 0L && now - serverMessageAt < SERVER_MESSAGE_EVERY_MS) return
