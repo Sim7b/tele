@@ -460,8 +460,15 @@ class VodRepository(
             if (e is CancellationException) throw e
             return
         }
-        if (measured == measuredLanguages[config.id].orEmpty()) return
+        val ids = try {
+            DispatcharrVod.tmdbIds(dispatcharr(config))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            tmdbIds[config.id].orEmpty()
+        }
+        if (measured == measuredLanguages[config.id].orEmpty() && ids == tmdbIds[config.id].orEmpty()) return
         if (measured.isEmpty()) measuredLanguages.remove(config.id) else measuredLanguages[config.id] = measured
+        if (ids.isEmpty()) tmdbIds.remove(config.id) else tmdbIds[config.id] = ids
         if (catalogs[config.id] != null) publish(loading = _library.value.loading)
     }
 
@@ -470,8 +477,10 @@ class VodRepository(
         val sources = order.map { catalogs[it].orEmpty() }
         val hideTheater = settings.vodDisplay.value.hideTheater
         val measured = order.mapNotNull { id -> measuredLanguages[id]?.let { id to it } }.toMap()
+        val ids = order.mapNotNull { id -> tmdbIds[id]?.let { id to it } }.toMap()
         val built = builtFrom
         if (built != null && built.second == hideTheater && built.first.size == sources.size && measured == builtMeasured &&
+            ids == builtTmdbIds &&
             built.first.indices.all { built.first[it] === sources[it] }
         ) {
             _library.value = _library.value.copy(
@@ -484,10 +493,11 @@ class VodRepository(
         // The library kept on the device for these very catalogs: not built again
         val signature = librarySignature(order.filter { it in chosenIds }, hideTheater, catalogStamps)
             ?.let { if (measured.isEmpty()) it else it + "|m" + measured.hashCode() }
+            ?.let { if (ids.isEmpty()) it else it + "|t" + ids.hashCode() }
         val kept = keptLibrary?.takeIf { signature != null && it.first == signature }?.second
         val buildStart = SystemClock.elapsedRealtime()
         val (titles, byKey, featured) = withContext(Dispatchers.Default) {
-            val titles = kept ?: VodLibrary.build(sources.flatten(), measured).let { all ->
+            val titles = kept ?: VodLibrary.build(sources.flatten(), measured, ids).let { all ->
                 if (hideTheater) all.filterNot { VodDisplay.isTheaterCopy(it) } else all
             }
             Triple(titles, titles.associateBy { it.key }, VodRows.featured(titles))
@@ -499,6 +509,7 @@ class VodRepository(
         }
         builtFrom = sources to hideTheater
         builtMeasured = measured
+        builtTmdbIds = ids
         _library.value = VodLibraryState(
             titles = titles,
             byKey = byKey,
@@ -514,6 +525,9 @@ class VodRepository(
     // Dispatcharr sources: VOD languages measured by the Télé API plugin, by category (DispatcharrVod.measuredKey)
     private val measuredLanguages = ConcurrentHashMap<String, Map<String, VodLanguages>>()
     private var builtMeasured: Map<String, Map<String, VodLanguages>> = emptyMap()
+    // Dispatcharr sources: TMDB ids found by the plugin for the titles Dispatcharr has none for
+    private val tmdbIds = ConcurrentHashMap<String, Map<String, String>>()
+    private var builtTmdbIds: Map<String, Map<String, String>> = emptyMap()
 
     // The sources whose catalogs are loaded (their categories chosen)
     @Volatile

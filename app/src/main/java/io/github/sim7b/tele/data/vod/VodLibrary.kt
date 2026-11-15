@@ -12,7 +12,17 @@ object VodLibrary {
      * source id, then [DispatcharrVod.measuredKey]): they replace what the category name tells, the tags of
      * each name still count.
      */
-    fun build(entries: List<VodEntry>, measured: Map<String, Map<String, VodLanguages>> = emptyMap()): List<VodTitle> {
+    fun build(
+        source: List<VodEntry>,
+        measured: Map<String, Map<String, VodLanguages>> = emptyMap(),
+        // TMDB ids found by the Télé API plugin, by source id then [DispatcharrVod.tmdbKey]: the same title listed
+        // under different names by the providers groups as one
+        tmdbIds: Map<String, Map<String, String>> = emptyMap()
+    ): List<VodTitle> {
+        val entries = if (tmdbIds.isEmpty()) source else source.map { entry ->
+            if (!entry.tmdbId.isNullOrBlank() && entry.tmdbId != "0") return@map entry
+            tmdbIds[entry.sourceId]?.get(DispatcharrVod.tmdbKey(entry))?.let { entry.copy(tmdbId = it) } ?: entry
+        }
         // Normalized titles, computed once (the costliest part of the grouping), shared by identical titles
         val titleKeys = HashMap<String, String>()
         fun titleKey(entry: VodEntry) = titleKeys.getOrPut(entry.title) { VodNames.key(entry.title) }
