@@ -633,6 +633,15 @@ class DispatcharrClient(
     }
 
     /**
+     * VOD languages measured by the Télé API plugin, by "movie:<category>" / "series:<category>" (audio to
+     * subtitles); empty without the plugin or on error.
+     */
+    suspend fun getVodLanguages(): Map<String, Pair<Set<String>, Set<String>>> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_languages" !in teleApi()) return@withContext emptyMap()
+        TeleApi.parseVodLanguages(getObject("$baseUrl${TeleApi.VOD_LANGUAGES_PATH}"))
+    }
+
+    /**
      * First name and username of the account linked to the API key (null if unavailable).
      */
     suspend fun getCurrentUser(): Pair<String?, String?>? = withContext(Dispatchers.IO) {

@@ -178,6 +178,28 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `measured VOD languages are read by category`() = runBlocking {
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"api": 1, "features": ["vod_languages"]}""")
+                TeleApi.VOD_LANGUAGES_PATH -> json(
+                    """{"api": 1, "categories": [
+                        {"id": 3, "name": "FR | MULTI", "type": "movie", "audio": ["fr", "en"], "subtitles": []},
+                        {"id": 4, "name": "NETFLIX", "type": "series", "audio": ["en", "<script>", 5], "subtitles": ["fr"]},
+                        {"id": 5, "type": "movie", "audio": ["en"]}]}"""
+                )
+                else -> null
+            }
+        }
+
+        val measured = client().getVodLanguages()
+
+        assertEquals(setOf("movie:FR | MULTI", "series:NETFLIX"), measured.keys)
+        assertEquals(setOf("fr", "en") to emptySet<String>(), measured["movie:FR | MULTI"])
+        assertEquals(setOf("en") to setOf("fr"), measured["series:NETFLIX"])
+    }
+
+    @Test
     fun `parses the plugin answers defensively`() {
         assertNull(TeleApi.features(JSONObject("""{"api": 2, "features": ["channels"]}""")))
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))

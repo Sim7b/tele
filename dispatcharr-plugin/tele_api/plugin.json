@@ -1,31 +1,100 @@
 {
   "name": "Télé API",
-  "version": "0.1.0",
-  "description": "Endpoints for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, and the playback sessions of the caller.",
+  "version": "0.2.0",
+  "description": "Endpoints and a page for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, playback sessions, and the audio and subtitle languages of the VOD measured with ffprobe.",
   "author": "Télé",
-  "help_url": "https://github.com/Sim7b/tele",
+  "help_url": "/api/tele/ui/",
   "fields": [
     {
       "id": "info",
       "label": "Endpoints",
       "type": "info",
-      "description": "Served under /api/tele/v1/ with the API key of any standard user. Each user only sees their own channels and sessions."
+      "description": "Served under /api/tele/v1/ with the API key of any standard user. Each user only sees their own channels and sessions. Admins: the Télé page is at /api/tele/ui/."
     },
     {
       "id": "allow_release",
       "label": "Let players close their own sessions",
       "type": "boolean",
       "default": true,
-      "help_text": "Télé closes the preview or the stream it left open before opening another one, so it does not hold two provider connections."
+      "help_text": "Télé closes the preview or the channel it left open before opening another one, so a TV never holds two provider connections."
+    },
+    {
+      "id": "vod_info",
+      "label": "VOD languages",
+      "type": "info",
+      "description": "ffprobe reads the audio and subtitle tracks of one file per category. A probe uses a real provider connection: it only starts when one is free, one at a time, and stops at once when a viewer needs the connection."
+    },
+    {
+      "id": "probe_enabled",
+      "label": "Measure VOD languages with ffprobe",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Runs every 10 minutes in the background; the results are kept in the Dispatcharr data folder."
+    },
+    {
+      "id": "probe_scope",
+      "label": "Categories to probe",
+      "type": "select",
+      "default": "uncertain",
+      "options": [
+        {
+          "value": "uncertain",
+          "label": "Uncertain ones only"
+        },
+        {
+          "value": "all",
+          "label": "Every category"
+        }
+      ],
+      "help_text": "Uncertain: nothing about the language (NETFLIX, Action), MULTI, MULTI-SUB, VOST, VO or Arabic."
+    },
+    {
+      "id": "probe_min_free",
+      "label": "Free connections to keep",
+      "type": "number",
+      "default": 1,
+      "help_text": "On the provider profile, before a probe starts."
+    },
+    {
+      "id": "probe_pause_seconds",
+      "label": "Pause between two probes (seconds)",
+      "type": "number",
+      "default": 5,
+      "help_text": "One probe at a time on the server."
     }
   ],
   "actions": [
     {
       "id": "status",
       "label": "Status",
-      "description": "Checks that the /api/tele/ routes are installed in this worker.",
+      "description": "Routes of this worker, open sessions, VOD languages measured and failed.",
       "button_label": "Check",
       "button_variant": "outline"
+    },
+    {
+      "id": "probe_now",
+      "label": "Probe VOD languages now",
+      "description": "Starts a run at once instead of waiting for the next one. Same rules: a free connection, one probe at a time.",
+      "button_label": "Run"
+    },
+    {
+      "id": "export_languages",
+      "label": "Export the measured languages",
+      "description": "Writes the measures as test cases for Télé (names and languages only, no address).",
+      "button_label": "Export",
+      "button_variant": "outline"
+    },
+    {
+      "id": "reset_probes",
+      "label": "Forget measured languages",
+      "description": "Every category is probed again, for instance after a change of provider.",
+      "button_label": "Reset",
+      "button_color": "red",
+      "confirm": {
+        "required": true,
+        "title": "Forget the measured languages?",
+        "message": "Every category will be probed again, one file at a time, when provider connections are free."
+      }
     }
   ]
 }

@@ -8,4 +8,10 @@ urlpatterns = [
     path("v1/slots/", views.SlotsView.as_view(), name="slots"),
     path("v1/sessions/", views.SessionsView.as_view(), name="sessions"),
     path("v1/sessions/release/", views.ReleaseSessionsView.as_view(), name="sessions-release"),
+    path("v1/vod/languages/", views.VodLanguagesView.as_view(), name="vod-languages"),
+    path("v1/admin/probes/", views.AdminProbesView.as_view(), name="admin-probes"),
+    path("v1/admin/probes/run/", views.AdminProbeRunView.as_view(), name="admin-probes-run"),
+    path("v1/admin/probes/reset/", views.AdminProbeResetView.as_view(), name="admin-probes-reset"),
+    path("v1/admin/probes/export/", views.AdminExportView.as_view(), name="admin-probes-export"),
+    path("ui/", views.UiView.as_view(), name="ui"),
 ]

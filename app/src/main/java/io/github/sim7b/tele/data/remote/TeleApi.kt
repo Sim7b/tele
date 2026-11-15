@@ -16,6 +16,7 @@ object TeleApi {
     const val INFO_PATH = "/api/tele/v1/info/"
     const val CHANNELS_PATH = "/api/tele/v1/channels/"
     const val SLOTS_PATH = "/api/tele/v1/slots/"
+    const val VOD_LANGUAGES_PATH = "/api/tele/v1/vod/languages/"
     const val RELEASE_PATH = "/api/tele/v1/sessions/release/"
     const val CHANNELS_PAGE_SIZE = 2000
 
@@ -54,6 +55,31 @@ object TeleApi {
 
     /** Number of sessions closed, from the answer of [RELEASE_PATH]; 0 when malformed. */
     fun releasedCount(answer: JSONObject?): Int = answer?.optJSONArray("released")?.length() ?: 0
+
+    private val LANGUAGE_CODE = Regex("^[a-z]{2,3}$")
+
+    /**
+     * Audio and subtitle languages measured by the plugin (ffprobe on one file of each category), by
+     * "movie:<category name>" / "series:<category name>". Malformed entries are skipped.
+     */
+    fun parseVodLanguages(answer: JSONObject?): Map<String, Pair<Set<String>, Set<String>>> {
+        val list = answer?.optJSONArray("categories") ?: return emptyMap()
+        val measured = HashMap<String, Pair<Set<String>, Set<String>>>()
+        for (i in 0 until minOf(list.length(), MAX_MEASURED_CATEGORIES)) {
+            val item = list.optJSONObject(i) ?: continue
+            val name = item.optStringOrNull("name") ?: continue
+            val kind = if (item.optString("type") == "series") "series" else "movie"
+            measured["$kind:$name"] = codes(item.optJSONArray("audio")) to codes(item.optJSONArray("subtitles"))
+        }
+        return measured
+    }
+
+    private fun codes(array: org.json.JSONArray?): Set<String> {
+        if (array == null) return emptySet()
+        return (0 until minOf(array.length(), 16)).mapNotNull { array.optString(it).takeIf(LANGUAGE_CODE::matches) }.toSet()
+    }
+
+    private const val MAX_MEASURED_CATEGORIES = 20_000
 
     /** Free provider connections; null when no account has a limit or the answer is malformed. */
     fun parseSlots(slots: JSONObject?): StreamSlots? {

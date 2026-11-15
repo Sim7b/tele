@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.2.0"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -293,3 +293,137 @@ def visible_sessions(
 
 def may_release(session: Optional[Session], user_id: Any, *, admin: bool) -> bool:
     return session is not None and (admin or session.user_id == str(user_id))
+
+
+# ---------------------------------------------------------------------------------------------------------
+# VOD languages measured with ffprobe
+
+# ISO 639-2 (B and T) codes of the tracks to ISO 639-1, as Télé uses them
+_ISO639_2 = {
+    "fre": "fr", "fra": "fr", "eng": "en", "ara": "ar", "ger": "de", "deu": "de", "spa": "es", "ita": "it",
+    "por": "pt", "tur": "tr", "dut": "nl", "nld": "nl", "pol": "pl", "rus": "ru", "hin": "hi", "kor": "ko",
+    "jpn": "ja", "chi": "zh", "zho": "zh", "gre": "el", "ell": "el", "rum": "ro", "ron": "ro", "alb": "sq",
+    "sqi": "sq", "per": "fa", "fas": "fa", "heb": "he", "swe": "sv", "nor": "no", "nob": "no", "dan": "da",
+    "fin": "fi", "cze": "cs", "ces": "cs", "hun": "hu", "ukr": "uk", "tha": "th", "vie": "vi", "ind": "id",
+    "may": "ms", "msa": "ms", "tam": "ta", "tel": "te", "urd": "ur", "ben": "bn", "pan": "pa", "kur": "ku",
+    "bul": "bg", "hrv": "hr", "srp": "sr", "slv": "sl", "slo": "sk", "slk": "sk", "cat": "ca", "baq": "eu",
+    "eus": "eu", "glg": "gl", "wel": "cy", "cym": "cy", "gle": "ga", "ice": "is", "isl": "is", "lit": "lt",
+    "lav": "lv", "est": "et", "mac": "mk", "mkd": "mk", "arm": "hy", "hye": "hy", "geo": "ka", "kat": "ka",
+    "aze": "az", "kaz": "kk", "uzb": "uz", "fil": "tl", "tgl": "tl",
+}
+# Undetermined, no language, several: no language to tell
+_NO_LANGUAGE = {"und", "zxx", "mul", "mis", "qaa"}
+MAX_PROBE_OUTPUT = 2 * 1024 * 1024
+
+
+def track_language(value: Any) -> Optional[str]:
+    """ISO 639-1 code of a track language tag ("fre", "fr", "fr-FR", "French"); None when unknown."""
+    text = (to_text(value) or "").strip().lower()
+    if not text:
+        return None
+    base = re.split(r"[-_]", text, maxsplit=1)[0]
+    if base in _NO_LANGUAGE:
+        return None
+    if len(base) == 2 and base.isalpha():
+        return base
+    if len(base) == 3:
+        return _ISO639_2.get(base)
+    return {"french": "fr", "english": "en", "arabic": "ar", "german": "de", "spanish": "es", "italian": "it"}.get(base)
+
+
+def parse_probe(output: Any) -> Optional[Dict[str, List[str]]]:
+    """Audio and subtitle languages of an `ffprobe -show_streams -of json` output; None when unreadable.
+
+    Tracks without a language tag are counted (has_audio) but give no language.
+    """
+    text = to_text(output)
+    if not text or len(text) > MAX_PROBE_OUTPUT:
+        return None
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError):
+        return None
+    streams = data.get("streams") if isinstance(data, dict) else None
+    if not isinstance(streams, list):
+        return None
+    audio: List[str] = []
+    subtitles: List[str] = []
+    has_audio = False
+    for stream in streams[:64]:
+        if not isinstance(stream, dict):
+            continue
+        kind = stream.get("codec_type")
+        tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
+        language = track_language(tags.get("language"))
+        if kind == "audio":
+            has_audio = True
+            if language and language not in audio:
+                audio.append(language)
+        elif kind == "subtitle" and language and language not in subtitles:
+            subtitles.append(language)
+    if not has_audio:
+        return None
+    return {"audio": audio, "subtitles": subtitles}
+
+
+_CLEAR_MARKERS = {
+    "VF", "VFF", "VFQ", "VFI", "VF2", "TRUEFRENCH", "FRENCH", "VOSTFR", "VOSTF", "SUBFRENCH", "VOSTA", "VOSTEN",
+    "VOSTENG", "VOSE", "LEGENDADO", "LEGENDADOS", "DUBLADO", "DUBLADOS", "DUBLAJ", "ALTYAZILI", "LEKTOR", "NAPISY",
+}
+_UNCLEAR_MARKERS = {"MULTI", "MULTISUB", "MULTISUBS", "DUAL", "VO", "VOST", "ARABIC", "ARABE", "AR", "SUB", "SUBS"}
+_LANGUAGE_HINTS = {
+    "FR", "EN", "DE", "ES", "IT", "PT", "TR", "NL", "PL", "RU", "UK", "US", "BR", "KR", "JP", "ENGLISH", "GERMAN",
+    "SPANISH", "ITALIAN", "PORTUGUESE", "TURKISH", "DUTCH", "POLISH", "RUSSIAN", "HINDI", "KOREAN", "JAPANESE",
+    "LATINO", "CASTELLANO", "DEUTSCH",
+}
+
+
+def category_needs_probe(name: Any) -> bool:
+    """Whether the name of a category leaves its languages uncertain, so that one of its files is worth probing.
+
+    Uncertain: nothing about the language ("NETFLIX", "Action"), several languages without saying which
+    (MULTI, MULTI-SUB, VOST, SUB), the original version (VO) or Arabic (often English subtitled in Arabic).
+    Clear: a dubbed or subtitled version named (VF, VOSTFR, LEGENDADO), or a country / language alone.
+    """
+    text = to_text(name) or ""
+    if any("؀" <= c <= "ۿ" for c in text):
+        return True
+    words = set(re.split(r"[^A-Z0-9]+", text.upper().replace("MULTI-SUB", "MULTISUB")))
+    if words & _UNCLEAR_MARKERS:
+        return True
+    if words & _CLEAR_MARKERS:
+        return False
+    return not (words & _LANGUAGE_HINTS)
+
+
+def profile_has_room(max_streams: int, used: int, min_free: int) -> bool:
+    """A probe may take a connection of this profile: unlimited, or at least min_free connections free."""
+    if max_streams <= 0:
+        return True
+    return max_streams - max(0, used) >= max(1, min_free)
+
+
+EXPORT_FORMAT = "tele-vod-language-cases"
+
+
+def export_cases(results: Mapping[str, Any], now: float) -> Dict[str, Any]:
+    """Measured languages as test cases for Télé: the group (category) and file names, and what ffprobe read.
+
+    Télé reads these files in its unit tests to compare its estimate from the names with the measure, so that
+    new rules come from real playlists. No address, no credential: names and languages only.
+    """
+    cases = []
+    for entry in results.values():
+        if not isinstance(entry, dict) or entry.get("status") != "ok":
+            continue
+        cases.append(
+            {
+                "group": to_text(entry.get("name")) or "",
+                "name": to_text(entry.get("sample")) or "",
+                "kind": "series" if entry.get("type") == "series" else "movie",
+                "audio": sorted({a for a in entry.get("audio") or [] if isinstance(a, str)}),
+                "subtitles": sorted({s for s in entry.get("subtitles") or [] if isinstance(s, str)}),
+            }
+        )
+    cases.sort(key=lambda c: (c["group"].lower(), c["name"].lower()))
+    return {"format": EXPORT_FORMAT, "version": 1, "exported_at": int(now), "cases": cases}

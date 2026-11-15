@@ -81,6 +81,17 @@ object DispatcharrVod {
         return entries.map { entry -> entry.withGroup(groups[groupKey(entry)]) }
     }
 
+    /**
+     * Languages measured by the Télé API plugin for the categories of the server, by [measuredKey]; empty
+     * without the plugin.
+     */
+    suspend fun measuredLanguages(client: DispatcharrClient): Map<String, VodLanguages> =
+        client.getVodLanguages().mapValues { (_, languages) -> VodLanguages(languages.first, languages.second) }
+
+    /** Key of the measured languages of the category of [entry]. */
+    fun measuredKey(entry: VodEntry): String? =
+        entry.category?.let { (if (entry.kind == VodKind.MOVIE) "movie:" else "series:") + it }
+
     private fun groupKey(entry: VodEntry) = (if (entry.kind == VodKind.MOVIE) "movie:" else "series:") + entry.providerId
 
     private fun VodEntry.withGroup(group: String?) = if (group == null || group == category) this else copy(category = group)

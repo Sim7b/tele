@@ -17,13 +17,13 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import core, data
+from . import core, data, probe
 
 logger = logging.getLogger(__name__)
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions")
+FEATURES = ("channels", "slots", "sessions", "vod_languages")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -223,7 +223,122 @@ class ReleaseSessionsView(TeleView):
                 ):
                     targets[session.id] = session
 
+        if body.get("this_device") is True:
+            # A viewer short of a connection (Télé on HTTP 503): a running VOD language probe gives its own back
+            client = data.redis_client()
+            if client is not None:
+                probe.ask_to_yield(client)
+
         released = [sid for sid, session in targets.items() if data.stop_session(session)]
         if released:
             logger.info("Télé API: %d session(s) released by user %s", len(released), user.pk)
         return Response({"api": core.API_VERSION, "released": released})
+
+
+class VodLanguagesView(TeleView):
+    """Audio and subtitle languages measured by category (ffprobe on one of its files)."""
+
+    def get(self, request):
+        return Response({"api": core.API_VERSION, "categories": probe.measured_categories()})
+
+
+class IsAdminUser(permissions.BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and is_admin(user))
+
+
+class AdminView(TeleView):
+    permission_classes = [IsAdminUser, PluginEnabled]
+
+
+class AdminProbesView(AdminView):
+    """Every probe result (measured, retrying, failed) and the counts, for the Télé page."""
+
+    def get(self, request):
+        results = probe.load_results()
+        categories = []
+        for key, entry in results.items():
+            if not isinstance(entry, dict):
+                continue
+            categories.append(
+                {
+                    "id": core.to_int(key),
+                    "name": entry.get("name"),
+                    "type": entry.get("type"),
+                    "status": entry.get("status"),
+                    "attempts": entry.get("attempts") or 0,
+                    "audio": list(entry.get("audio") or []),
+                    "subtitles": list(entry.get("subtitles") or []),
+                    "sample": entry.get("sample"),
+                    "probed_at": entry.get("at"),
+                }
+            )
+        categories.sort(key=lambda c: (str(c["name"] or "").lower(), c["id"] or 0))
+        return Response(
+            {
+                "api": core.API_VERSION,
+                "summary": probe.summary(),
+                "settings": {
+                    "enabled": bool(self.setting("probe_enabled", True)),
+                    "scope": self.setting("probe_scope", "uncertain"),
+                    "min_free": self.setting("probe_min_free", 1),
+                    "pause_seconds": self.setting("probe_pause_seconds", 5),
+                },
+                "categories": categories,
+            }
+        )
+
+
+class AdminProbeRunView(AdminView):
+    def post(self, request):
+        from . import tasks
+
+        tasks.probe_vod_languages.delay()
+        return Response({"api": core.API_VERSION, "queued": True})
+
+
+class AdminProbeResetView(AdminView):
+    """Forgets one result ({"id": category id}) or all of them ({})."""
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        category_id = body.get("id")
+        if category_id is not None and core.to_int(category_id) is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        probe.forget(core.to_int(category_id) if category_id is not None else None)
+        return Response({"api": core.API_VERSION, "forgotten": category_id if category_id is not None else "all"})
+
+
+class AdminExportView(AdminView):
+    """The measured languages as Télé test cases, downloaded as a JSON file."""
+
+    def get(self, request):
+        response = Response(probe.export())
+        response["Content-Disposition"] = 'attachment; filename="vod-language-cases.json"'
+        return response
+
+
+class UiView(APIView):
+    """The Télé page: static HTML, no data in it. Its script calls the admin endpoints with the session token
+    of the Dispatcharr web interface (same address), so only an admin signed in to Dispatcharr sees anything."""
+
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        if not plugin_state.get()[0]:
+            return HttpResponse("Télé API plugin is disabled", status=404, content_type="text/plain; charset=utf-8")
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
+        with open(path, encoding="utf-8") as fh:
+            response = HttpResponse(fh.read(), content_type="text/html; charset=utf-8")
+        # No framing by other sites, no inline content from elsewhere
+        response["X-Frame-Options"] = "SAMEORIGIN"
+        response["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; frame-ancestors 'self'"
+        )
+        response["Cache-Control"] = "no-store"
+        return response

@@ -143,6 +143,45 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+class VodLanguagesViewTest(ViewTest):
+    def test_measured_languages_for_standard_users(self):
+        measured = [{"id": 3, "name": "FR | MULTI", "type": "movie", "audio": ["fr"], "subtitles": [], "probed_at": 1}]
+        with mock.patch.object(views.probe, "measured_categories", return_value=measured):
+            response = self.call(views.VodLanguagesView, who=user())
+        self.assertEqual(response.data["categories"], measured)
+
+    def test_admin_endpoints_are_for_admins_only(self):
+        for view in (views.AdminProbesView, views.AdminExportView):
+            self.assertEqual(self.call(view, who=user()).status_code, 403)
+        with mock.patch.object(views.probe, "export", return_value={"cases": []}):
+            response = self.call(views.AdminExportView, who=user(level=10))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment", response["Content-Disposition"])
+
+    def test_reset_one_or_all(self):
+        with mock.patch.object(views.probe, "forget") as forget:
+            self.call(views.AdminProbeResetView, "post", who=user(level=10), body={"id": 4})
+            self.call(views.AdminProbeResetView, "post", who=user(level=10), body={})
+            bad = self.call(views.AdminProbeResetView, "post", who=user(level=10), body={"id": "x"})
+        self.assertEqual([c.args for c in forget.call_args_list], [(4,), (None,)])
+        self.assertEqual(bad.status_code, 400)
+
+    def test_the_page_is_static_and_off_with_the_plugin(self):
+        response = self.call(views.UiView)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Admins only", response.content)
+        self.assertIn("frame-ancestors", response["Content-Security-Policy"])
+        self.state.return_value = (False, {})
+        self.assertEqual(self.call(views.UiView).status_code, 404)
+
+    def test_a_tv_short_of_a_connection_makes_the_probes_yield(self):
+        with mock.patch.object(views.data, "all_sessions", return_value=[]), \
+                mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch.object(views.probe, "ask_to_yield") as yield_:
+            self.call(views.ReleaseSessionsView, "post", who=user(), body={"this_device": True})
+        yield_.assert_called_once()
+
+
 class ChannelJsonTest(unittest.TestCase):
     def row(self, **override):
         row = {
