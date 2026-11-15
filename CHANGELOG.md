@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.28](https://github.com/Sim7b/tele/compare/v0.3.27...v0.3.28) (2026-11-15)
+
+### Features
+
+* **vod:** Arabic groups in Latin letters are subtitled in Arabic ([06295e6](https://github.com/Sim7b/tele/commit/06295e6a2b79779fdd2175c87dadf23146a1b59c))
+* **vod:** better estimate of the audio and subtitle languages ([ec1e830](https://github.com/Sim7b/tele/commit/ec1e830702d2eff0ba2293e27196791e3ddb4048))
+
 ## [0.3.27](https://github.com/Sim7b/tele/compare/v0.3.26...v0.3.27) (2026-11-15)
 
 ### Features
