@@ -318,3 +318,26 @@ class VodStatsTest(unittest.TestCase):
         self.assertTrue(core.is_adult_group("FR | XXX"))
         self.assertTrue(core.is_adult_group("PORN 18+"))
         self.assertFalse(core.is_adult_group("FR | FILMS"))
+
+
+class SubtitlesTest(unittest.TestCase):
+    def test_search_query_is_checked_sorted_and_lowercase(self):
+        query = core.subtitle_search_query({"tmdb_id": "438631", "languages": "fr,EN", "api_key": "x", "year": "20x1"})
+        self.assertEqual(query, "languages=fr%2Cen&tmdb_id=438631")
+        self.assertEqual(core.subtitle_search_query({"query": "Dune", "year": "2021"}), "query=dune&year=2021")
+        self.assertIsNone(core.subtitle_search_query({"languages": "fr"}))  # nothing to search for
+        self.assertIsNone(core.subtitle_search_query(None))
+
+    def test_results_keep_the_fields_read(self):
+        data = [
+            {"attributes": {"language": "fr", "release": "Dune.2021", "download_count": "12", "files": [{"file_id": 7, "file_name": "x.srt"}],
+                            "url": "https://x", "uploader": {"name": "y"}}},
+            {"attributes": {"language": "<b>", "files": [{"file_id": 8}]}},
+            {"attributes": {"language": "en", "files": []}},
+            "garbage",
+        ]
+        results = core.subtitle_results(data)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["attributes"]["files"], [{"file_id": 7}])
+        self.assertEqual(results[0]["attributes"]["download_count"], 12)
+        self.assertNotIn("url", results[0]["attributes"])

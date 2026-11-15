@@ -18,7 +18,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
-from . import core, data, messages, probe
+from . import core, data, messages, probe, vault
 
 # Under "apps": a logger Dispatcharr sends to its console and log browser
 logger = logging.getLogger("apps.tele_api.views")
@@ -149,7 +149,7 @@ class InfoView(TeleView):
                 "plugin": PLUGIN_KEY,
                 "version": core.PLUGIN_VERSION,
                 "api": core.API_VERSION,
-                "features": list(FEATURES),
+                "features": list(FEATURES) + (["subtitles"] if vault.opensubtitles_key() else []),
                 "server_time": data.server_time(),
                 "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
@@ -438,6 +438,43 @@ class VodPopularView(TeleView):
         return Response(answer, headers={"ETag": tag})
 
 
+class SubtitleSearchView(TeleView):
+    """OpenSubtitles search with the key of the server (same parameters as the API: tmdb_id, imdb_id, parent_tmdb_id,
+    parent_imdb_id, season_number, episode_number, query, year, languages), answered like it."""
+
+    def get(self, request):
+        from . import opensubtitles
+
+        try:
+            return Response(opensubtitles.search(request.query_params))
+        except opensubtitles.Refused as refused:
+            return Response({"error": "opensubtitles", "status": refused.status}, status=refused.status)
+
+
+class SubtitleDownloadView(TeleView):
+    """{"file_id"}: the subtitle file itself, its extension and the downloads left today in X-Subtitle-* headers."""
+
+    def post(self, request):
+        from django.http import HttpResponse
+
+        from . import opensubtitles
+
+        body = request.data if isinstance(request.data, dict) else {}
+        file_id = core.to_int(body.get("file_id"))
+        if file_id is None or file_id <= 0:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            content, extension, remaining = opensubtitles.download(data.redis_client(), file_id)
+        except opensubtitles.Refused as refused:
+            return Response({"error": "opensubtitles", "status": refused.status}, status=refused.status)
+        response = HttpResponse(content, content_type="application/octet-stream")
+        response["X-Subtitle-Extension"] = extension
+        if remaining is not None:
+            response["X-Subtitle-Remaining"] = str(remaining)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
 class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         user = request.user
@@ -548,6 +585,45 @@ class AdminTmdbView(AdminView):
             return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
         vault.set_tmdb_key(key)
         logger.info("Télé API: TMDB key set by an admin")
+        return Response({"api": core.API_VERSION, "key_set": True})
+
+
+class AdminSubtitlesView(AdminView):
+    """OpenSubtitles of the plugin: GET whether a key and an account are set (never them); POST {"key"} sets the key
+    after OpenSubtitles accepted it ({"key": null} removes it), {"username", "password"} the account (null: removed)."""
+
+    def get(self, request):
+        account = vault.opensubtitles_account()
+        return Response({
+            "api": core.API_VERSION,
+            "key_set": vault.opensubtitles_key() is not None,
+            "account": account[0] if account else None,
+        })
+
+    def post(self, request):
+        from . import opensubtitles
+
+        body = request.data if isinstance(request.data, dict) else {}
+        if "username" in body:
+            username, password = core.to_text(body.get("username")), core.to_text(body.get("password"))
+            if username and (len(username) > 100 or not password or len(password) > 200):
+                return Response({"error": "invalid_account"}, status=status.HTTP_400_BAD_REQUEST)
+            vault.set_opensubtitles_account(username, password)
+            client = data.redis_client()
+            if client is not None:
+                client.delete(opensubtitles.TOKEN_KEY)
+            return Response({"api": core.API_VERSION, "account": username or None})
+        key = body.get("key")
+        if key is None:
+            vault.set_opensubtitles_key(None)
+            return Response({"api": core.API_VERSION, "key_set": False})
+        key = (core.to_text(key) or "").strip()
+        if not 16 <= len(key) <= 128 or any(c.isspace() for c in key):
+            return Response({"error": "invalid_key"}, status=status.HTTP_400_BAD_REQUEST)
+        if not opensubtitles.test(key):
+            return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
+        vault.set_opensubtitles_key(key)
+        logger.info("Télé API: OpenSubtitles key set by an admin")
         return Response({"api": core.API_VERSION, "key_set": True})
 
 

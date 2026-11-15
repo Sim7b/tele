@@ -25,6 +25,8 @@ object TeleApi {
     const val TMDB_IDS_PATH = "/api/tele/v1/vod/tmdb-ids/"
     const val VOD_GROUPS_PATH = "/api/tele/v1/vod/groups/"
     const val VOD_POPULAR_PATH = "/api/tele/v1/vod/popular/"
+    const val SUBTITLES_SEARCH_PATH = "/api/tele/v1/subtitles/search/"
+    const val SUBTITLES_DOWNLOAD_PATH = "/api/tele/v1/subtitles/download/"
     private const val MAX_POPULAR = 100
 
     /** Movies and series most played on the server, most played first: ("movie" | "series", Dispatcharr id). */

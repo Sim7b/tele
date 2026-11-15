@@ -261,6 +261,23 @@
         </details>
       </section>
 
+      <section class="card" aria-labelledby="os-title">
+        <div class="spread"><h2 id="os-title">OpenSubtitles</h2><span class="muted small" id="os-state">–</span></div>
+        <div class="muted small">With a key here, every Télé TV searches and downloads subtitles through this server: nothing to set on the TVs (a key set on a TV is used first). Free key: opensubtitles.com → API consumers.</div>
+        <form id="os-key-form" class="row" autocomplete="off">
+          <label for="os-key" class="muted small">API key</label>
+          <input id="os-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
+          <button class="primary" type="submit">Save</button>
+          <button class="danger" type="button" id="os-key-remove">Remove</button>
+        </form>
+        <form id="os-account-form" class="row" autocomplete="off">
+          <label for="os-user" class="muted small">Account (optional, more downloads a day)</label>
+          <input id="os-user" type="text" autocomplete="off" spellcheck="false" placeholder="Username" style="width:180px">
+          <input id="os-password" type="password" autocomplete="new-password" placeholder="Password" style="width:180px" aria-label="Password">
+          <button type="submit">Save</button>
+          <button class="danger" type="button" id="os-account-remove">Remove</button>
+        </form>
+      </section>
       <section class="card" aria-labelledby="categories-title">
         <div class="spread"><h2 id="categories-title">VOD categories</h2><span class="muted small" id="categories-count"></span></div>
         <div class="filters">
@@ -1210,6 +1227,36 @@
       .then(function () { $("groups-apply").disabled = false; });
   });
 
+  // ---------- OpenSubtitles
+  function showSubtitles(data) {
+    text("os-state", data.key_set ? "Key set" + (data.account ? " · account " + data.account : " · no account") : "No key: each TV needs its own");
+    $("os-key-remove").disabled = !data.key_set;
+    $("os-account-remove").disabled = !data.account;
+  }
+  function loadSubtitles() { return call("admin/subtitles/").then(showSubtitles).catch(function () {}); }
+  $("os-key-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var input = $("os-key"), key = input.value.trim();
+    if (!key) return;
+    post("admin/subtitles/", { key: key }).then(function () { input.value = ""; say("OpenSubtitles key saved"); return loadSubtitles(); })
+      .catch(function () { say("OpenSubtitles refused this key"); });
+  });
+  $("os-key-remove").addEventListener("click", function () {
+    if (!window.confirm("Remove the OpenSubtitles key? The TVs without their own key can no longer search.")) return;
+    post("admin/subtitles/", { key: null }).then(function () { say("Key removed"); return loadSubtitles(); }).catch(fail("Not done"));
+  });
+  $("os-account-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var user = $("os-user").value.trim(), password = $("os-password").value;
+    if (!user || !password) return;
+    post("admin/subtitles/", { username: user, password: password })
+      .then(function () { $("os-password").value = ""; say("Account saved: used from the next download"); return loadSubtitles(); })
+      .catch(fail("Not saved"));
+  });
+  $("os-account-remove").addEventListener("click", function () {
+    post("admin/subtitles/", { username: null }).then(function () { say("Account removed"); return loadSubtitles(); }).catch(fail("Not done"));
+  });
+
   // ---------- Backup
   $("backup-export").addEventListener("click", function () {
     call("admin/backup/", { raw: true }).then(function (blob) {
@@ -1271,6 +1318,7 @@
         call("admin/stats/?days=14").then(showOverviewDays).catch(function () { showOverviewDays({}); }),
         loadStats(state.statsDays),
         call("admin/tmdb/").then(showTmdb),
+        loadSubtitles(),
         loadCategories()
       ]);
     }).catch(function (error) {

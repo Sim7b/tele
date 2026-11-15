@@ -292,6 +292,32 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `subtitles are searched and downloaded through the plugin`() = runBlocking {
+        var searched: String? = null
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"plugin": "tele_api", "api": 1, "features": ["subtitles"]}""")
+                TeleApi.SUBTITLES_SEARCH_PATH -> {
+                    searched = request.url.query
+                    json("""{"data": [{"attributes": {"language": "fr", "release": "Dune", "download_count": 3, "files": [{"file_id": 7}]}}]}""")
+                }
+                TeleApi.SUBTITLES_DOWNLOAD_PATH -> MockResponse.Builder().addHeader("X-Subtitle-Extension", "srt")
+                    .addHeader("X-Subtitle-Remaining", "4").body("1\n00:00:01,000 --> 00:00:02,000\nSalut\n").build()
+                else -> null
+            }
+        }
+        val client = client()
+        assertTrue(client.hasServerSubtitles())
+        val query = io.github.sim7b.tele.data.subtitles.SubtitleQuery(title = "Dune", tmdbId = "438631")
+        val answer = client.searchSubtitles(io.github.sim7b.tele.data.subtitles.OpenSubtitles.searchUrl(query, listOf("fr")))
+        assertEquals("languages=fr&tmdb_id=438631", searched)
+        assertEquals(7L, io.github.sim7b.tele.data.subtitles.OpenSubtitles.parseSearch(answer, listOf("fr")).single().fileId)
+        val (bytes, extension, remaining) = client.downloadSubtitle(7)
+        assertTrue(String(bytes).contains("Salut"))
+        assertEquals("srt" to 4, extension to remaining)
+    }
+
+    @Test
     fun `parses the plugin answers defensively`() {
         assertNull(TeleApi.features(JSONObject("""{"api": 2, "features": ["channels"]}""")))
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))

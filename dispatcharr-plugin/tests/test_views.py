@@ -337,6 +337,27 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(store, {})
         self.assertEqual(self.call(views.AdminMessagesView, who=user()).status_code, 403)
 
+    def test_subtitles_through_the_server(self):
+        from tele_api import opensubtitles
+
+        with mock.patch("tele_api.vault.opensubtitles_key", return_value=None):
+            refused = self.call(views.SubtitleSearchView, path="/?tmdb_id=1", who=user())
+            info = self.call(views.InfoView, who=user())
+        self.assertEqual(refused.status_code, 401)
+        self.assertNotIn("subtitles", info.data["features"])
+        with mock.patch("tele_api.vault.opensubtitles_key", return_value="k" * 32):
+            self.assertIn("subtitles", self.call(views.InfoView, who=user()).data["features"])
+        self.assertEqual(self.call(views.SubtitleDownloadView, "post", who=user(), body={"file_id": "x"}).status_code, 400)
+        with mock.patch.object(opensubtitles, "download", return_value=(b"1\n00:00:01,000 --> 00:00:02,000\nHi\n", "srt", 4)):
+            done = self.call(views.SubtitleDownloadView, "post", who=user(), body={"file_id": 7})
+        self.assertEqual(done.status_code, 200)
+        self.assertEqual((done["X-Subtitle-Extension"], done["X-Subtitle-Remaining"]), ("srt", "4"))
+        self.assertEqual(self.call(views.AdminSubtitlesView, who=user()).status_code, 403)
+        with mock.patch.object(opensubtitles, "test", return_value=False), mock.patch("tele_api.vault.set_opensubtitles_key") as saved:
+            bad = self.call(views.AdminSubtitlesView, "post", who=user(level=10), body={"key": "k" * 32})
+        self.assertEqual(bad.status_code, 400)
+        saved.assert_not_called()
+
     def test_groups_served_to_the_tvs(self):
         served = {"mode": "selected", "groups": [{"name": "FR | FILMS", "type": "movie"}]}
         with mock.patch.object(views.probe, "served_groups", return_value=served):

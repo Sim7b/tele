@@ -80,7 +80,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Movies and series module: loaded when its screen opens (off by default)
     val vod = VodRepository(configRepository, viewModelScope)
     // Subtitles from OpenSubtitles, on request, kept on the device by movie or episode
-    val subtitles = SubtitleRepository(configRepository, SubtitleCache(java.io.File(application.filesDir, "subtitles")))
+    val subtitles = SubtitleRepository(configRepository, SubtitleCache(java.io.File(application.filesDir, "subtitles"))) {
+        vod.subtitleServer()
+    }
     // Reminders of programs and recent channels of the guide
     val guideStore = GuideStore(application)
     // Connection test from a source form (each loaded Dispatcharr source has its own client)
