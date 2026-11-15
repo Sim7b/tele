@@ -310,6 +310,19 @@ def usernames(user_ids: Iterable[Optional[str]]) -> Dict[str, str]:
     return {str(pk): name for pk, name in get_user_model().objects.filter(id__in=ids).values_list("id", "username")}
 
 
+def adult_categories(category_ids: Iterable[int]) -> set:
+    """VOD categories holding adult movies (Dispatcharr marks movies only)."""
+    ids = [i for i in category_ids if i is not None]
+    if not ids:
+        return set()
+    from apps.vod.models import M3UMovieRelation
+
+    return set(
+        M3UMovieRelation.objects.filter(category_id__in=ids, movie__is_adult=True)
+        .values_list("category_id", flat=True).distinct()
+    )
+
+
 def client_ip(request) -> Optional[str]:
     try:
         from dispatcharr.utils import get_client_ip

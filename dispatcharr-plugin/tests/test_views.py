@@ -182,6 +182,16 @@ class RateLimitTest(ViewTest):
 
 
 class VodLanguagesViewTest(ViewTest):
+    def test_adult_categories_hidden_for_users_hiding_mature_content(self):
+        measured = [{"id": 3, "name": "FR | FILMS"}, {"id": 4, "name": "XXX"}]
+        prudish = user()
+        prudish.custom_properties = {"hide_adult_content": True}
+        with mock.patch.object(views.probe, "measured_categories", return_value=measured), \
+                mock.patch.object(views.data, "adult_categories", return_value={4}):
+            self.assertEqual([c["id"] for c in self.call(views.VodLanguagesView, who=prudish).data["categories"]], [3])
+            self.assertEqual(len(self.call(views.VodLanguagesView, who=user()).data["categories"]), 2)
+            self.assertTrue(self.call(views.InfoView, who=prudish).data["user"]["hide_adult"])
+
     def test_measured_languages_for_standard_users(self):
         measured = [{"id": 3, "name": "FR | MULTI", "type": "movie", "audio": ["fr"], "subtitles": [], "probed_at": 1}]
         with mock.patch.object(views.probe, "measured_categories", return_value=measured):

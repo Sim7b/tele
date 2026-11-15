@@ -39,6 +39,8 @@ authentication of the Dispatcharr API (`X-API-Key` or JWT) and these rules:
 - every endpoint needs a standard user or above, and answers 403 once the plugin is disabled;
 - channels go through `channels_queryset_for_user` of Dispatcharr: level, adult content filter and channel
   profiles of the user apply, and hidden channels are left out, as in the Dispatcharr channel list;
+- the "Hide mature content" preference of a Dispatcharr user applies: adult channels are left out (as in
+  Dispatcharr), and so are the VOD categories holding adult movies in the measured languages;
 - a standard user only sees and closes their own sessions, without the address and player of other TVs;
   each session id sent is read again from Redis before anything is closed;
 - admins can list (`?all=1`) and close the sessions of every user.

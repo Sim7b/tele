@@ -65,6 +65,11 @@ def is_admin(user) -> bool:
     return getattr(user, "user_level", 0) >= ADMIN_LEVEL
 
 
+def hides_adult(user) -> bool:
+    """The Dispatcharr preference "Hide mature content" of a standard user (admins always see everything)."""
+    return not is_admin(user) and bool((getattr(user, "custom_properties", None) or {}).get("hide_adult_content"))
+
+
 class IsStandardUser(permissions.BasePermission):
     """Same rule as the Dispatcharr channel API: a logged-in user of the standard level or above."""
 
@@ -145,7 +150,7 @@ class InfoView(TeleView):
                 "api": core.API_VERSION,
                 "features": list(FEATURES),
                 "server_time": data.server_time(),
-                "user": {"username": user.username, "admin": is_admin(user)},
+                "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
             }
         )
@@ -305,7 +310,12 @@ class VodLanguagesView(TeleView):
     """Audio and subtitle languages measured by category (ffprobe on one of its files)."""
 
     def get(self, request):
-        return Response({"api": core.API_VERSION, "categories": probe.measured_categories()})
+        categories = probe.measured_categories()
+        if hides_adult(request.user):
+            # Mature content hidden for this user: the categories holding adult movies are left out too
+            adult = data.adult_categories(c["id"] for c in categories if c["id"] is not None)
+            categories = [c for c in categories if c["id"] not in adult]
+        return Response({"api": core.API_VERSION, "categories": categories})
 
 
 class VodMediaView(TeleView):
