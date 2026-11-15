@@ -37,9 +37,16 @@ object VodNames {
         "CAM" to "CAM", "HDCAM" to "CAM", "TS" to "TS", "HDTS" to "TS", "TELESYNC" to "TS", "TELECINE" to "TS",
         "SCREENER" to "SCR", "SCR" to "SCR", "DVDSCR" to "SCR"
     )
+    // MULTI: several audio tracks; MULTISUB: several subtitle languages (one audio track)
     private val LANGUAGE = linkedMapOf(
-        "MULTI" to "MULTI", "MULTI-SUB" to "MULTI", "TRUEFRENCH" to "VF", "FRENCH" to "VF", "VF" to "VF", "VFF" to "VF",
-        "VFQ" to "VFQ", "VFI" to "VF", "VO" to "VO", "VOST" to "VOSTFR", "VOSTFR" to "VOSTFR", "SUBFRENCH" to "VOSTFR"
+        "MULTI" to "MULTI", "MULTI-AUDIO" to "MULTI", "DUAL-AUDIO" to "MULTI",
+        "MULTI-SUB" to "MULTISUB", "MULTI-SUBS" to "MULTISUB", "MULTISUB" to "MULTISUB", "MULTISUBS" to "MULTISUB",
+        "TRUEFRENCH" to "VF", "FRENCH" to "VF", "VF" to "VF", "VFF" to "VF", "VFI" to "VF", "VF2" to "VF", "VFB" to "VF",
+        "VOF" to "VF", "VFQ" to "VFQ", "VO" to "VO", "VOA" to "VO",
+        "VOST" to "VOSTFR", "VOSTFR" to "VOSTFR", "VOSTF" to "VOSTFR", "SUBFRENCH" to "VOSTFR", "STFR" to "VOSTFR",
+        "SUBFR" to "VOSTFR", "FASTSUB" to "VOSTFR",
+        "VOSTA" to "VOSTEN", "VOSTEN" to "VOSTEN", "VOSTENG" to "VOSTEN", "VOSTANG" to "VOSTEN", "ENGSUB" to "VOSTEN",
+        "ENGSUBS" to "VOSTEN", "SUBENG" to "VOSTEN"
     )
 
     fun parse(raw: String): ParsedVodName {
