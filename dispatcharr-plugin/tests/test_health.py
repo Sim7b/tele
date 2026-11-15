@@ -104,3 +104,33 @@ class DevicesTest(unittest.TestCase):
         self.assertEqual((listed[0]["user"], listed[0]["version"], listed[0]["sessions"]), ("salon", "0.3.27", 1))
         self.assertEqual(core.device_users(devices.all_raw(store)), ["7"])
         self.assertIsNone(core.app_version("<script>"))
+
+
+class StatsTest(unittest.TestCase):
+    def test_top_channels_and_peaks(self):
+        top = core.top_channels([{"a": "3", "b": 1}, {b"a": b"2", "c": "x"}], {"a": "TF1"}, limit=2)
+        self.assertEqual(top, [{"channel": "a", "name": "TF1", "starts": 5}, {"channel": "b", "name": "b", "starts": 1}])
+        peaks = core.peaks(["20261115", "20261114"], [{"1": "3", "9": 2}, {"1": 1}], {1: ("Provider", 4)})
+        self.assertEqual(peaks, [{"account": 1, "name": "Provider", "max": 4,
+                                  "days": [{"day": "20261114", "used": 1}, {"day": "20261115", "used": 3}]}])
+        self.assertEqual(len(core.last_days(0, 7)), 7)
+
+    def test_views_are_counted_from_the_start_events(self):
+        from tele_api import stats
+
+        counts = {}
+
+        class Store(FakeHash):
+            def hincrby(self, key, field, amount):
+                counts[(key, field)] = counts.get((key, field), 0) + amount
+
+            def expire(self, key, ttl):
+                pass
+
+        store = Store()
+        with mock.patch("tele_api.data.redis_client", return_value=store):
+            Plugin().run("stream_health", {"event": "channel_start", "payload": {"channel_id": "u1", "channel_name": "TF1", "stream_id": 3}}, {})
+        self.assertEqual(list(counts.values()), [1])
+        self.assertEqual(store.values["u1"], "TF1")
+        stats.record_view(store, {"channel_id": "x" * 100})
+        self.assertEqual(len(counts), 1)

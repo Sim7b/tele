@@ -388,6 +388,19 @@ class AdminDeviceReleaseView(AdminView):
         return Response({"api": core.API_VERSION, "released": released})
 
 
+class AdminStatsView(AdminView):
+    """Most started channels and provider connection peaks of the last days (?days=1-30, default 7)."""
+
+    def get(self, request):
+        from . import stats
+
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        days = core.query_int(request.query_params.get("days"), 7, 1, core.STATS_DAYS)
+        return Response({"api": core.API_VERSION, **stats.report(client, days)})
+
+
 class AdminProbesView(AdminView):
     """Every probe result (measured, retrying, failed) and the counts, for the Télé page."""
 

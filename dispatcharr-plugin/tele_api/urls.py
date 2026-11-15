@@ -13,6 +13,7 @@ urlpatterns = [
     path("v1/vod/media/", views.VodMediaView.as_view(), name="vod-media"),
     path("v1/admin/devices/", views.AdminDevicesView.as_view(), name="admin-devices"),
     path("v1/admin/devices/release/", views.AdminDeviceReleaseView.as_view(), name="admin-devices-release"),
+    path("v1/admin/stats/", views.AdminStatsView.as_view(), name="admin-stats"),
     path("v1/admin/probes/", views.AdminProbesView.as_view(), name="admin-probes"),
     path("v1/admin/probes/run/", views.AdminProbeRunView.as_view(), name="admin-probes-run"),
     path("v1/admin/probes/reset/", views.AdminProbeResetView.as_view(), name="admin-probes-reset"),

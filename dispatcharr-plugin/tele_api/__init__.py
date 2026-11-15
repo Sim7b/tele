@@ -39,6 +39,10 @@ class Plugin:
             client = data.redis_client()
             if params and "event" in params:
                 health.record(client, params.get("event"), params.get("payload"))
+                if params.get("event") == "channel_start":
+                    from . import stats
+
+                    stats.record_view(client, params.get("payload"))
                 return {"status": "ok"}
             return {"status": "ok", "message": f"{health.tracked(client) if client else 0} streams with recent failures or plays"}
         if action == "probe_now":

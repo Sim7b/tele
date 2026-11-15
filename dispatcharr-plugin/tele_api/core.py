@@ -681,3 +681,49 @@ def device_users(raw: Mapping[Any, Any]) -> List[str]:
         if isinstance(data, dict) and to_text(data.get("user")):
             users.append(to_text(data.get("user")))
     return users
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Viewing statistics (admin page)
+
+STATS_DAYS = 30
+
+
+def day_key(timestamp: float) -> str:
+    import datetime
+
+    return datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc).strftime("%Y%m%d")
+
+
+def last_days(now: float, days: int) -> List[str]:
+    return [day_key(now - i * 86400) for i in range(max(1, days))]
+
+
+def top_channels(counts_by_day: Iterable[Mapping[Any, Any]], names: Mapping[Any, Any], limit: int = 20) -> List[Dict[str, Any]]:
+    """Channels most started over the days given (each day: channel id -> starts), with their name."""
+    totals: Dict[str, int] = {}
+    for day in counts_by_day:
+        for channel, count in (day or {}).items():
+            key = to_text(channel)
+            value = to_int(count, 0) or 0
+            if key and value > 0:
+                totals[key] = totals.get(key, 0) + value
+    ranked = sorted(totals.items(), key=lambda item: (-item[1], item[0]))[: max(1, limit)]
+    return [{"channel": key, "name": to_text(names.get(key)) or key, "starts": count} for key, count in ranked]
+
+
+def peaks(days: Iterable[str], peaks_by_day: Iterable[Mapping[Any, Any]], limits: Mapping[int, Tuple[str, int]]) -> List[Dict[str, Any]]:
+    """Highest connections used per account and day: [{"account", "name", "max", "days": [{"day", "used"}]}]."""
+    accounts: Dict[int, Dict[str, Any]] = {}
+    for day, values in zip(days, peaks_by_day):
+        for account, used in (values or {}).items():
+            account_id = to_int(account)
+            if account_id is None or account_id not in limits:
+                continue
+            name, maximum = limits[account_id]
+            entry = accounts.setdefault(account_id, {"account": account_id, "name": name, "max": maximum, "days": []})
+            entry["days"].append({"day": day, "used": to_int(used, 0) or 0})
+    result = sorted(accounts.values(), key=lambda a: (str(a["name"]).lower(), a["account"]))
+    for entry in result:
+        entry["days"].sort(key=lambda d: d["day"])
+    return result

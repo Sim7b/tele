@@ -38,4 +38,8 @@ def probe_vod_languages():
     settings = plugin_settings()
     if settings is None:
         return 0
+    # Every 10 minutes: the provider connections used, for the peaks of the statistics
+    from . import data, stats
+
+    stats.sample_peaks(data.redis_client())
     return probe.run(settings)
