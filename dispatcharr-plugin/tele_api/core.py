@@ -454,3 +454,8 @@ def host_allowed(addresses: Iterable[Any], trusted: Iterable[Any] = ()) -> bool:
         return False
     trusted_set = {str(a) for a in trusted}
     return all(a in trusted_set or is_public_address(a) for a in resolved)
+
+
+def over_limit(count: Any, limit: int) -> bool:
+    """A request beyond [limit] in its minute ([count]: its rank in the minute)."""
+    return limit > 0 and (to_int(count, 0) or 0) > limit

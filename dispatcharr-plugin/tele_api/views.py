@@ -15,6 +15,7 @@ import time
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from . import core, data, probe
@@ -27,6 +28,7 @@ FEATURES = ("channels", "slots", "sessions", "vod_languages")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
+DEFAULT_RATE_LIMIT = 120
 STANDARD_LEVEL = 1
 
 
@@ -78,9 +80,44 @@ class PluginEnabled(permissions.BasePermission):
         return plugin_state.get()[0]
 
 
+class PerUserLimit(BaseThrottle):
+    """Requests of a user per minute (setting rate_limit_per_minute, 0 = no limit): a leaked standard key
+    cannot keep the database busy. Admins are not limited; without Redis, no limit (never a lockout)."""
+
+    def __init__(self):
+        self.wait_seconds = None
+
+    def allow_request(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated or is_admin(user):
+            return True
+        limit = core.query_int(plugin_state.get()[1].get("rate_limit_per_minute"), DEFAULT_RATE_LIMIT, 0, 100_000)
+        if limit == 0:
+            return True
+        client = data.redis_client()
+        if client is None:
+            return True
+        now = time.time()
+        key = f"tele_api:rate:{user.pk}:{int(now // 60)}"
+        try:
+            count = client.incr(key)
+            if count == 1:
+                client.expire(key, 61)
+        except Exception:
+            return True
+        if core.over_limit(count, limit):
+            self.wait_seconds = 60 - int(now % 60)
+            return False
+        return True
+
+    def wait(self):
+        return self.wait_seconds
+
+
 class TeleView(APIView):
     # Authentication classes: the defaults of the server (JWT and API key)
     permission_classes = [IsStandardUser, PluginEnabled]
+    throttle_classes = [PerUserLimit]
 
     @staticmethod
     def setting(name, default):
@@ -151,7 +188,12 @@ class SlotsView(TeleView):
         used = data.connections_by_profile(p.profile_id for p in limits if p.active and p.max_streams > 0)
         if used is None:
             return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        return Response({"api": core.API_VERSION, **core.slots(limits, used)})
+        result = core.slots(limits, used)
+        if not is_admin(request.user) and not self.setting("show_provider_names", False):
+            # Provider accounts are the business of the admins: counts only for the players
+            for account in result["accounts"]:
+                account["name"] = None
+        return Response({"api": core.API_VERSION, **result})
 
 
 class SessionsView(TeleView):

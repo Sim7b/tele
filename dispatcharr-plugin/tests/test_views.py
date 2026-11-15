@@ -94,6 +94,15 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(response.data["free"], 1)
         self.assertEqual(list(used.call_args[0][0]), [1])
 
+    def test_provider_names_are_for_admins_unless_shown(self):
+        limits = [core.ProfileLimit(1, 1, "My provider", 2, True)]
+        with mock.patch.object(views.data, "profile_limits", return_value=limits), \
+                mock.patch.object(views.data, "connections_by_profile", return_value={}):
+            self.assertIsNone(self.call(views.SlotsView, who=user()).data["accounts"][0]["name"])
+            self.assertEqual(self.call(views.SlotsView, who=user(level=10)).data["accounts"][0]["name"], "My provider")
+            self.state.return_value = (True, {"show_provider_names": True})
+            self.assertEqual(self.call(views.SlotsView, who=user()).data["accounts"][0]["name"], "My provider")
+
     def test_slots_without_redis(self):
         with mock.patch.object(views.data, "profile_limits", return_value=[]), \
                 mock.patch.object(views.data, "connections_by_profile", return_value=None):
@@ -141,6 +150,35 @@ class ViewTest(unittest.TestCase):
         self.state.return_value = (True, {"allow_release": False})
         response = self.call(views.ReleaseSessionsView, "post", who=user(), body={"ids": []})
         self.assertEqual(response.status_code, 403)
+
+
+class RateLimitTest(ViewTest):
+    class Counter:
+        def __init__(self):
+            self.counts = {}
+
+        def incr(self, key):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        def expire(self, key, ttl):
+            pass
+
+    def test_standard_users_are_limited_per_minute(self):
+        self.state.return_value = (True, {"rate_limit_per_minute": 2})
+        with mock.patch.object(views.data, "redis_client", return_value=self.Counter()):
+            codes = [self.call(views.InfoView, who=user()).status_code for _ in range(3)]
+            admin = [self.call(views.InfoView, who=user(pk=1, level=10)).status_code for _ in range(3)]
+        self.assertEqual(codes, [200, 200, 429])
+        self.assertEqual(admin, [200, 200, 200])
+
+    def test_no_limit_without_redis_or_when_off(self):
+        self.state.return_value = (True, {"rate_limit_per_minute": 1})
+        with mock.patch.object(views.data, "redis_client", return_value=None):
+            self.assertEqual([self.call(views.InfoView, who=user()).status_code for _ in range(3)], [200] * 3)
+        self.state.return_value = (True, {"rate_limit_per_minute": 0})
+        with mock.patch.object(views.data, "redis_client", return_value=self.Counter()):
+            self.assertEqual([self.call(views.InfoView, who=user()).status_code for _ in range(3)], [200] * 3)
 
 
 class VodLanguagesViewTest(ViewTest):

@@ -19,6 +19,20 @@
       "help_text": "Télé closes the preview or the channel it left open before opening another one, so a TV never holds two provider connections."
     },
     {
+      "id": "rate_limit_per_minute",
+      "label": "Requests per minute and user",
+      "type": "number",
+      "default": 120,
+      "help_text": "Beyond, the Télé endpoints answer 429 for the rest of the minute. 0: no limit. Admins are not limited."
+    },
+    {
+      "id": "show_provider_names",
+      "label": "Show the provider account names to players",
+      "type": "boolean",
+      "default": false,
+      "help_text": "Off: standard users only get the numbers of free connections; admins always see the names."
+    },
+    {
       "id": "vod_info",
       "label": "VOD languages",
       "type": "info",

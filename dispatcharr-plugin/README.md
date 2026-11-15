@@ -49,6 +49,8 @@ The plugin card (**Plugins**) has the settings and the actions; Dispatcharr show
 | Setting | Default | |
 |---|---|---|
 | Let players close their own sessions | on | Télé closes the preview or the channel it left open |
+| Requests per minute and user | 120 | Beyond, 429 for the rest of the minute; 0: no limit; admins not limited |
+| Show the provider account names to players | off | Standard users get the counts only |
 | Measure VOD languages with ffprobe | on | Every 10 minutes, in the background |
 | Categories to probe | uncertain ones | Or every category |
 | Free connections to keep | 1 | On the provider profile, before a probe starts |
@@ -130,7 +132,8 @@ Channel overrides are applied (name, number, group, logo, guide). The logo is
  "accounts": [{"id": 1, "name": "Provider", "total": 4, "used": 3, "free": 1, "unlimited": false}]}
 ```
 
-Only the active profiles of the active accounts count; a profile with no limit makes its account `unlimited`
+Account names are `null` for standard users unless the plugin shows them (setting). Only the active
+profiles of the active accounts count; a profile with no limit makes its account `unlimited`
 and is left out of the total.
 
 ### `GET /api/tele/v1/sessions/`
