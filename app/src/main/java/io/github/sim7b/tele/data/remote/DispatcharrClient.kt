@@ -693,6 +693,29 @@ class DispatcharrClient(
         TeleApi.parseVodLanguages(getObject("$baseUrl${TeleApi.VOD_LANGUAGES_PATH}"))
     }
 
+    /**
+     * Sync between the TVs of the user (Télé API plugin): sends [changes] ({collection: {key: {"v", "t", "d"}}})
+     * and answers every item of the user. Null without the plugin, when the sync is off on the server, or on error.
+     */
+    suspend fun syncTvs(changes: JSONObject): JSONObject? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "sync" !in teleApi()) return@withContext null
+        val body = JSONObject().put("changes", changes).toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl${TeleApi.SYNC_PATH}").post(body).build()
+        try {
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "HTTP ${response.code}: ${request.url.encodedPath}")
+                    return@executeCancellable null
+                }
+                JSONObject(HttpClients.jsonString(response.body))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            null
+        }
+    }
+
     /** What the plugin knows of a file: measured ([info] in the Xtream "info" format), being measured, or not. */
     data class VodMedia(val pending: Boolean, val info: JSONObject?)
 

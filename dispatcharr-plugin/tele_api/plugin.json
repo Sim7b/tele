@@ -19,6 +19,13 @@
       "help_text": "Télé closes the preview or the channel it left open before opening another one, so a TV never holds two provider connections."
     },
     {
+      "id": "allow_sync",
+      "label": "Sync the TVs of a user",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Favorites, movie and episode positions, my list, collections and reminders, shared by the Télé TVs signed in with the same Dispatcharr user (kept in the data folder, one file per user)."
+    },
+    {
       "id": "rate_limit_per_minute",
       "label": "Requests per minute and user",
       "type": "number",

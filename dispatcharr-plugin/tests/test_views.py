@@ -103,6 +103,14 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(first.data["results"], programs)
         self.assertEqual(again.status_code, 304)
 
+    def test_sync_is_per_user_and_can_be_turned_off(self):
+        with mock.patch("tele_api.sync.merge", return_value=({"favorites": {}}, 0)) as merge:
+            response = self.call(views.SyncView, "post", who=user(), body={"changes": {"favorites": {}}})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(merge.call_args.args[0], 7)
+        self.state.return_value = (True, {"allow_sync": False})
+        self.assertEqual(self.call(views.SyncView, who=user()).status_code, 403)
+
     def test_slots(self):
         limits = [core.ProfileLimit(1, 1, "P", 2, True)]
         with mock.patch.object(views.data, "profile_limits", return_value=limits), \

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -207,6 +207,34 @@ class GuideView(TeleView):
         if core.etag_matches(request.headers.get("If-None-Match"), tag):
             return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
         return Response({"api": core.API_VERSION, "start": start, "end": end, "results": results}, headers={"ETag": tag})
+
+
+class SyncView(TeleView):
+    """Favorites, VOD positions, my list, collections and reminders of the caller, shared by their TVs.
+
+    GET: every item; POST {"changes": {collection: {key: {"v", "t", "d"}}}}: merged item by item (the most recent
+    change wins), answers every item. Turned off by the plugin setting allow_sync.
+    """
+
+    MAX_BODY = 2 * 1024 * 1024
+
+    def get(self, request):
+        from . import sync
+
+        if not self.setting("allow_sync", True):
+            return Response({"error": "sync_disabled"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"api": core.API_VERSION, "items": sync.load(request.user.pk)})
+
+    def post(self, request):
+        from . import sync
+
+        if not self.setting("allow_sync", True):
+            return Response({"error": "sync_disabled"}, status=status.HTTP_403_FORBIDDEN)
+        if int(request.META.get("CONTENT_LENGTH") or 0) > self.MAX_BODY:
+            return Response({"error": "too_large"}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        body = request.data if isinstance(request.data, dict) else {}
+        items, kept = sync.merge(request.user.pk, body.get("changes"))
+        return Response({"api": core.API_VERSION, "items": items, "kept": kept})
 
 
 class SlotsView(TeleView):

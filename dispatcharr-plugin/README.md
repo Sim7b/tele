@@ -15,6 +15,8 @@ no admin key needed:
 - **VOD languages measured**: `ffprobe` reads the audio and subtitle tracks of one file per category whose
   name leaves its languages uncertain, without ever taking a connection a viewer needs (below). Télé uses the
   measure in place of what the category name tells.
+- **Sync between TVs**: the favorites, movie and episode positions, my list, collections and reminders of a
+  Dispatcharr user, shared by all their Télé TVs (the most recent change wins, item by item).
 - **Stream health**: the failures of each provider stream (errors, failovers, buffering) are counted from
   the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
   marks them in its stream picker.
@@ -58,6 +60,7 @@ The plugin card (**Plugins**) has the settings and the actions; Dispatcharr show
 | Setting | Default | |
 |---|---|---|
 | Let players close their own sessions | on | Télé closes the preview or the channel it left open |
+| Sync the TVs of a user | on | Favorites, positions, my list, collections, reminders |
 | Requests per minute and user | 120 | Beyond, 429 for the rest of the minute; 0: no limit; admins not limited |
 | Show the provider account names to players | off | Standard users get the counts only |
 | Message for the TVs | empty | Shown on the home screen of the Télé TVs, read again every 5 minutes |
@@ -145,6 +148,15 @@ Dispatcharr grid: `{"results": [{"uuid": "<channel>", "programs": [{"id", "title
 "description", "start", "end", "rating", "icon"}]}]}`. Only the channels the user may watch, descriptions cut at
 1000 characters. The window moves by whole hours and the answer has an `ETag`: `If-None-Match` answers 304
 while the guide did not change, and Télé keeps the guide it has.
+
+### `GET|POST /api/tele/v1/sync/`
+
+GET: every synced item of the caller. POST `{"changes": {"favorites": {"<channel>": {"v": [0], "t": <ms>}},
+"my_list": {"<title>": {"d": true, "t": <ms>}}}}`: each change is kept when more recent than the stored one
+(a time ahead of the server clock is taken as now), and the answer gives every item. Collections:
+`favorites`, `vod_progress`, `my_list`, `collections`, `reminders`; at most 5000 items each, values of 4 KB;
+deletions are forgotten after 60 days. One file per user in `/data/tele_api/sync/`. The **Sync the TVs of a
+user** setting turns it off (403).
 
 ### `GET /api/tele/v1/slots/`
 

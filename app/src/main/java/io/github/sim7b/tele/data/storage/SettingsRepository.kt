@@ -611,6 +611,12 @@ class SettingsRepository(context: Context) {
 
     fun deleteChannelList(listId: String) = persistChannelLists(ChannelLists.delete(_channelLists.value, listId))
 
+    /** Favorites as synced from the other TVs of the user (Télé API plugin). */
+    fun replaceFavorites(order: List<String>) {
+        val cleaned = order.filter { it.isNotBlank() }.distinct()
+        if (cleaned != _favoriteIds.value) persistFavorites(cleaned)
+    }
+
     /** Appends the channel to the favorites, or removes it. */
     fun toggleFavoriteChannel(channelId: String) {
         val current = _favoriteIds.value

@@ -781,3 +781,72 @@ def guide_channels(channels: Iterable[Tuple[str, Any]], programs_by_epg: Mapping
         if programs:
             result.append({"uuid": uuid, "programs": programs[:MAX_PROGRAMS_PER_CHANNEL]})
     return result
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Sync between the TVs of a user (last change wins, item by item)
+
+SYNC_COLLECTIONS = ("favorites", "vod_progress", "my_list", "collections", "reminders")
+MAX_SYNC_ITEMS = 5000
+MAX_SYNC_KEY = 200
+MAX_SYNC_VALUE = 4096
+SYNC_TOMBSTONE_DAYS = 60
+
+
+def _sync_entry(raw: Any) -> Optional[Dict[str, Any]]:
+    """{"v": value, "t": change time in ms, "d": deleted} from a client or the file; None when malformed."""
+    if not isinstance(raw, Mapping):
+        return None
+    changed = to_int(raw.get("t"))
+    if changed is None or changed <= 0:
+        return None
+    deleted = raw.get("d") is True
+    value = None if deleted else raw.get("v")
+    if not deleted:
+        try:
+            if len(json.dumps(value, separators=(",", ":"))) > MAX_SYNC_VALUE:
+                return None
+        except (TypeError, ValueError):
+            return None
+    return {"v": value, "t": changed, "d": deleted}
+
+
+def sync_merge(stored: Any, changes: Any, now_ms: int) -> Tuple[Dict[str, Dict[str, Any]], int]:
+    """Merges [changes] into [stored]: for each item, the most recent change wins (a change from the future is
+    taken as now). Returns the merged items and the number of changes kept. Unknown collections, bad keys
+    and values, items beyond MAX_SYNC_ITEMS and old deletions are dropped."""
+    merged: Dict[str, Dict[str, Any]] = {}
+    for collection in SYNC_COLLECTIONS:
+        items = (stored or {}).get(collection) if isinstance(stored, Mapping) else None
+        merged[collection] = {}
+        for key, raw in (items or {}).items() if isinstance(items, Mapping) else []:
+            entry = _sync_entry(raw)
+            if entry is not None and isinstance(key, str) and 0 < len(key) <= MAX_SYNC_KEY:
+                merged[collection][key] = entry
+    kept = 0
+    if isinstance(changes, Mapping):
+        for collection, items in changes.items():
+            if collection not in SYNC_COLLECTIONS or not isinstance(items, Mapping):
+                continue
+            target = merged[collection]
+            # Bounded work for a hostile client; the oldest go after the merge
+            for key, raw in list(items.items())[: MAX_SYNC_ITEMS * 4]:
+                if not isinstance(key, str) or not 0 < len(key) <= MAX_SYNC_KEY:
+                    continue
+                entry = _sync_entry(raw)
+                if entry is None:
+                    continue
+                entry["t"] = min(entry["t"], now_ms)
+                current = target.get(key)
+                if current is None or entry["t"] > current["t"]:
+                    target[key] = entry
+                    kept += 1
+    horizon = now_ms - SYNC_TOMBSTONE_DAYS * 86400 * 1000
+    for collection, items in merged.items():
+        for key in [k for k, e in items.items() if e["d"] and e["t"] < horizon]:
+            del items[key]
+        if len(items) > MAX_SYNC_ITEMS:
+            # The oldest changes go first
+            for key, _ in sorted(items.items(), key=lambda kv: kv[1]["t"])[: len(items) - MAX_SYNC_ITEMS]:
+                del items[key]
+    return merged, kept

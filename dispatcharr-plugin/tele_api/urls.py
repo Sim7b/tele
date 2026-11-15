@@ -7,6 +7,7 @@ urlpatterns = [
     path("v1/channels/", views.ChannelsView.as_view(), name="channels"),
     path("v1/guide/", views.GuideView.as_view(), name="guide"),
     path("v1/slots/", views.SlotsView.as_view(), name="slots"),
+    path("v1/sync/", views.SyncView.as_view(), name="sync"),
     path("v1/sessions/", views.SessionsView.as_view(), name="sessions"),
     path("v1/sessions/release/", views.ReleaseSessionsView.as_view(), name="sessions-release"),
     path("v1/streams/health/", views.StreamHealthView.as_view(), name="streams-health"),
