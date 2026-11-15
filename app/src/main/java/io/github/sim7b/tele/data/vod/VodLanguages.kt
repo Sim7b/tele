@@ -24,8 +24,9 @@ data class VodLanguages(val audio: Set<String> = emptySet(), val subtitles: Set<
  *   VOSE (Spanish), LEGENDADO (Portuguese), ALTYAZILI (Turkish), NAPISY (Polish), "SUB FR", "ENG SUBS";
  * - MULTI / DUAL: the local language and the original one; MULTI-SUB / MULTISUB: several subtitle languages
  *   (not several audio tracks), the local one most likely among them; VO: the original audio only;
- * - written in Arabic: foreign movies and series subtitled in Arabic, so the original audio (English when
- *   nothing tells) with Arabic subtitles, unless dubbed (مدبلج) or Arabic content (عربي, مصري, خليجي).
+ * - written in Arabic, or an Arabic group in Latin letters ("ARABIC MOVIES", "AR | FILMS"): foreign movies and
+ *   series subtitled in Arabic, so the original audio (English when nothing tells) with Arabic subtitles,
+ *   unless dubbed (مدبلج, "ARABIC DUBBED") or Arabic content (عربي, مصري, خليجي).
  */
 object VodLanguageGuess {
 
@@ -229,6 +230,8 @@ object VodLanguageGuess {
         val localDefault = HashSet<String>(1)
         var multiSubtitles = false
         var original = false
+        // "ARABIC", "ARABE": an Arabic group, read like one written in Arabic
+        var arabicGroup = false
         var i = 0
         while (i < words.size) {
             val word = words[i]
@@ -275,13 +278,17 @@ object VodLanguageGuess {
                 }
                 word in MULTI_AUDIO -> multi = true
                 word in ORIGINAL -> original = true
-                else -> WORDS[word]?.let(explicit::add)
+                else -> WORDS[word]?.let { if (it == "ar") arabicGroup = true else explicit.add(it) }
             }
             i++
         }
-        val country = codes.filter { it !in tagCodes }.mapNotNull { CODES[it] }.toSet()
+        val country = codes.filter { it !in tagCodes }.mapNotNull { CODES[it] }.toMutableSet()
+        // "AR | FILMS": the Arabic country code too
+        if (country.remove("ar")) arabicGroup = true
         val arabic = if (hasArabic(text)) readArabic(text) else NOTHING
-        return Reading(explicit, country, subtitles, multi, local, localDefault, multiSubtitles, original) + arabic
+        return Reading(
+            explicit, country, subtitles, multi, local, localDefault, multiSubtitles, original, arabic = arabicGroup
+        ) + arabic
     }
 
     private fun hasArabic(text: String): Boolean = text.any { it in '\u0600'..'\u06FF' }

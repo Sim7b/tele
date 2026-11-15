@@ -14,7 +14,8 @@ class VodLanguagesTest {
     fun `the group gives the language of its titles`() {
         assertEquals(VodLanguages(setOf("fr")), guess("Dune (2024)", "FR | FILMS ACTION"))
         assertEquals(VodLanguages(setOf("en")), guess("Dune (2024)", "|EN| NETFLIX MOVIES"))
-        assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "ARABIC MOVIES"))
+        // Arabic groups: the original audio, English when nothing tells, with Arabic subtitles
+        assertEquals(VodLanguages(setOf("en"), setOf("ar")), guess("Dune (2024)", "ARABIC MOVIES"))
         assertEquals(VodLanguages(setOf("es")), guess("Dune (2024)", "Películas Latino"))
         assertTrue(guess("Dune (2024)", "Action").isEmpty)
         assertTrue(guess("Dune (2024)", null).isEmpty)
@@ -92,6 +93,10 @@ class VodLanguagesTest {
         assertEquals(VodLanguages(setOf("ar")), guess("فيلم الفيل الأزرق", "أفلام عربية"))
         assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "أفلام مصرية"))
         assertEquals("عربيه", VodLanguageGuess.arabicStem("العربية"))
+        // The same in Latin letters
+        assertEquals(VodLanguages(setOf("en"), setOf("ar")), guess("Dune (2024)", "AR | FILMS"))
+        assertEquals(VodLanguages(setOf("tr"), setOf("ar")), guess("Kuruluş Osman S01E01", "AR | TURKISH SERIES"))
+        assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "ARABIC DUBBED MOVIES"))
     }
 
     @Test(timeout = 2_000)
