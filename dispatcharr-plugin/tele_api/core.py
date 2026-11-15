@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.5"
+PLUGIN_VERSION = "0.3.6"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1376,3 +1376,52 @@ def popular_titles(plays: Mapping[str, int], titles: Mapping[str, Tuple[str, int
         totals[title] = totals.get(title, 0) + (to_int(count, 0) or 0)
     ranked = sorted(totals.items(), key=lambda item: (-item[1], item[0]))[:limit]
     return [{"kind": kind, "id": title_id, "plays": count} for (kind, title_id), count in ranked if count > 0]
+
+
+_SUBTITLE_PARAMS = {
+    "tmdb_id": r"^[0-9]{1,10}$", "imdb_id": r"^[0-9]{1,10}$", "parent_tmdb_id": r"^[0-9]{1,10}$",
+    "parent_imdb_id": r"^[0-9]{1,10}$", "season_number": r"^[0-9]{1,4}$", "episode_number": r"^[0-9]{1,5}$",
+    "year": r"^[0-9]{4}$", "languages": r"^[a-z]{2}(-[a-z]{2})?(,[a-z]{2}(-[a-z]{2})?){0,9}$", "query": r"^.{1,200}$",
+}
+
+
+def subtitle_search_query(params: Any) -> Optional[str]:
+    """Query string of an OpenSubtitles search from the parameters of a TV: known ones only, lowercase and sorted
+    (the API redirects other queries); None without anything to search for."""
+    if not hasattr(params, "get"):
+        return None
+    found = {}
+    for name, pattern in _SUBTITLE_PARAMS.items():
+        value = (to_text(params.get(name)) or "").strip().lower()
+        if value and re.match(pattern, value) and "\n" not in value:
+            found[name] = value
+    if not ({"tmdb_id", "imdb_id", "parent_tmdb_id", "parent_imdb_id", "query"} & found.keys()):
+        return None
+    import urllib.parse
+
+    return urllib.parse.urlencode(sorted(found.items()))
+
+
+def subtitle_results(data: Any, limit: int = 100) -> List[Dict[str, Any]]:
+    """The fields of OpenSubtitles results Télé reads, from an untrusted answer."""
+    results = []
+    for item in (data if isinstance(data, list) else [])[:limit]:
+        attributes = item.get("attributes") if isinstance(item, Mapping) else None
+        if not isinstance(attributes, Mapping):
+            continue
+        files = attributes.get("files")
+        first = files[0] if isinstance(files, list) and files and isinstance(files[0], Mapping) else None
+        file_id = to_int(first.get("file_id")) if first else None
+        language = (to_text(attributes.get("language")) or "").lower()
+        if not file_id or file_id <= 0 or not re.match(r"^[a-z]{2}(-[a-z]{2})?$", language):
+            continue
+        results.append({"attributes": {
+            "language": language,
+            "release": (to_text(attributes.get("release")) or to_text(first.get("file_name")) or "")[:300],
+            "download_count": to_int(attributes.get("download_count"), 0) or 0,
+            "hearing_impaired": attributes.get("hearing_impaired") is True,
+            "machine_translated": attributes.get("machine_translated") is True or attributes.get("ai_translated") is True,
+            "from_trusted": attributes.get("from_trusted") is True,
+            "files": [{"file_id": file_id}],
+        }})
+    return results
