@@ -151,6 +151,33 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `sessions left open by this TV are closed through the plugin`() = runBlocking {
+        val bodies = mutableListOf<String>()
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json(info)
+                TeleApi.RELEASE_PATH -> {
+                    synchronized(bodies) { bodies.add(request.body?.utf8() ?: "") }
+                    json("""{"api": 1, "released": ["live:abc:client_1"]}""")
+                }
+                else -> null
+            }
+        }
+        DeviceUserAgent.installId = "0a1b2c3d4e5f"
+        try {
+            assertEquals(1, client().releaseThisDevice())
+            assertEquals(true, JSONObject(bodies.single()).getBoolean("this_device"))
+
+            // A custom User-Agent does not tell this TV from another one behind the same address
+            val custom = DispatcharrClient(SourceConfig(name = "D", serverUrl = server.url("/").toString(), apiKey = "k", customUserAgent = "VLC"))
+            assertEquals(0, custom.releaseThisDevice())
+            assertEquals(1, bodies.size)
+        } finally {
+            DeviceUserAgent.installId = null
+        }
+    }
+
+    @Test
     fun `parses the plugin answers defensively`() {
         assertNull(TeleApi.features(JSONObject("""{"api": 2, "features": ["channels"]}""")))
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))

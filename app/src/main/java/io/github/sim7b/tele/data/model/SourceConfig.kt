@@ -3,6 +3,7 @@ package io.github.sim7b.tele.data.model
 import androidx.annotation.StringRes
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.optStringOrNull
+import io.github.sim7b.tele.data.remote.DeviceUserAgent
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import java.util.UUID
@@ -38,6 +39,13 @@ data class SourceConfig(
      * Absolute, normalized URL. Without a scheme, https:// is added (http:// for Xtream, rarely served over HTTPS).
      * The M3U playlist link is kept as is (query parameters included).
      */
+    /**
+     * User-Agent of the streams of this source: the one chosen by the user, else for Dispatcharr the default one
+     * with the install id (see [DeviceUserAgent]); null leaves the player default.
+     */
+    val playerUserAgent: String?
+        get() = if (type == SourceType.DISPATCHARR) DeviceUserAgent.forDispatcharr(customUserAgent) else customUserAgent
+
     val normalizedUrl: String
         get() {
             var url = serverUrl.trim()

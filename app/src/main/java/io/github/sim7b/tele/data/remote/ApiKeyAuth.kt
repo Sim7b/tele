@@ -28,12 +28,14 @@ class ApiKeyAuth(private val origin: HttpUrl, val key: String) {
 
 /**
  * Network interceptor adding the API key returned by [auth] for a request. Network interceptors run again
- * on each redirect, so the origin is checked for every hop.
+ * on each redirect, so the origin is checked for every hop. A request to another host also loses the install
+ * id of its User-Agent ([DeviceUserAgent]): it is only for the Dispatcharr server.
  */
 class ApiKeyInterceptor(private val auth: (Request) -> ApiKeyAuth?) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val apiKey = auth(request)?.takeIf { it.appliesTo(request.url) } ?: return chain.proceed(request)
+        val apiKey = auth(request)?.takeIf { it.appliesTo(request.url) }
+            ?: return chain.proceed(DeviceUserAgent.withoutDeviceId(request))
         return chain.proceed(request.newBuilder().header(ApiKeyAuth.HEADER, apiKey.key).build())
     }
 }

@@ -86,8 +86,9 @@ and is left out of the total.
 ]}
 ```
 
-`this_device`: same address and same `User-Agent` as the request (best effort: two TVs behind the same address
-with the same player look the same). Admins also get `ip` and `user_agent`, and with `?all=1` the sessions of
+`this_device`: same address and same `User-Agent` as the request. Télé adds a random install id to its
+User-Agent for Dispatcharr (`TV-AndroidTV/1.0 (Android TV; Tele-1a2b3c4d5e6f)`), so two TVs behind the same
+address never look the same; with a custom User-Agent, Télé does not close sessions on its own. Admins also get `ip` and `user_agent`, and with `?all=1` the sessions of
 every user with their `user`.
 
 ### `POST /api/tele/v1/sessions/release/`

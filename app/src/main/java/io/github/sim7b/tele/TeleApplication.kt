@@ -4,6 +4,7 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
+import io.github.sim7b.tele.data.remote.DeviceUserAgent
 import io.github.sim7b.tele.data.remote.HttpClients
 import io.github.sim7b.tele.data.remote.ImageCacheSize
 import io.github.sim7b.tele.data.remote.TlsCompat
@@ -20,6 +21,8 @@ class TeleApplication : Application(), ImageLoaderFactory {
         TlsCompat.init(this)
         // TV (remote) or phone / tablet (touch), for the whole UI
         Device.init(this)
+        // Install id of the User-Agent sent to Dispatcharr (tells this TV's sessions from the others)
+        DeviceUserAgent.init(this)
     }
 
     // Same connection pool as the API, the guides and the player (Coil would create its own client). A disk cache

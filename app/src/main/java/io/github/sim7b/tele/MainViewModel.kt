@@ -233,6 +233,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * A stream of a Dispatcharr server found no free provider connection: the sessions this TV left open there
+     * are closed (Télé API plugin), so the next attempt can take their connection.
+     */
+    fun releaseSessionsOfThisTv(streamUrl: String) {
+        val client = sources.mapNotNull { it.dispatcharr }.firstOrNull { it.isProxyUrl(streamUrl) } ?: return
+        viewModelScope.launch {
+            client.releaseThisDevice()
+            // Connections given back: the header count follows
+            refreshStreamSlots()
+        }
+    }
+
     /** Manual refresh: every source is reloaded, including the reference tables cached by the clients. */
     fun refresh() {
         streamsCache.clear()

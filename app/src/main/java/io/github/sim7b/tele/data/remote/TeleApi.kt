@@ -16,6 +16,7 @@ object TeleApi {
     const val INFO_PATH = "/api/tele/v1/info/"
     const val CHANNELS_PATH = "/api/tele/v1/channels/"
     const val SLOTS_PATH = "/api/tele/v1/slots/"
+    const val RELEASE_PATH = "/api/tele/v1/sessions/release/"
     const val CHANNELS_PAGE_SIZE = 2000
 
     // Pages read at most: 2000 channels each, far more than any server
@@ -47,6 +48,12 @@ object TeleApi {
             isRadio = item.optBoolean("is_radio", false)
         )
     }
+
+    /** Body asking to close every session of this TV (same address and User-Agent as the request). */
+    fun releaseThisDeviceBody(): String = JSONObject().put("this_device", true).toString()
+
+    /** Number of sessions closed, from the answer of [RELEASE_PATH]; 0 when malformed. */
+    fun releasedCount(answer: JSONObject?): Int = answer?.optJSONArray("released")?.length() ?: 0
 
     /** Free provider connections; null when no account has a limit or the answer is malformed. */
     fun parseSlots(slots: JSONObject?): StreamSlots? {

@@ -16,6 +16,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -30,7 +32,7 @@ class DispatcharrClient(
     private val client = HttpClients.base.newBuilder()
         .addInterceptor { chain ->
             val config = currentConfig
-            val userAgent = config?.customUserAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT
+            val userAgent = DeviceUserAgent.forDispatcharr(config?.customUserAgent)
 
             val requestBuilder = chain.request().newBuilder()
                 .header("User-Agent", userAgent)
@@ -109,7 +111,7 @@ class DispatcharrClient(
             .url(testUrl)
             .get()
             .header("Accept", "application/json")
-            .header("User-Agent", config.customUserAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT)
+            .header("User-Agent", DeviceUserAgent.forDispatcharr(config.customUserAgent))
 
         ApiKeyAuth.of(config)?.let { requestBuilder.tag(ApiKeyAuth::class.java, it) }
 
@@ -582,6 +584,37 @@ class DispatcharrClient(
         // of the accounts keep a count the server does not update. Without them, no count rather than a wrong one
         val stats = getObject("$baseUrl/proxy/stats/") ?: return@withContext null
         StreamSlots.fromAccounts(accounts, stats)
+    }
+
+    /**
+     * Closes the Dispatcharr sessions this TV left open (the previous channel, the home preview), through the
+     * Télé API plugin: called when a stream finds no free provider connection. Only when the User-Agent carries
+     * the install id ([DeviceUserAgent]): with a custom one, another TV behind the same address would look the
+     * same. Returns the number of sessions closed (0 without the plugin or on error).
+     */
+    suspend fun releaseThisDevice(): Int = withContext(Dispatchers.IO) {
+        val config = currentConfig ?: return@withContext 0
+        if (baseUrl.isBlank() || !config.customUserAgent.isNullOrBlank() || DeviceUserAgent.installId == null) {
+            return@withContext 0
+        }
+        if ("sessions" !in teleApi()) return@withContext 0
+        val body = TeleApi.releaseThisDeviceBody().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl${TeleApi.RELEASE_PATH}").post(body).build()
+        val released = try {
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "HTTP ${response.code}: ${request.url.encodedPath}")
+                    return@executeCancellable 0
+                }
+                TeleApi.releasedCount(JSONObject(HttpClients.jsonString(response.body)))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            0
+        }
+        if (released > 0) Log.i(TAG, "Sessions of this TV closed: $released")
+        released
     }
 
     /**
