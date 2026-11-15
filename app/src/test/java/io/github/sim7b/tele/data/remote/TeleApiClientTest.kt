@@ -301,6 +301,8 @@ class TeleApiClientTest {
         assertNull(TeleApi.message(JSONObject("""{"message": null}""")))
         assertEquals(500, TeleApi.message(JSONObject(JSONObject().put("message", "x".repeat(900)).toString()))?.length)
 
+        assertEquals(mapOf("5" to "438631"), TeleApi.tmdbIds(JSONObject("""{"ids": {"5": "438631", "x": "1", "6": "0", "7": "abc"}}""")))
+
         assertNull(TeleApi.parseSlots(JSONObject("""{"limited": false, "total": 0}""")))
         assertNull(TeleApi.parseSlots(JSONObject("""{"limited": true, "total": -2}""")))
         assertEquals(StreamSlots(used = 2, total = 2), TeleApi.parseSlots(JSONObject("""{"limited": true, "total": 2, "used": 9}""")))

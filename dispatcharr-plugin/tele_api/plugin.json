@@ -1,6 +1,6 @@
 {
   "name": "Télé API",
-  "version": "0.2.0",
+  "version": "0.3.2",
   "description": "Endpoints and a page for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, playback sessions, and the audio and subtitle languages of the VOD measured with ffprobe.",
   "author": "Télé",
   "help_url": "/api/tele/ui/",
@@ -90,6 +90,55 @@
       "type": "number",
       "default": 5,
       "help_text": "One probe at a time on the server."
+    },
+    {
+      "id": "tmdb_info",
+      "label": "TMDB",
+      "type": "info",
+      "description": "With a TMDB key (set on the Télé page, never in these settings, which every user can read), the plugin finds the TMDB id of the movies and series Dispatcharr has none for: Télé groups the same title listed under different names as one, with all its versions."
+    },
+    {
+      "id": "tmdb_enabled",
+      "label": "Find the missing TMDB ids",
+      "type": "boolean",
+      "default": true,
+      "help_text": "In the background, a few hundred titles every 10 minutes."
+    },
+    {
+      "id": "tmdb_language",
+      "label": "TMDB search language",
+      "type": "select",
+      "default": "fr-FR",
+      "options": [
+        {
+          "value": "fr-FR",
+          "label": "Français"
+        },
+        {
+          "value": "en-US",
+          "label": "English"
+        },
+        {
+          "value": "de-DE",
+          "label": "Deutsch"
+        },
+        {
+          "value": "es-ES",
+          "label": "Español"
+        },
+        {
+          "value": "it-IT",
+          "label": "Italiano"
+        },
+        {
+          "value": "pt-BR",
+          "label": "Português (Brasil)"
+        },
+        {
+          "value": "ar-SA",
+          "label": "العربية"
+        }
+      ]
     }
   ],
   "actions": [
@@ -98,6 +147,13 @@
       "label": "Status",
       "description": "Routes of this worker, open sessions, VOD languages measured and failed.",
       "button_label": "Check",
+      "button_variant": "outline"
+    },
+    {
+      "id": "reload",
+      "label": "Reload in every worker",
+      "description": "Loads this version of the plugin in every Dispatcharr process, without restarting Dispatcharr (after an import or an update).",
+      "button_label": "Reload",
       "button_variant": "outline"
     },
     {
@@ -112,6 +168,13 @@
         "channel_buffering",
         "channel_start"
       ]
+    },
+    {
+      "id": "probe_one",
+      "label": "Probe one category now (test)",
+      "description": "Probes the next category here and now, without Celery, and shows the result: up to 30 seconds.",
+      "button_label": "Test",
+      "button_variant": "outline"
     },
     {
       "id": "probe_now",

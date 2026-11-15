@@ -88,6 +88,17 @@ object DispatcharrVod {
     suspend fun measuredLanguages(client: DispatcharrClient): Map<String, VodLanguages> =
         client.getVodLanguages().mapValues { (_, languages) -> VodLanguages(languages.first, languages.second) }
 
+    /** TMDB ids found by the Télé API plugin for the titles Dispatcharr has none for, by [tmdbKey]. */
+    suspend fun tmdbIds(client: DispatcharrClient): Map<String, String> {
+        val movies = client.getTmdbIds("movie")
+        val series = client.getTmdbIds("series")
+        if (movies.isEmpty() && series.isEmpty()) return emptyMap()
+        return movies.mapKeys { "movie:${it.key}" } + series.mapKeys { "series:${it.key}" }
+    }
+
+    /** Key of the TMDB id found for [entry] by the plugin. */
+    fun tmdbKey(entry: VodEntry): String = (if (entry.kind == VodKind.MOVIE) "movie:" else "series:") + entry.providerId
+
     /** Key of the measured languages of the category of [entry]. */
     fun measuredKey(entry: VodEntry): String? =
         entry.category?.let { (if (entry.kind == VodKind.MOVIE) "movie:" else "series:") + it }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -296,7 +297,10 @@ fun VodHomeScreen(
         }
     }
     // The streaming services with titles of this kind in the library: a row of logos, not a row each
-    val platforms = remember(rowsOfKind) { rowsOfKind.filter { it.kind == VodRow.Kind.PLATFORM }.mapNotNull { it.platform } }
+    val language = LocalConfiguration.current.locales[0].language
+    val platforms = remember(rowsOfKind, language) {
+        StreamingPlatform.forDisplay(rowsOfKind.filter { it.kind == VodRow.Kind.PLATFORM }.mapNotNull { it.platform }, language)
+    }
     val kindRows = remember(rowsOfKind) { rowsOfKind.filter { it.kind != VodRow.Kind.PLATFORM } }
     // The main genres of this kind, from TMDB (with a key, no filter chosen)
     val genres = remember(kind, hasTmdbKey, rowsOfKind.isNotEmpty()) {

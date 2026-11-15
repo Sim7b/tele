@@ -264,6 +264,42 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(response.data["released"], ["live:abc:tv"])
         self.assertEqual((bad.status_code, refused.status_code), (400, 403))
 
+    def test_tmdb_ids_and_key_for_admins(self):
+        with mock.patch("tele_api.tmdb.ids", return_value={"5": "438631"}):
+            response = self.call(views.TmdbIdsView, path="/?kind=movie", who=user())
+            again = self.call(views.TmdbIdsView, path="/?kind=movie", who=user(), HTTP_IF_NONE_MATCH=response["ETag"])
+        self.assertEqual(response.data["ids"], {"5": "438631"})
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(self.call(views.TmdbIdsView, path="/?kind=x", who=user()).status_code, 400)
+        self.assertEqual(self.call(views.AdminTmdbView, "post", who=user(), body={"key": "k" * 32}).status_code, 403)
+        with mock.patch("tele_api.tmdb.test_key", return_value=False), mock.patch("tele_api.vault.set_tmdb_key") as saved:
+            refused = self.call(views.AdminTmdbView, "post", who=user(level=10), body={"key": "k" * 32})
+        self.assertEqual(refused.status_code, 400)
+        saved.assert_not_called()
+        with mock.patch("tele_api.tmdb.test_key", return_value=True), mock.patch("tele_api.vault.set_tmdb_key") as saved:
+            accepted = self.call(views.AdminTmdbView, "post", who=user(level=10), body={"key": "k" * 32})
+        self.assertTrue(accepted.data["key_set"])
+        saved.assert_called_once()
+
+    def test_category_actions_of_the_page(self):
+        admin = user(level=10)
+        with mock.patch.object(views.probe, "probe_category_now", return_value=(True, "measured")) as now:
+            response = self.call(views.AdminCategoryActionView, "post", who=admin, body={"id": 3, "action": "probe"})
+        self.assertEqual(response.data["message"], "measured")
+        now.assert_called_once()
+        with mock.patch.object(views.probe, "set_manual", return_value=True) as manual:
+            self.call(views.AdminCategoryActionView, "post", who=admin, body={"id": 3, "action": "manual", "audio": ["en"], "subtitles": ["fr"]})
+            bad = self.call(views.AdminCategoryActionView, "post", who=admin, body={"id": 3, "action": "manual", "audio": ["english"]})
+        self.assertEqual(manual.call_args.args, (3, ["en"], ["fr"]))
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(self.call(views.AdminCategoryActionView, "post", who=admin, body={"id": 3, "action": "drop"}).status_code, 400)
+        self.assertEqual(self.call(views.AdminCategoryActionView, "post", who=user(), body={"id": 3, "action": "probe"}).status_code, 403)
+        with mock.patch("tele_api.tmdb.set_manual") as tmdb_manual:
+            self.call(views.AdminTmdbItemView, "post", who=admin, body={"kind": "movie", "item": 6, "tmdb": 12345})
+            wrong = self.call(views.AdminTmdbItemView, "post", who=admin, body={"kind": "movie", "item": 6, "tmdb": "abc"})
+        self.assertEqual(tmdb_manual.call_args.args, ("movie", 6, 12345))
+        self.assertEqual(wrong.status_code, 400)
+
     def test_admin_endpoints_are_for_admins_only(self):
         for view in (views.AdminProbesView, views.AdminExportView):
             self.assertEqual(self.call(view, who=user()).status_code, 403)

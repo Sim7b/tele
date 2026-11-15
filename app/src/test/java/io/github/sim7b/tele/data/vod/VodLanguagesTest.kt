@@ -145,6 +145,25 @@ class VodLanguagesTest {
     }
 
     @Test
+    fun `tmdb ids found by the plugin group the same movie listed under different names`() {
+        val entries = listOf(
+            VodEntry("d", VodKind.MOVIE, "1", "FR | Dune 2 (2024) 4K", "Dune 2", 2024, category = "FR | FILMS"),
+            VodEntry("d", VodKind.MOVIE, "2", "Dune: Part Two (2024) VOSTFR", "Dune: Part Two", 2024, languageTags = listOf("VOSTFR")),
+            VodEntry("d", VodKind.MOVIE, "3", "Heat (1995)", "Heat", 1995, tmdbId = "949")
+        )
+        val apart = VodLibrary.build(entries)
+        assertEquals(3, apart.size)
+
+        val ids = mapOf("d" to mapOf("movie:1" to "693134", "movie:2" to "693134", "movie:3" to "1"))
+        val titles = VodLibrary.build(entries, tmdbIds = ids)
+        assertEquals(2, titles.size)
+        val dune = titles.first { it.entries.size == 2 }
+        assertEquals("693134", dune.tmdbId)
+        // An id given by Dispatcharr is kept
+        assertEquals("949", titles.first { it.title == "Heat" }.tmdbId)
+    }
+
+    @Test
     fun `several countries match any of them, and a former single country is read back`() {
         val facts = mapOf(
             "m:a:2019" to TmdbFacts("1", countries = listOf("KR")),

@@ -26,7 +26,8 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from . import core
 
-logger = logging.getLogger(__name__)
+# Under "apps": a logger Dispatcharr sends to its console and log browser
+logger = logging.getLogger("apps.tele_api.probe")
 
 TASK_NAME = "tele_api.probe_vod_languages"
 SCHEDULE_NAME = "Télé API: VOD languages"
@@ -42,6 +43,15 @@ RUN_BUDGET = 8 * 60
 PROBE_TIMEOUT = 25
 MAX_REDIRECTS = 5
 PROTOCOLS = "http,https,tcp,tls,crypto"
+# Why the last probe of this process gave nothing (no address: they carry the provider credentials)
+LAST_FAILURE: Optional[str] = None
+_URL = __import__("re").compile(r"[a-z][a-z0-9+.-]*://\S+", __import__("re").IGNORECASE)
+
+
+def _fail(reason: str) -> None:
+    global LAST_FAILURE
+    LAST_FAILURE = _URL.sub("<url>", reason)[:300]
+    logger.warning("Télé API: probe failed: %s", LAST_FAILURE)
 YIELD_PAUSE = 120
 MAX_ATTEMPTS = 3
 REPROBE_AFTER = 30 * 24 * 3600
@@ -138,7 +148,7 @@ def measured_categories() -> List[Dict[str, Any]]:
     """Categories with measured languages, for the API."""
     measured = []
     for key, entry in load_results().items():
-        if not isinstance(entry, dict) or entry.get("status") != "ok":
+        if not isinstance(entry, dict) or entry.get("status") not in ("ok", "manual"):
             continue
         measured.append(
             {
@@ -194,25 +204,153 @@ def candidates(settings: Dict[str, Any], results: Dict[str, Dict[str, Any]], now
             continue
         seen.add(category.id)
         previous = results.get(str(category.id)) or {}
+        if previous.get("status") in ("manual", "excluded"):
+            continue  # Set by an admin on the Télé page
         if previous.get("status") == "ok" and now - (previous.get("at") or 0) < REPROBE_AFTER:
             continue
         if previous.get("status") == "failed" and (previous.get("attempts") or 0) >= MAX_ATTEMPTS:
             continue
         if not probe_all and not core.category_needs_probe(category.name):
             continue
-        if category.category_type == "series":
-            relation = (
-                M3UEpisodeRelation.objects.filter(
-                    series_relation__category=category, m3u_account=link.m3u_account
-                ).select_related("m3u_account").order_by("-updated_at").first()
-            )
-        else:
-            relation = (
-                M3UMovieRelation.objects.filter(category=category, m3u_account=link.m3u_account)
-                .select_related("m3u_account").order_by("-updated_at").first()
-            )
+        relation = sample_relation(category, link.m3u_account)
         if relation is not None:
             yield category, relation
+
+
+def sample_relation(category, account):
+    """The latest file of [category] at [account]: the one probed."""
+    from apps.vod.models import M3UEpisodeRelation, M3UMovieRelation
+
+    if category.category_type == "series":
+        return (
+            M3UEpisodeRelation.objects.filter(series_relation__category=category, m3u_account=account)
+            .select_related("m3u_account").order_by("-updated_at").first()
+        )
+    return (
+        M3UMovieRelation.objects.filter(category=category, m3u_account=account)
+        .select_related("m3u_account").order_by("-updated_at").first()
+    )
+
+
+def state_of(entry: Dict[str, Any]) -> str:
+    """measured, manual, excluded, failed (given up), retrying, or pending (never probed)."""
+    status = entry.get("status")
+    if status == "ok":
+        return "measured"
+    if status in ("manual", "excluded"):
+        return status
+    if status == "failed":
+        return "failed" if (entry.get("attempts") or 0) >= MAX_ATTEMPTS else "retrying"
+    return "pending"
+
+
+def all_categories() -> List[Dict[str, Any]]:
+    """Every enabled VOD category of the Xtream accounts with its probe state, for the Télé page."""
+    from apps.vod.models import M3UVODCategoryRelation
+
+    results = load_results()
+    listed: Dict[int, Dict[str, Any]] = {}
+    links = (
+        M3UVODCategoryRelation.objects.filter(enabled=True, m3u_account__is_active=True, m3u_account__account_type="XC")
+        .select_related("category", "m3u_account")
+    )
+    for link in links.iterator(chunk_size=500):
+        category = link.category
+        if category is None or category.id in listed:
+            continue
+        entry = results.get(str(category.id)) or {}
+        listed[category.id] = {
+            "id": category.id,
+            "name": category.name,
+            "type": category.category_type,
+            "account": link.m3u_account.name,
+            "uncertain": core.category_needs_probe(category.name),
+            "state": state_of(entry),
+            "audio": list(entry.get("audio") or []),
+            "subtitles": list(entry.get("subtitles") or []),
+            "quality": entry.get("quality"),
+            "sample": entry.get("sample"),
+            "attempts": entry.get("attempts") or 0,
+            "probed_at": entry.get("at"),
+        }
+    return sorted(listed.values(), key=lambda c: (str(c["name"]).lower(), c["id"]))
+
+
+def category_link(category_id: int):
+    from apps.vod.models import M3UVODCategoryRelation
+
+    return (
+        M3UVODCategoryRelation.objects.filter(
+            category_id=category_id, enabled=True, m3u_account__is_active=True, m3u_account__account_type="XC"
+        ).select_related("category", "m3u_account").first()
+    )
+
+
+def probe_category_now(category_id: int, settings: Dict[str, Any]) -> Tuple[bool, str]:
+    """Probes one category here and now (an admin asked on the Télé page): (measured, what happened)."""
+    from . import data
+
+    client = data.redis_client()
+    if client is None:
+        return False, "Redis not available"
+    link = category_link(category_id)
+    if link is None:
+        return False, "Unknown category"
+    category = link.category
+    relation = sample_relation(category, link.m3u_account)
+    if relation is None:
+        return False, f"{category.name}: no file to probe"
+    min_free = core.query_int(settings.get("probe_min_free"), 1, 1, 50)
+    profile = free_profile(link.m3u_account, client, min_free)
+    if profile is None:
+        return False, f"{category.name}: no free provider connection now (keeps {min_free} free)"
+    previous = load_results().get(str(category.id)) or {}
+    if previous.get("status") in ("manual", "excluded"):
+        previous = {}
+    started = time.monotonic()
+    if not probe_one(category, relation, profile, client, previous):
+        return False, f"{category.name}: the connection could not be reserved"
+    entry = load_results().get(str(category.id)) or {}
+    took = round(time.monotonic() - started, 1)
+    if entry.get("status") == "ok":
+        return True, f"{category.name}: measured in {took} s"
+    return False, f"{category.name}: probe failed after {took} s: {LAST_FAILURE or 'unreadable ffprobe answer'}"
+
+
+def set_manual(category_id: int, audio: List[str], subtitles: List[str]) -> bool:
+    """Languages set by hand by an admin: given to Télé like a measure, and never probed again."""
+    link = category_link(category_id)
+    if link is None:
+        return False
+    category = link.category
+    save_result(category.id, {
+        "name": category.name, "type": category.category_type, "status": "manual", "at": time.time(),
+        "audio": audio, "subtitles": subtitles,
+    })
+    return True
+
+
+def set_excluded(category_id: int, excluded: bool) -> bool:
+    link = category_link(category_id)
+    if link is None:
+        return False
+    if excluded:
+        save_result(link.category.id, {"name": link.category.name, "type": link.category.category_type, "status": "excluded", "at": time.time()})
+    else:
+        forget(link.category.id)
+    return True
+
+
+def retry_failed() -> int:
+    """Forgets the categories given up after MAX_ATTEMPTS: probed again from the next run."""
+    with _file_lock:
+        results = load_results()
+        failed = [key for key, entry in results.items() if isinstance(entry, dict) and entry.get("status") == "failed"]
+        for key in failed:
+            results.pop(key, None)
+        if failed:
+            _write(results_path(), results)
+    return len(failed)
 
 
 def free_profile(account, redis_client, min_free: int):
@@ -248,9 +386,9 @@ def run_ffprobe(url: str, user_agent: Optional[str], redis_client) -> Optional[s
         command += ["-user_agent", user_agent]
     command.append(url)
     try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except OSError:
-        logger.warning("Télé API: ffprobe not available")
+        _fail("ffprobe not available")
         return None
     started = time.monotonic()
     try:
@@ -258,15 +396,22 @@ def run_ffprobe(url: str, user_agent: Optional[str], redis_client) -> Optional[s
             if must_yield(redis_client) or time.monotonic() - started > PROBE_TIMEOUT:
                 process.kill()
                 process.wait(timeout=5)
+                _fail("stopped for a viewer" if must_yield(redis_client) else f"ffprobe gave no answer in {PROBE_TIMEOUT} s")
                 return None
             time.sleep(0.5)
         output = process.stdout.read(core.MAX_PROBE_OUTPUT + 1) if process.stdout else b""
-        return output.decode("utf-8", errors="replace") if process.returncode == 0 else None
+        if process.returncode != 0:
+            error = (process.stderr.read(4000) if process.stderr else b"").decode("utf-8", errors="replace").strip()
+            _fail(f"ffprobe exit {process.returncode}: {error.splitlines()[-1] if error else 'no message'}")
+            return None
+        return output.decode("utf-8", errors="replace")
     finally:
         if process.poll() is None:
             process.kill()
         if process.stdout:
             process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
 
 
 def resolve(host: str) -> List[str]:
@@ -299,9 +444,10 @@ def safe_url(url: str, trusted_host: Optional[str], user_agent: Optional[str]) -
     for _ in range(MAX_REDIRECTS + 1):
         parts = urlsplit(current)
         if parts.scheme not in ("http", "https") or not parts.hostname:
+            _fail(f"the file address is not http(s) ({parts.scheme or 'no scheme'})")
             return None
         if parts.hostname != trusted_host and not core.host_allowed(resolve(parts.hostname), trusted):
-            logger.warning("Télé API: probe refused, a redirect leads to the local network")
+            _fail("refused: a redirect leads to the local network (or a host that does not resolve)")
             return None
         request = urllib.request.Request(current, headers={"Range": "bytes=0-0", **({"User-Agent": user_agent} if user_agent else {})})
         try:
@@ -310,10 +456,15 @@ def safe_url(url: str, trusted_host: Optional[str], user_agent: Optional[str]) -
         except urllib.error.HTTPError as error:
             location = error.headers.get("Location") if error.code in (301, 302, 303, 307, 308) else None
             if not location:
-                return current if error.code < 500 else None
+                if error.code >= 500:
+                    _fail(f"the provider answered HTTP {error.code}")
+                    return None
+                return current
             current = urljoin(current, location)
-        except (OSError, ValueError):
+        except (OSError, ValueError) as error:
+            _fail(f"the provider did not answer ({type(error).__name__})")
             return None
+    _fail("too many redirects")
     return None
 
 
@@ -326,6 +477,8 @@ def probe_file(relation, profile, redis_client) -> Tuple[bool, Optional[Dict[str
         return False, None
     try:
         url = relation.get_stream_url(profile)
+        if not url:
+            _fail("Dispatcharr gave no address for the file (credentials of the profile?)")
         account = relation.m3u_account
         user_agent = account.get_user_agent_string() if hasattr(account, "get_user_agent_string") else None
         from urllib.parse import urlsplit
@@ -446,49 +599,101 @@ def probe_titles(redis_client, min_free: int, pause: int, started: float) -> int
     return probed
 
 
+LAST_RUN_KEY = "tele_api:probe:last_run"
+
+
+def _remember_run(redis_client, **summary) -> None:
+    """Outcome of a run, read by the Status action (the runs happen in the Celery worker)."""
+    summary["at"] = time.time()
+    logger.info("Télé API: probe run %s", summary)
+    if redis_client is None:
+        return
+    try:
+        redis_client.setex(LAST_RUN_KEY, 7 * 86400, json.dumps(summary))
+    except Exception:
+        pass
+
+
+def last_run(redis_client) -> Optional[Dict[str, Any]]:
+    try:
+        raw = redis_client.get(LAST_RUN_KEY)
+        return json.loads(core.to_text(raw)) if raw else None
+    except Exception:
+        return None
+
+
 def run(settings: Dict[str, Any]) -> int:
     """One run: probes categories one at a time until done, the time budget is spent or a viewer needs room."""
     from django.db import close_old_connections
 
     from . import data
 
-    if not settings.get("probe_enabled", True):
-        return 0
     redis_client = data.redis_client()
-    if redis_client is None or must_yield(redis_client):
+    if not settings.get("probe_enabled", True):
+        _remember_run(redis_client, outcome="probes turned off in the settings")
+        return 0
+    if redis_client is None:
+        return 0
+    if must_yield(redis_client):
+        _remember_run(redis_client, outcome="paused: a viewer lacked a connection")
         return 0
     if not redis_client.set(LOCK_KEY, "1", nx=True, ex=LOCK_TTL):
         return 0  # Another run is going on
     min_free = core.query_int(settings.get("probe_min_free"), 1, 1, 50)
     pause = core.query_int(settings.get("probe_pause_seconds"), 5, 1, 600)
     started = time.monotonic()
-    probed = 0
+    probed = seen = no_room = 0
+    outcome = "done"
     try:
         probed += probe_titles(redis_client, min_free, pause, started)
         results = load_results()
         for category, relation in candidates(settings, results, time.time()):
-            if time.monotonic() - started > RUN_BUDGET or must_yield(redis_client):
+            seen += 1
+            if time.monotonic() - started > RUN_BUDGET:
+                outcome = "time budget spent, goes on at the next run"
+                break
+            if must_yield(redis_client):
+                outcome = "stopped: a viewer lacked a connection"
                 break
             profile = free_profile(relation.m3u_account, redis_client, min_free)
             if profile is None:
+                no_room += 1
                 continue  # No room on this account now; another account may have some
             if probe_one(category, relation, profile, redis_client, results.get(str(category.id)) or {}):
                 probed += 1
                 time.sleep(pause)
+    except Exception as error:
+        outcome = f"error: {type(error).__name__}: {error}"[:300]
+        logger.exception("Télé API: probe run failed")
     finally:
         redis_client.delete(LOCK_KEY)
+        _remember_run(redis_client, outcome=outcome, probed=probed, candidates=seen, no_room=no_room)
         close_old_connections()
     return probed
 
 
-def schedule() -> None:
-    """Runs every 10 minutes through Celery Beat (created once, kept in step with the plugin enabled flag)."""
+def category_counts(settings: Dict[str, Any]) -> Dict[str, int]:
+    """Enabled categories of the Xtream accounts, how many are uncertain, how many are still to probe."""
+    from apps.vod.models import M3UVODCategoryRelation
+
+    links = M3UVODCategoryRelation.objects.filter(enabled=True, m3u_account__is_active=True)
+    all_enabled = links.values("category_id").distinct().count()
+    xc = links.filter(m3u_account__account_type="XC").select_related("category")
+    names = {link.category_id: link.category.name for link in xc if link.category is not None}
+    uncertain = sum(1 for name in names.values() if core.category_needs_probe(name))
+    to_probe = sum(1 for _ in candidates(settings, load_results(), time.time()))
+    return {"enabled": all_enabled, "xtream": len(names), "uncertain": uncertain, "to_probe": to_probe}
+
+
+def schedule() -> str:
+    """Removes the Celery Beat schedule of earlier versions: the probes run in the web workers (runner.py), and
+    the Celery workers, which only know the tasks of the plugins installed before they started, rejected it."""
     try:
-        from core.scheduling import create_or_update_periodic_task
+        from core.scheduling import delete_periodic_task
     except ImportError:
-        return  # Not inside Dispatcharr (tests)
+        return "not inside Dispatcharr"
     try:
-        create_or_update_periodic_task(task_name=SCHEDULE_NAME, celery_task_path=TASK_NAME, cron_expression="*/10 * * * *")
-    except Exception:
-        # Database not ready yet (first start before the migrations): set at the next start
-        logger.warning("Télé API: probe schedule not set yet")
+        return "removed (the probes run in the web workers)" if delete_periodic_task(SCHEDULE_NAME) else "none (the probes run in the web workers)"
+    except Exception as error:
+        logger.warning("Télé API: former probe schedule not removed yet (%s)", type(error).__name__)
+        return f"{type(error).__name__}: {error}"[:300]

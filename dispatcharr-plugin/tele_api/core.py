@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.3.2"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -399,7 +399,7 @@ def export_cases(results: Mapping[str, Any], now: float) -> Dict[str, Any]:
     """
     cases = []
     for entry in results.values():
-        if not isinstance(entry, dict) or entry.get("status") != "ok":
+        if not isinstance(entry, dict) or entry.get("status") not in ("ok", "manual"):
             continue
         cases.append(
             {
@@ -409,6 +409,8 @@ def export_cases(results: Mapping[str, Any], now: float) -> Dict[str, Any]:
                 "audio": sorted({a for a in entry.get("audio") or [] if isinstance(a, str)}),
                 "subtitles": sorted({s for s in entry.get("subtitles") or [] if isinstance(s, str)}),
                 **({"quality": entry["quality"]} if isinstance(entry.get("quality"), dict) else {}),
+                # Set by hand by an admin rather than read by ffprobe
+                **({"source": "manual"} if entry.get("status") == "manual" else {}),
             }
         )
     cases.sort(key=lambda c: (c["group"].lower(), c["name"].lower()))
@@ -712,6 +714,26 @@ def top_channels(counts_by_day: Iterable[Mapping[Any, Any]], names: Mapping[Any,
     return [{"channel": key, "name": to_text(names.get(key)) or key, "starts": count} for key, count in ranked]
 
 
+def daily_starts(days: Iterable[str], counts_by_day: Iterable[Mapping[Any, Any]]) -> List[Dict[str, Any]]:
+    """Channel starts of each day, oldest first: [{"day", "starts"}]."""
+    result = []
+    for day, counts in zip(days, counts_by_day):
+        total = sum(max(0, to_int(v, 0) or 0) for v in (counts or {}).values())
+        result.append({"day": day, "starts": total})
+    return sorted(result, key=lambda d: d["day"])
+
+
+def hourly_starts(counts_by_day: Iterable[Mapping[Any, Any]]) -> List[int]:
+    """Channel starts by hour of the day (UTC, 0-23) over the days given."""
+    hours = [0] * 24
+    for counts in counts_by_day:
+        for hour, count in (counts or {}).items():
+            index = to_int(hour)
+            if index is not None and 0 <= index < 24:
+                hours[index] += max(0, to_int(count, 0) or 0)
+    return hours
+
+
 def peaks(days: Iterable[str], peaks_by_day: Iterable[Mapping[Any, Any]], limits: Mapping[int, Tuple[str, int]]) -> List[Dict[str, Any]]:
     """Highest connections used per account and day: [{"account", "name", "max", "days": [{"day", "used"}]}]."""
     accounts: Dict[int, Dict[str, Any]] = {}
@@ -850,3 +872,88 @@ def sync_merge(stored: Any, changes: Any, now_ms: int) -> Tuple[Dict[str, Dict[s
             for key, _ in sorted(items.items(), key=lambda kv: kv[1]["t"])[: len(items) - MAX_SYNC_ITEMS]:
                 del items[key]
     return merged, kept
+
+
+# ---------------------------------------------------------------------------------------------------------
+# TMDB matching (ids of the movies and series Dispatcharr has none for)
+
+_TITLE_PREFIX = re.compile(r"^\s*(?:\[[A-Z]{2,4}\]|\|?\s*[A-Z]{2,4}(?:[\s/-]+[A-Z]{2,3})?\s*(?:\||:|\s[-–]))\s*")
+_TITLE_TAGS = re.compile(
+    r"\b(?:2160p|1080p|720p|4k|uhd|fhd|hd|sd|hdr10?|hevc|x26[45]|h26[45]|multi(?:-?subs?)?|vostfr|vost|vf[fqi2]?|vo|"
+    r"truefrench|french|subfrench|dual|cam|hdcam|ts|screener)\b",
+    re.IGNORECASE,
+)
+_TITLE_YEAR = re.compile(r"[(\[]\s*((?:19|20)\d\d)\s*[)\]]|\b((?:19|20)\d\d)\s*$")
+
+
+def search_title(name: Any, year: Any = None) -> Tuple[str, Optional[int]]:
+    """(title to search, year) of a provider name: country prefix, quality and language tags and the year left out."""
+    text = to_text(name) or ""
+    for _ in range(2):
+        text = _TITLE_PREFIX.sub("", text)
+    found_year = to_int(year)
+    match = _TITLE_YEAR.search(text)
+    if match:
+        found_year = found_year or to_int(match.group(1) or match.group(2))
+        text = text[: match.start()] + text[match.end():]
+    text = _TITLE_TAGS.sub(" ", text)
+    text = re.sub(r"[\[\](){}|_.]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" -–:")
+    return text, found_year if found_year and 1900 <= found_year <= 2100 else None
+
+
+def title_key(title: Any) -> str:
+    """Comparison key of a title: letters and digits, lower case, accents removed."""
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", to_text(title) or "")
+    text = "".join(c for c in text if not unicodedata.combining(c)).lower().replace("&", "and")
+    return "".join(c for c in text if c.isalnum())
+
+
+def best_tmdb_match(results: Any, title: str, year: Optional[int], kind: str) -> Optional[int]:
+    """TMDB id of the search result that is this title: same title (or original title) and a year within one;
+    without a year, only a single result of that exact title. None when unsure (better no id than a wrong one)."""
+    if not isinstance(results, list):
+        return None
+    wanted = title_key(title)
+    if not wanted:
+        return None
+    date_field = "release_date" if kind == "movie" else "first_air_date"
+    exact = []
+    for item in results[:20]:
+        if not isinstance(item, Mapping):
+            continue
+        names = [item.get("title"), item.get("original_title"), item.get("name"), item.get("original_name")]
+        if wanted not in {title_key(n) for n in names if n}:
+            continue
+        item_year = to_int((to_text(item.get(date_field)) or "")[:4])
+        exact.append((item, item_year))
+    if year:
+        close = [item for item, item_year in exact if item_year and abs(item_year - year) <= 1]
+        if close:
+            return to_int(close[0].get("id"))
+        return None
+    return to_int(exact[0][0].get("id")) if len(exact) == 1 else None
+
+
+def tmdb_auth(key: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """(headers, query parameters) of a TMDB request: a v4 read token as Bearer, a v3 key as api_key."""
+    key = key.strip()
+    if len(key) > 40:
+        return {"Authorization": f"Bearer {key}"}, {}
+    return {}, {"api_key": key}
+
+
+def language_codes(value: Any) -> Optional[List[str]]:
+    """A list of ISO 639-1 codes sent by the Télé page ("fr", "en"); None when malformed."""
+    if not isinstance(value, list) or len(value) > 16:
+        return None
+    codes = []
+    for item in value:
+        code = (to_text(item) or "").strip().lower()
+        if not re.match(r"^[a-z]{2}$", code):
+            return None
+        if code not in codes:
+            codes.append(code)
+    return codes

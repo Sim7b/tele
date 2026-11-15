@@ -197,6 +197,23 @@ class StorageTest(unittest.TestCase):
         probe.forget()
         self.assertEqual(probe.load_results(), {})
 
+    def test_states_manual_languages_and_retry(self):
+        self.assertEqual(probe.state_of({}), "pending")
+        self.assertEqual(probe.state_of({"status": "failed", "attempts": 1}), "retrying")
+        self.assertEqual(probe.state_of({"status": "failed", "attempts": 3}), "failed")
+        self.assertEqual(probe.state_of({"status": "manual"}), "manual")
+        probe.save_result(3, {"name": "NETFLIX", "status": "manual", "audio": ["en"], "subtitles": ["fr"]})
+        probe.save_result(4, {"name": "X", "status": "failed", "attempts": 3})
+        probe.save_result(5, {"name": "Y", "status": "excluded"})
+        # Manual languages are given to Télé and exported like measures
+        self.assertEqual([c["id"] for c in probe.measured_categories()], [3])
+        self.assertEqual(probe.export()["cases"][0]["source"], "manual")
+        self.assertEqual(probe.retry_failed(), 1)
+        self.assertEqual(sorted(probe.load_results()), ["3", "5"])
+        self.assertEqual(core.language_codes(["FR", "en", "fr"]), ["fr", "en"])
+        self.assertIsNone(core.language_codes(["french"]))
+        self.assertIsNone(core.language_codes("fr"))
+
     def test_damaged_file_reads_as_empty(self):
         with open(probe.results_path(), "w") as fh:
             fh.write("{broken")
@@ -356,3 +373,29 @@ class FfprobeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunnerTest(unittest.TestCase):
+    def test_runner_only_in_web_processes_and_wake(self):
+        from tele_api import runner
+
+        self.assertFalse(runner.start())  # Not under uWSGI
+        redis = FakeRedis()
+        runner.wake(redis)
+        self.assertTrue(redis.exists(runner.WAKE_KEY))
+
+    def test_a_newer_load_stops_the_older_runner(self):
+        import sys
+        import threading
+
+        from tele_api import runner
+
+        with mock.patch.object(runner, "CHECK_WAKE_EVERY", 0.01), mock.patch.object(runner, "_settings", return_value=None), \
+                mock.patch("tele_api.data.redis_client", return_value=FakeRedis()):
+            token = object()
+            setattr(sys, runner._HOLDER, token)
+            thread = threading.Thread(target=runner._loop, args=(token,), daemon=True)
+            thread.start()
+            setattr(sys, runner._HOLDER, object())
+            thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())

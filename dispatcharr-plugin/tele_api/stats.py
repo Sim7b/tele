@@ -1,6 +1,6 @@
 """Viewing statistics of the admin page, kept STATS_DAYS days in Redis (no personal data: channels and counts).
 
-- starts of each channel per day, from the channel_start events (plugin event hook);
+- starts of each channel per day and of every channel per hour, from the channel_start events (plugin event hook);
 - highest provider connections used per account and day, read every 10 minutes by the plugin task.
 """
 
@@ -12,10 +12,12 @@ from typing import Any, Dict
 
 from . import core
 
-logger = logging.getLogger(__name__)
+# Under "apps": a logger Dispatcharr sends to its console and log browser
+logger = logging.getLogger("apps.tele_api.stats")
 
 VIEWS_KEY = "tele_api:stats:views:{day}"
 PEAKS_KEY = "tele_api:stats:peaks:{day}"
+HOURS_KEY = "tele_api:stats:hours:{day}"
 NAMES_KEY = "tele_api:stats:names"
 TTL = (core.STATS_DAYS + 1) * 86400
 
@@ -26,10 +28,14 @@ def record_view(redis_client, payload: Any) -> None:
     channel = core.to_text(payload.get("channel_id"))
     if not channel or len(channel) > 64:
         return
-    key = VIEWS_KEY.format(day=core.day_key(time.time()))
+    now = time.time()
+    key = VIEWS_KEY.format(day=core.day_key(now))
+    hours = HOURS_KEY.format(day=core.day_key(now))
     try:
         redis_client.hincrby(key, channel, 1)
         redis_client.expire(key, TTL)
+        redis_client.hincrby(hours, str(int(now // 3600) % 24), 1)
+        redis_client.expire(hours, TTL)
         name = core.to_text(payload.get("channel_name"))
         if name:
             redis_client.hset(NAMES_KEY, channel, name[:200])
@@ -64,6 +70,7 @@ def report(redis_client, days: int) -> Dict[str, Any]:
 
     day_keys = core.last_days(time.time(), days)
     views = [redis_client.hgetall(VIEWS_KEY.format(day=d)) or {} for d in day_keys]
+    hours = [redis_client.hgetall(HOURS_KEY.format(day=d)) or {} for d in day_keys]
     names = redis_client.hgetall(NAMES_KEY) or {}
     peaks = [redis_client.hgetall(PEAKS_KEY.format(day=d)) or {} for d in day_keys]
     limits: Dict[int, Any] = {}
@@ -74,4 +81,6 @@ def report(redis_client, days: int) -> Dict[str, Any]:
         "days": days,
         "top_channels": core.top_channels(views, {core.to_text(k): v for k, v in names.items()}),
         "peaks": core.peaks(day_keys, peaks, limits),
+        "daily_starts": core.daily_starts(day_keys, views),
+        "hourly_starts_utc": core.hourly_starts(hours),
     }

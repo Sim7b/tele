@@ -13,7 +13,8 @@ from typing import Any, Dict, Iterable, Optional
 
 from . import core
 
-logger = logging.getLogger(__name__)
+# Under "apps": a logger Dispatcharr sends to its console and log browser
+logger = logging.getLogger("apps.tele_api.health")
 
 HEALTH_KEY = "tele_api:health"
 

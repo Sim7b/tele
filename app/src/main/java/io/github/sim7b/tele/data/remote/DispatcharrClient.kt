@@ -716,6 +716,15 @@ class DispatcharrClient(
         }
     }
 
+    /**
+     * TMDB ids the Télé API plugin found for the movies ("movie") or series ("series") Dispatcharr has none for,
+     * by Dispatcharr id; empty without the plugin or a TMDB key on the server.
+     */
+    suspend fun getTmdbIds(kind: String): Map<String, String> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "tmdb_ids" !in teleApi()) return@withContext emptyMap()
+        TeleApi.tmdbIds(getObject("$baseUrl${TeleApi.TMDB_IDS_PATH}?kind=$kind"))
+    }
+
     /** What the plugin knows of a file: measured ([info] in the Xtream "info" format), being measured, or not. */
     data class VodMedia(val pending: Boolean, val info: JSONObject?)
 

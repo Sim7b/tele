@@ -13,7 +13,8 @@ from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional
 
 from . import core
 
-logger = logging.getLogger(__name__)
+# Under "apps": a logger Dispatcharr sends to its console and log browser
+logger = logging.getLogger("apps.tele_api.data")
 
 # Programs read after "now" to find the current and the next one of each channel
 PROGRAM_WINDOW = timedelta(hours=8)

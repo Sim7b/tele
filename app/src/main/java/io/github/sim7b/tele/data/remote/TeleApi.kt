@@ -22,6 +22,19 @@ object TeleApi {
     const val STREAM_HEALTH_PATH = "/api/tele/v1/streams/health/"
     const val GUIDE_PATH = "/api/tele/v1/guide/"
     const val SYNC_PATH = "/api/tele/v1/sync/"
+    const val TMDB_IDS_PATH = "/api/tele/v1/vod/tmdb-ids/"
+    private val DIGITS = Regex("^[0-9]{1,12}$")
+
+    /** Dispatcharr id -> TMDB id of an answer of [TMDB_IDS_PATH]; ids that are not numbers are skipped. */
+    fun tmdbIds(answer: JSONObject?): Map<String, String> {
+        val ids = answer?.optJSONObject("ids") ?: return emptyMap()
+        val result = HashMap<String, String>()
+        ids.keys().forEach { key ->
+            val value = ids.optString(key)
+            if (DIGITS.matches(key) && DIGITS.matches(value) && value != "0") result[key] = value
+        }
+        return result
+    }
     const val MAX_HEALTH_IDS = 100
     const val RELEASE_PATH = "/api/tele/v1/sessions/release/"
     const val CHANNELS_PAGE_SIZE = 2000
