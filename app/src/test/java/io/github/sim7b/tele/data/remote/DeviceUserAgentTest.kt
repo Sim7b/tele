@@ -71,8 +71,12 @@ class DeviceUserAgentTest {
 
                 DispatcharrClient(config).getCurrentUser()
 
-                assertEquals(withId, dispatcharr.takeRequest().headers["User-Agent"])
-                assertEquals(HttpClients.DEFAULT_USER_AGENT, provider.takeRequest().headers["User-Agent"])
+                val first = dispatcharr.takeRequest()
+                assertEquals(withId, first.headers["User-Agent"])
+                assertTrue(first.headers[DeviceUserAgent.VERSION_HEADER] != null)
+                val second = provider.takeRequest()
+                assertEquals(HttpClients.DEFAULT_USER_AGENT, second.headers["User-Agent"])
+                assertNull(second.headers[DeviceUserAgent.VERSION_HEADER])
             }
         }
     }

@@ -47,10 +47,16 @@ object DeviceUserAgent {
     /** [userAgent] without the install id (a redirect to a provider must not carry it). */
     fun strip(userAgent: String): String = MARKER.replace(userAgent, ")")
 
-    /** [request] with the install id removed from its User-Agent, unchanged when it has none. */
+    /** Header with the version of Télé, for the Dispatcharr server only. */
+    const val VERSION_HEADER = "X-Tele-Version"
+
+    /** [request] without the install id in its User-Agent nor the version of Télé, unchanged when it has none. */
     fun withoutDeviceId(request: Request): Request {
-        val userAgent = request.header("User-Agent") ?: return request
-        val stripped = strip(userAgent)
-        return if (stripped == userAgent) request else request.newBuilder().header("User-Agent", stripped).build()
+        val userAgent = request.header("User-Agent")
+        val stripped = userAgent?.let(::strip)
+        if (stripped == userAgent && request.header(VERSION_HEADER) == null) return request
+        val builder = request.newBuilder().removeHeader(VERSION_HEADER)
+        if (stripped != null) builder.header("User-Agent", stripped)
+        return builder.build()
     }
 }
