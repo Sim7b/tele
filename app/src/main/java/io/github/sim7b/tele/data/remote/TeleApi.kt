@@ -23,6 +23,44 @@ object TeleApi {
     const val GUIDE_PATH = "/api/tele/v1/guide/"
     const val SYNC_PATH = "/api/tele/v1/sync/"
     const val TMDB_IDS_PATH = "/api/tele/v1/vod/tmdb-ids/"
+    const val VOD_GROUPS_PATH = "/api/tele/v1/vod/groups/"
+    const val VOD_POPULAR_PATH = "/api/tele/v1/vod/popular/"
+    private const val MAX_POPULAR = 100
+
+    /** Movies and series most played on the server, most played first: ("movie" | "series", Dispatcharr id). */
+    fun popularTitles(answer: JSONObject?): List<Pair<String, String>> {
+        val list = answer?.optJSONArray("titles") ?: return emptyList()
+        return (0 until minOf(list.length(), MAX_POPULAR)).mapNotNull { i ->
+            val item = list.optJSONObject(i) ?: return@mapNotNull null
+            val kind = item.optString("kind").takeIf { it == "movie" || it == "series" } ?: return@mapNotNull null
+            val id = item.opt("id")?.toString()?.takeIf { DIGITS.matches(it) } ?: return@mapNotNull null
+            kind to id
+        }.distinct()
+    }
+    private const val MAX_GROUPS = 50_000
+
+    /** VOD groups the Dispatcharr admin chose in the plugin: [all], or the [groups] "name|movie" / "name|series". */
+    data class VodGroups(val all: Boolean, val groups: Set<String> = emptySet())
+
+    /** Groups of an answer of [VOD_GROUPS_PATH]; null when malformed (then nothing is hidden). */
+    fun vodGroups(answer: JSONObject?): VodGroups? {
+        if (answer == null) return null
+        return when (answer.optString("mode")) {
+            "all" -> VodGroups(all = true)
+            "selected" -> {
+                val list = answer.optJSONArray("groups") ?: return null
+                val groups = HashSet<String>()
+                for (i in 0 until minOf(list.length(), MAX_GROUPS)) {
+                    val item = list.optJSONObject(i) ?: continue
+                    val name = item.optStringOrNull("name") ?: continue
+                    val type = item.optString("type").takeIf { it == "movie" || it == "series" } ?: continue
+                    groups.add("$name|$type")
+                }
+                VodGroups(all = false, groups = groups)
+            }
+            else -> null
+        }
+    }
     private val DIGITS = Regex("^[0-9]{1,12}$")
 
     /** Dispatcharr id -> TMDB id of an answer of [TMDB_IDS_PATH]; ids that are not numbers are skipped. */

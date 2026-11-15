@@ -772,6 +772,7 @@
     <string name="api_key_page_invalid">Cette clé ne semble pas valide.</string>
     <string name="api_key_page_get">Obtenir une clé sur %1$s</string>
     <string name="vod_row_trending">Tendances de la semaine</string>
+    <string name="vod_row_server_popular">Populaires sur le serveur</string>
     <string name="vod_row_popular_movies">Films populaires</string>
     <string name="vod_row_popular_series">Séries populaires</string>
     <string name="vod_row_now_playing">Actuellement au cinéma</string>

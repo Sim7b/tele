@@ -720,6 +720,18 @@ class DispatcharrClient(
      * TMDB ids the Télé API plugin found for the movies ("movie") or series ("series") Dispatcharr has none for,
      * by Dispatcharr id; empty without the plugin or a TMDB key on the server.
      */
+    /** Movies and series most played on the server (Télé API plugin, adult ones left out); empty without it. */
+    suspend fun getVodPopular(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_popular" !in teleApi()) return@withContext emptyList()
+        TeleApi.popularTitles(getObject("$baseUrl${TeleApi.VOD_POPULAR_PATH}"))
+    }
+
+    /** VOD groups served to the TVs (Télé API plugin); null without the plugin or on error (then every group). */
+    suspend fun getVodGroups(): TeleApi.VodGroups? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_groups" !in teleApi()) return@withContext null
+        TeleApi.vodGroups(getObject("$baseUrl${TeleApi.VOD_GROUPS_PATH}"))
+    }
+
     suspend fun getTmdbIds(kind: String): Map<String, String> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank() || "tmdb_ids" !in teleApi()) return@withContext emptyMap()
         TeleApi.tmdbIds(getObject("$baseUrl${TeleApi.TMDB_IDS_PATH}?kind=$kind"))

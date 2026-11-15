@@ -96,6 +96,14 @@
     animation: shimmer 1.2s infinite; border-radius: 6px; }
   @keyframes shimmer { to { background-position: -200% 0; } }
   @media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } .skeleton { animation: none; } }
+  .savebar { position: sticky; bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px;
+    border-radius: 12px; background: #1f2a3d; border: 1px solid var(--accent); box-shadow: 0 10px 30px rgba(0,0,0,0.45); z-index: 5; }
+  .savebar span { flex: 1 1 200px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .presets button { height: 30px; font-weight: 500; font-size: 13px; }
+  .chip.est { background: transparent; border: 1px dashed var(--line); color: var(--muted); }
+  .chip.sub::before { content: "ST "; color: var(--muted); font-size: 10px; }
+  tr.off td { opacity: 0.55; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -150,6 +158,54 @@
 
     <!-- VOD -->
     <div role="tabpanel" data-panel="vod" hidden style="display:flex;flex-direction:column;gap:16px">
+      <section class="card" aria-labelledby="groups-title">
+        <div class="row">
+          <h2 id="groups-title">Groups to process</h2>
+          <div class="seg" role="group" aria-label="Groups processed">
+            <button type="button" id="groups-all" aria-pressed="true">Every group</button>
+            <button type="button" id="groups-selected" aria-pressed="false">Only the selected ones</button>
+          </div>
+        </div>
+        <div class="muted small">The Télé TVs only load these groups (updated Télé app; each TV can still narrow its own choice), and the language probes and TMDB lookups only work on them. Dispatcharr and other players still list every group.
+          Languages: measured when known, else <span class="chip est" style="margin:0">estimated</span> from the name, like Télé does.</div>
+        <div>
+          <div class="spread small"><span class="muted" id="groups-summary">–</span><strong id="groups-percent"></strong></div>
+          <div class="bar" id="groups-bar" style="margin-top:6px"><span style="width:0;background:var(--accent)"></span></div>
+        </div>
+        <div class="filters">
+          <input id="g-find" type="search" placeholder="Search a group" autocomplete="off" aria-label="Search a group">
+          <select id="g-type" aria-label="Type"><option value="">Movies and series</option><option value="movie">Movies</option><option value="series">Series</option></select>
+          <select id="g-prefix" aria-label="Prefix"><option value="">Any prefix</option></select>
+          <select id="g-audio" aria-label="Audio"><option value="">Any audio</option></select>
+          <select id="g-subtitles" aria-label="Subtitles"><option value="">Any subtitles</option></select>
+          <select id="g-tag" aria-label="Kind of group"><option value="">Any kind</option></select>
+          <select id="g-show" aria-label="Selected"><option value="">Selected or not</option><option value="on">Selected</option><option value="off">Not selected</option></select>
+          <button type="button" class="ghost" id="g-clear">Clear the filters</button>
+        </div>
+        <div class="row">
+          <div class="presets" aria-label="Quick choices">
+            <button type="button" data-preset="fr-audio">French audio</button>
+            <button type="button" data-preset="fr-any">French audio or subtitles</button>
+            <button type="button" data-preset="fr-en">French or English audio</button>
+            <button type="button" data-preset="no-adult">Leave out adult groups</button>
+            <button type="button" data-preset="invert">Invert</button>
+          </div>
+          <span style="flex:1"></span>
+          <button type="button" id="g-select-shown">Select the shown</button>
+          <button type="button" id="g-unselect-shown">Unselect the shown</button>
+        </div>
+        <div class="table scroll">
+          <table>
+            <thead><tr><th style="width:36px"><input type="checkbox" id="g-toggle-shown" aria-label="Select the groups shown"></th><th>Group</th><th>Titles</th><th>Audio</th><th>Subtitles</th><th>Kind</th></tr></thead>
+            <tbody id="groups"></tbody>
+          </table>
+        </div>
+        <div class="savebar" id="groups-save" hidden>
+          <span id="groups-changes"></span>
+          <button type="button" class="ghost" id="groups-cancel">Cancel the changes</button>
+          <button type="button" class="primary" id="groups-apply">Save</button>
+        </div>
+      </section>
       <div class="grid wide">
         <section class="card" aria-labelledby="probes-title">
           <div class="spread"><h2 id="probes-title">Language probes</h2><span class="muted small" id="probe-last"></span></div>
@@ -194,8 +250,14 @@
             <input id="tmdb-find" type="search" placeholder="Search a name" autocomplete="off" aria-label="Search a name">
             <select id="tmdb-kind" aria-label="Type"><option value="">Movies and series</option><option value="movie">Movies</option><option value="series">Series</option></select>
             <button type="button" id="tmdb-retry">Search them all again</button>
+            <span style="flex:1"></span>
+            <label for="tmdb-above" class="muted small">Accept the candidates from</label>
+            <input id="tmdb-above" type="number" min="50" max="99" step="1" value="75" style="width:76px">
+            <span class="muted small">%</span>
+            <button type="button" id="tmdb-accept-above">Accept</button>
           </div>
-          <div class="table scroll"><table><thead><tr><th>Name at the provider</th><th>Searched</th><th>Year</th><th>Type</th><th></th></tr></thead><tbody id="tmdb-unmatched"></tbody></table></div>
+          <div class="muted small" style="margin-bottom:8px">Automatic match from <strong id="tmdb-threshold">85</strong> % of confidence (plugin setting, 50 to 99). Below, the best TMDB result stays here as a candidate.</div>
+          <div class="table scroll"><table><thead><tr><th>Name at the provider</th><th>Searched</th><th>Type</th><th>Best TMDB result</th><th>Confidence</th><th></th></tr></thead><tbody id="tmdb-unmatched"></tbody></table></div>
         </details>
       </section>
 
@@ -219,6 +281,15 @@
             <thead><tr><th>Category</th><th>Account</th><th>Quality</th><th>Audio</th><th>Subtitles</th><th>State</th><th></th></tr></thead>
             <tbody id="categories"></tbody>
           </table>
+        </div>
+      </section>
+      <section class="card" aria-labelledby="backup-title">
+        <div class="spread"><h2 id="backup-title">Backup</h2><span class="muted small" id="backup-state"></span></div>
+        <div class="muted small">The groups served, the languages set by hand or excluded, and the TMDB ids, in one file: to restore after a reinstall or on another Dispatcharr (matched by name there).</div>
+        <div class="row">
+          <button type="button" id="backup-export">Download a backup</button>
+          <label class="button" for="backup-file" style="cursor:pointer" tabindex="0" id="backup-pick">Restore a backup…</label>
+          <input type="file" id="backup-file" accept="application/json,.json" hidden>
         </div>
       </section>
     </div>
@@ -248,6 +319,10 @@
             <tbody id="sessions"></tbody>
           </table>
         </div>
+      </section>
+      <section class="card" aria-labelledby="messages-title">
+        <div class="spread"><h2 id="messages-title">Messages sent to a TV or a user</h2><span class="muted small">Shown on the home screen of the TVs (read every 5 minutes)</span></div>
+        <div class="list" id="messages"></div>
       </section>
       <section class="card" aria-labelledby="devices-title">
         <div class="spread"><h2 id="devices-title">Télé TVs</h2><span class="muted small" id="devices-versions"></span></div>
@@ -288,6 +363,17 @@
         <section class="card" aria-labelledby="peaks-title">
           <h2 id="peaks-title">Highest connections used per day</h2>
           <div id="peaks" class="list" style="gap:18px"></div>
+        </section>
+      </div>
+      <div class="grid wide">
+        <section class="card" aria-labelledby="top-vod-title">
+          <div class="spread"><h2 id="top-vod-title">Most watched movies and episodes</h2><span class="muted small" id="vod-total"></span></div>
+          <div class="list" id="top-vod"></div>
+          <div class="muted small">Counted once per playback, from the sessions seen every 10 minutes. The TVs get the most watched titles as a “Popular on the server” row, adult ones left out.</div>
+        </section>
+        <section class="card" aria-labelledby="vod-users-title">
+          <h2 id="vod-users-title">Movies and episodes watched per user</h2>
+          <div class="list" id="vod-users"></div>
         </section>
       </div>
     </div>
@@ -641,6 +727,11 @@
         if (!window.confirm("Forget this TV? It comes back at its next request.")) return;
         post("admin/devices/forget/", { device: device.id }).then(function () { say("TV forgotten"); load(); }).catch(fail("Not done"));
       } });
+      var toTv = el("button", { type: "button", text: "Message…", title: "A message for this TV only", onclick: function () {
+        sendMessage("device", device.id, "this TV (" + device.id + ")");
+      } });
+      var toUser = device.user_id ? el("button", { type: "button", class: "ghost", text: "Message to " + (device.user || "its user") + "…",
+        title: "A message for every TV of this user", onclick: function () { sendMessage("user", device.user_id, "the TVs of " + (device.user || device.user_id)); } }) : null;
       body.appendChild(el("tr", {}, [
         el("td", {}, [el("span", { class: "dot" + (recent ? "" : " off"), title: recent ? "Seen in the last 15 minutes" : "Not seen lately" })]),
         el("td", { style: "font-family:ui-monospace,monospace;font-size:12px", text: device.id }),
@@ -649,10 +740,45 @@
         el("td", { class: "muted", text: device.ip || "" }),
         el("td", { class: "muted", title: when(device.last_seen), text: ago(device.last_seen) }),
         el("td", { text: String(device.sessions || 0) }),
-        el("td", { class: "actions" }, [button, forget])
+        el("td", { class: "actions" }, [toTv, toUser, button, forget])
       ]));
     });
     empty(body, 8, "No Télé TV seen yet.");
+  }
+
+  // ---------- Targeted messages
+  function sendMessage(kind, target, label) {
+    var text = window.prompt("Message for " + label + " (500 characters at most)");
+    if (text === null || !text.trim()) return;
+    var hours = window.prompt("Shown for how many hours? (1 to 720)", "24");
+    if (hours === null) return;
+    hours = parseInt(hours, 10);
+    if (!(hours >= 1 && hours <= 720)) { say("Between 1 and 720 hours"); return; }
+    post("admin/messages/", { kind: kind, target: String(target), text: text.trim().slice(0, 500), hours: hours })
+      .then(function () { say("Message sent: shown within 5 minutes"); return loadMessages(); })
+      .catch(fail("Not sent"));
+  }
+
+  function loadMessages() {
+    return call("admin/messages/").then(function (data) {
+      var box = clear($("messages"));
+      var names = {};
+      state.devices.forEach(function (d) { if (d.user_id) names[d.user_id] = d.user; });
+      (data.messages || []).forEach(function (m) {
+        var remove = el("button", { type: "button", class: "danger", text: "Remove", onclick: function () {
+          post("admin/messages/", { kind: m.kind, target: m.target, text: "" }).then(function () { say("Message removed"); return loadMessages(); }).catch(fail("Not done"));
+        } });
+        box.appendChild(el("div", { class: "spread", style: "align-items:center;border-bottom:1px solid var(--line);padding-bottom:8px" }, [
+          el("div", {}, [
+            el("div", { text: m.text || "" }),
+            el("div", { class: "muted small", text: (m.kind === "device" ? "TV " + m.target : "User " + (names[m.target] || m.target)) +
+              " · until " + new Date(m.until * 1000).toLocaleString() })
+          ]),
+          remove
+        ]));
+      });
+      if (!box.firstChild) box.appendChild(el("div", { class: "muted small", text: "None. Send one from a TV below; the plugin setting “Message for the TVs” is for every TV." }));
+    }).catch(function () {});
   }
 
   // ---------- Statistics
@@ -672,6 +798,12 @@
       { label: "Channel starts by hour" });
     hbars($("top-channels"), (data.top_channels || []).slice(0, 15).map(function (c) { return { label: c.name, value: c.starts }; }),
       { empty: "No channel started yet." });
+    var vodDays = data.daily_vod || [];
+    text("vod-total", fmt(vodDays.reduce(function (s, d) { return s + d.starts; }, 0)) + " plays");
+    hbars($("top-vod"), (data.top_vod || []).slice(0, 15).map(function (v) { return { label: v.name, value: v.plays }; }),
+      { empty: "No movie or episode watched yet." });
+    hbars($("vod-users"), (data.vod_by_user || []).slice(0, 15).map(function (u) { return { label: u.user, value: u.plays }; }),
+      { empty: "Nothing yet." });
     var box = clear($("peaks"));
     (data.peaks || []).forEach(function (account) {
       var highest = Math.max.apply(null, account.days.map(function (d) { return d.used; }).concat([0]));
@@ -822,9 +954,18 @@
     empty(body, 7, "No category matches.");
   }
 
-  function loadCategories() {
+  function loadCategories(saved) {
     return call("admin/categories/").then(function (data) {
+      var keep = !saved && groups.mode !== undefined && dirty();
       state.categories = data.categories || [];
+      // Unsaved choices are kept across a refresh
+      if (keep) {
+        state.categories.forEach(function (c) { groups.saved[c.id] = !!c.selected; if (!(c.id in groups.picked)) groups.picked[c.id] = !!c.selected; });
+        groups.savedMode = data.selection_mode || "all";
+        showGroups();
+      } else {
+        resetGroups(data.selection_mode);
+      }
       var audio = {}, subtitles = {};
       state.categories.forEach(function (c) { c.audio.forEach(function (a) { audio[a] = 1; }); c.subtitles.forEach(function (t) { subtitles[t] = 1; }); });
       fillLanguageFilter("filter-audio", Object.keys(audio));
@@ -847,6 +988,7 @@
       text("kpi-tmdb-sub", data.key_set ? fmt(matched) + " titles · " + fmt(missed) + " unsure" : "Set a key in VOD");
       clear($("kpi-tmdb-ring")).appendChild(ring(data.key_set ? p : 0, "var(--accent-2)"));
       $("tmdb-remove").disabled = !data.key_set;
+      if (data.min_confidence) text("tmdb-threshold", String(data.min_confidence));
       text("tmdb-unmatched-count", missed ? "(" + fmt(missed) + ", latest " + state.unmatched.length + " listed)" : "");
     }
     var find = $("tmdb-find").value.trim().toLowerCase(), kind = $("tmdb-kind").value;
@@ -864,14 +1006,252 @@
         post("admin/tmdb/item/", { kind: t.kind, item: t.item, tmdb: null })
           .then(function () { say("Searched again at the next run"); return call("admin/tmdb/").then(showTmdb); }).catch(fail("Not done"));
       } });
+      var c = t.candidate, buttons = [];
+      if (c) {
+        var ok = el("button", { type: "button", class: "primary", text: "Accept", title: "Keep this TMDB result", onclick: function () {
+          ok.disabled = true;
+          post("admin/tmdb/item/", { kind: t.kind, item: t.item, accept: true })
+            .then(function () { say("Match kept"); return call("admin/tmdb/").then(showTmdb); }).catch(fail("Not done"));
+        } });
+        buttons.push(ok);
+      }
+      buttons.push(set, again);
+      var score = c && c.score != null ? c.score : null;
+      var link = c ? el("a", { href: "https://www.themoviedb.org/" + (t.kind === "series" ? "tv" : "movie") + "/" + c.id, target: "_blank", rel: "noopener noreferrer",
+        style: "color:var(--text)", text: (c.title || "#" + c.id) + (c.year ? " (" + c.year + ")" : "") }) : null;
       body.appendChild(el("tr", {}, [
-        el("td", { text: t.name || "" }), el("td", { class: "muted", text: t.query || "" }), el("td", { text: t.year ? String(t.year) : "" }),
+        el("td", { text: t.name || "" }),
+        el("td", { class: "muted", text: (t.query || "") + (t.year ? " (" + t.year + ")" : "") }),
         el("td", {}, [el("span", { class: "pill", style: "color:" + (t.kind === "series" ? "var(--s3)" : "var(--s4)"), text: t.kind === "series" ? "Series" : "Movie" })]),
-        el("td", { class: "actions" }, [set, again])
+        el("td", {}, link ? [link] : [el("span", { class: "muted", text: "No result" })]),
+        el("td", {}, score == null ? [] : [el("div", { class: "small", text: score + " %" }),
+          el("div", { class: "bar thin", style: "width:80px" }, [el("span", { style: "width:" + score + "%;background:" + (score >= 75 ? "var(--ok)" : score >= 60 ? "var(--warn)" : "var(--bad)") })])]),
+        el("td", { class: "actions" }, buttons)
       ]));
     });
-    empty(body, 5, "Nothing here.");
+    empty(body, 6, "Nothing here.");
   }
+
+  // ---------- Groups to process
+  var groups = { mode: "all", saved: {}, picked: {}, savedMode: "all" };
+  var TAGS = { VOSTFR: "VOSTFR", VOSTEN: "VOST English", VOST: "VOST", MULTI: "MULTI", MULTISUB: "MULTI-SUB", VO: "VO",
+    dubbed: "Dubbed", kids: "Kids", anime: "Anime", "4k": "4K", studio: "Studio / platform", adult: "Adult", religious: "Religious" };
+
+  function measured(c) { return c.state === "measured" || c.state === "manual"; }
+  function audioOf(c) { return measured(c) ? c.audio : (c.estimated && c.estimated.audio) || []; }
+  function subtitlesOf(c) { return measured(c) ? c.subtitles : (c.estimated && c.estimated.subtitles) || []; }
+  function tagsOf(c) { return (c.estimated && c.estimated.tags) || []; }
+  function isPicked(c) { return !!groups.picked[c.id]; }
+  function dirty() {
+    if (groups.mode !== groups.savedMode) return true;
+    if (groups.mode === "all") return false;
+    return state.categories.some(function (c) { return !!groups.picked[c.id] !== !!groups.saved[c.id]; });
+  }
+
+  function resetGroups(mode) {
+    groups.mode = groups.savedMode = mode || "all";
+    groups.saved = {}; groups.picked = {};
+    state.categories.forEach(function (c) { groups.saved[c.id] = groups.picked[c.id] = !!c.selected; });
+    var counts = { prefix: {}, audio: {}, subtitles: {}, tag: {} };
+    state.categories.forEach(function (c) {
+      var p = c.estimated && c.estimated.prefix;
+      if (p) counts.prefix[p] = (counts.prefix[p] || 0) + 1;
+      audioOf(c).forEach(function (a) { counts.audio[a] = (counts.audio[a] || 0) + 1; });
+      subtitlesOf(c).forEach(function (t) { counts.subtitles[t] = (counts.subtitles[t] || 0) + 1; });
+      tagsOf(c).forEach(function (t) { counts.tag[t] = (counts.tag[t] || 0) + 1; });
+    });
+    fillCounted("g-prefix", counts.prefix, function (k) { return k; });
+    fillCounted("g-audio", counts.audio, language);
+    fillCounted("g-subtitles", counts.subtitles, language);
+    fillCounted("g-tag", counts.tag, function (k) { return TAGS[k] || k; });
+    showGroups();
+  }
+
+  function fillCounted(id, counts, label) {
+    var select = $(id), current = select.value;
+    while (select.options.length > 1) select.remove(1);
+    Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || label(a).localeCompare(label(b)); }).forEach(function (key) {
+      select.appendChild(el("option", { value: key, text: label(key) + " (" + counts[key] + ")" }));
+    });
+    select.value = current;
+  }
+
+  function shownGroups() {
+    var find = $("g-find").value.trim().toLowerCase(), type = $("g-type").value, prefix = $("g-prefix").value;
+    var audio = $("g-audio").value, subtitles = $("g-subtitles").value, tag = $("g-tag").value, show = $("g-show").value;
+    return state.categories.filter(function (c) {
+      return (!find || String(c.name || "").toLowerCase().indexOf(find) >= 0) && (!type || c.type === type) &&
+        (!prefix || (c.estimated && c.estimated.prefix) === prefix) && (!audio || audioOf(c).indexOf(audio) >= 0) &&
+        (!subtitles || subtitlesOf(c).indexOf(subtitles) >= 0) && (!tag || tagsOf(c).indexOf(tag) >= 0) &&
+        (!show || (show === "on") === (groups.mode === "all" || isPicked(c)));
+    });
+  }
+
+  function langChips(codes, estimated, sub) {
+    var cell = el("td", {});
+    codes.forEach(function (code) {
+      cell.appendChild(el("span", { class: "chip" + (estimated ? " est" : "") + (sub ? " sub" : ""), title: (estimated ? "Estimated from the name" : "Measured") + ": " + code, text: language(code) }));
+    });
+    return cell;
+  }
+
+  function setMode(mode) {
+    groups.mode = mode;
+    $("groups-all").setAttribute("aria-pressed", String(mode === "all"));
+    $("groups-selected").setAttribute("aria-pressed", String(mode !== "all"));
+  }
+
+  function pick(list, value) {
+    if (groups.mode === "all") {
+      // Leaving "every group": start from every group selected
+      state.categories.forEach(function (c) { groups.picked[c.id] = true; });
+      setMode("selected");
+    }
+    list.forEach(function (c) { groups.picked[c.id] = value; });
+    showGroups();
+  }
+
+  function showGroups() {
+    setMode(groups.mode);
+    var all = groups.mode === "all";
+    var total = state.categories.length, titles = 0, pickedCount = 0, pickedTitles = 0;
+    state.categories.forEach(function (c) {
+      titles += c.titles || 0;
+      if (all || isPicked(c)) { pickedCount++; pickedTitles += c.titles || 0; }
+    });
+    text("groups-summary", all ? "Every group: " + fmt(total) + " groups, " + fmt(titles) + " titles"
+      : fmt(pickedCount) + " of " + fmt(total) + " groups selected · " + fmt(pickedTitles) + " of " + fmt(titles) + " titles");
+    var p = pct(pickedTitles, titles);
+    text("groups-percent", p + " % of the titles");
+    $("groups-bar").firstChild.style.width = p + "%";
+    var shown = shownGroups();
+    var body = clear($("groups"));
+    shown.slice(0, 1000).forEach(function (c) {
+      var on = all || isPicked(c);
+      var box = el("input", { type: "checkbox", "aria-label": "Process " + (c.name || "") });
+      box.checked = on;
+      box.addEventListener("change", function () { pick([c], box.checked); });
+      var known = measured(c);
+      var tagCell = el("td", {});
+      tagsOf(c).forEach(function (t) { tagCell.appendChild(el("span", { class: "chip", text: TAGS[t] || t })); });
+      body.appendChild(el("tr", { class: on ? "" : "off" }, [
+        el("td", {}, [box]),
+        el("td", {}, [el("div", { text: c.name || "" }), el("div", { class: "muted small", text: (c.type === "series" ? "Series" : "Movies") + (c.account ? " · " + c.account : "") })]),
+        el("td", { class: "muted", text: fmt(c.titles || 0) }),
+        langChips(audioOf(c), !known),
+        langChips(subtitlesOf(c), !known, true),
+        tagCell
+      ]));
+    });
+    if (shown.length > 1000) body.appendChild(el("tr", {}, [el("td", { colspan: "6", class: "empty", text: "First 1,000 of " + fmt(shown.length) + " shown: narrow the filters. The buttons act on all of them." })]));
+    empty(body, 6, "No group matches.");
+    var toggle = $("g-toggle-shown");
+    var onShown = shown.filter(function (c) { return all || isPicked(c); }).length;
+    toggle.checked = shown.length > 0 && onShown === shown.length;
+    toggle.indeterminate = onShown > 0 && onShown < shown.length;
+    text("g-select-shown", "Select the " + fmt(shown.length) + " shown");
+    text("g-unselect-shown", "Unselect the " + fmt(shown.length) + " shown");
+    var changed = dirty();
+    $("groups-save").hidden = !changed;
+    if (changed) {
+      var diff = state.categories.filter(function (c) { return !!groups.picked[c.id] !== !!groups.saved[c.id]; }).length;
+      text("groups-changes", groups.mode !== groups.savedMode
+        ? (groups.mode === "all" ? "Back to every group" : "Only the selected groups: " + fmt(pickedCount) + " of " + fmt(total))
+        : fmt(diff) + " group(s) changed, not saved yet");
+    }
+  }
+
+  var PRESETS = {
+    "fr-audio": function (c) { return audioOf(c).indexOf("fr") >= 0; },
+    "fr-any": function (c) { return audioOf(c).indexOf("fr") >= 0 || subtitlesOf(c).indexOf("fr") >= 0; },
+    "fr-en": function (c) { return audioOf(c).indexOf("fr") >= 0 || audioOf(c).indexOf("en") >= 0; }
+  };
+  document.querySelectorAll("[data-preset]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var key = button.dataset.preset;
+      if (groups.mode === "all") { state.categories.forEach(function (c) { groups.picked[c.id] = true; }); setMode("selected"); }
+      if (key === "invert") state.categories.forEach(function (c) { groups.picked[c.id] = !groups.picked[c.id]; });
+      else if (key === "no-adult") state.categories.forEach(function (c) { if (tagsOf(c).indexOf("adult") >= 0) groups.picked[c.id] = false; });
+      else state.categories.forEach(function (c) { groups.picked[c.id] = PRESETS[key](c) && tagsOf(c).indexOf("adult") < 0; });
+      showGroups();
+    });
+  });
+  ["g-type", "g-prefix", "g-audio", "g-subtitles", "g-tag", "g-show"].forEach(function (id) { $(id).addEventListener("change", showGroups); });
+  $("g-find").addEventListener("input", showGroups);
+  $("g-clear").addEventListener("click", function () {
+    $("g-find").value = "";
+    ["g-type", "g-prefix", "g-audio", "g-subtitles", "g-tag", "g-show"].forEach(function (id) { $(id).value = ""; });
+    showGroups();
+  });
+  $("g-select-shown").addEventListener("click", function () { pick(shownGroups(), true); });
+  $("g-unselect-shown").addEventListener("click", function () { pick(shownGroups(), false); });
+  $("g-toggle-shown").addEventListener("change", function () { pick(shownGroups(), this.checked); });
+  $("groups-all").addEventListener("click", function () { setMode("all"); showGroups(); });
+  $("groups-selected").addEventListener("click", function () {
+    if (groups.mode === "all") state.categories.forEach(function (c) { groups.picked[c.id] = true; });
+    setMode("selected"); showGroups();
+  });
+  $("groups-cancel").addEventListener("click", function () {
+    groups.mode = groups.savedMode;
+    state.categories.forEach(function (c) { groups.picked[c.id] = groups.saved[c.id]; });
+    showGroups();
+  });
+  $("groups-apply").addEventListener("click", function () {
+    var body = groups.mode === "all" ? { mode: "all" }
+      : { mode: "selected", ids: state.categories.filter(isPicked).map(function (c) { return c.id; }) };
+    if (body.mode === "selected" && !body.ids.length && !window.confirm("No group selected: nothing will be probed nor looked up on TMDB. Save?")) return;
+    $("groups-apply").disabled = true;
+    post("admin/categories/selection/", body)
+      .then(function (answer) {
+        say(answer.mode === "all" ? "Every group is processed" : fmt(answer.selected) + " groups processed from the next run");
+        return loadCategories(true);
+      })
+      .catch(fail("Not saved"))
+      .then(function () { $("groups-apply").disabled = false; });
+  });
+
+  // ---------- Backup
+  $("backup-export").addEventListener("click", function () {
+    call("admin/backup/", { raw: true }).then(function (blob) {
+      var link = el("a", { href: URL.createObjectURL(blob), download: "tele-api-backup-" + new Date().toISOString().slice(0, 10) + ".json" });
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(function () { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+    }).catch(fail("Not downloaded"));
+  });
+  $("backup-pick").addEventListener("keydown", function (event) {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); $("backup-file").click(); }
+  });
+  $("backup-file").addEventListener("change", function () {
+    var file = this.files && this.files[0];
+    this.value = "";
+    if (!file) return;
+    if (file.size > 100 * 1024 * 1024) { say("File too large for a backup"); return; }
+    file.text().then(function (content) {
+      var data = JSON.parse(content);
+      if (!data || data.format !== "tele-api-backup") throw new Error("not a Télé backup");
+      if (!window.confirm("Restore this backup? It replaces the groups served, and adds its languages and TMDB ids.")) return;
+      // Sent in parts: a server takes a few MB per request; the first part carries the groups and languages
+      var rows = Array.isArray(data.tmdb) ? data.tmdb : [], size = 5000, parts = Math.max(1, Math.ceil(rows.length / size));
+      var total = { groups: 0, groups_missing: 0, languages: 0, languages_missing: 0, tmdb: 0, tmdb_missing: 0 };
+      var chain = Promise.resolve();
+      for (var i = 0; i < parts; i++) (function (i) {
+        chain = chain.then(function () {
+          var part = { format: data.format, version: data.version, tmdb: rows.slice(i * size, (i + 1) * size) };
+          if (i === 0) { part.groups = data.groups; part.languages = data.languages; }
+          text("backup-state", "Restoring… " + (i + 1) + " / " + parts);
+          return post("admin/backup/", part).then(function (answer) { Object.keys(total).forEach(function (k) { total[k] += answer[k] || 0; }); });
+        });
+      })(i);
+      return chain.then(function () {
+        text("backup-state", "");
+        var missing = total.groups_missing + total.languages_missing;
+        say("Restored: " + total.groups + " groups, " + total.languages + " languages, " + fmt(total.tmdb) + " TMDB ids" +
+          (missing || total.tmdb_missing ? " · not found here: " + missing + " groups, " + fmt(total.tmdb_missing) + " titles" : ""));
+        return load();
+      });
+    }).catch(function (error) { text("backup-state", ""); say("Not restored: " + error.message); });
+  });
 
   // ---------- Loading
   var loading = false;
@@ -887,7 +1267,7 @@
         call("slots/").then(showSlots).catch(function () { showSlots({}); }),
         call("sessions/?all=1").then(function (data) { showSessions(data.sessions || []); }),
         call("admin/probes/").then(showProbes),
-        call("admin/devices/").then(function (data) { showDevices(data.devices || []); }),
+        call("admin/devices/").then(function (data) { showDevices(data.devices || []); return loadMessages(); }),
         call("admin/stats/?days=14").then(showOverviewDays).catch(function () { showOverviewDays({}); }),
         loadStats(state.statsDays),
         call("admin/tmdb/").then(showTmdb),
@@ -929,6 +1309,14 @@
   });
   $("tmdb-find").addEventListener("input", function () { showTmdb(); });
   $("tmdb-kind").addEventListener("change", function () { showTmdb(); });
+  $("tmdb-accept-above").addEventListener("click", function () {
+    var above = parseInt($("tmdb-above").value, 10);
+    if (!(above >= 50 && above <= 99)) { say("Between 50 and 99 %"); return; }
+    if (!window.confirm("Keep every candidate from " + above + " % of confidence?")) return;
+    post("admin/tmdb/item/", { accept_above: above })
+      .then(function (data) { say(fmt(data.accepted) + " matches kept"); return call("admin/tmdb/").then(showTmdb); })
+      .catch(fail("Not done"));
+  });
   $("tmdb-retry").addEventListener("click", function () {
     post("admin/tmdb/item/", { retry: true })
       .then(function (data) { say(data.forgotten + " titles searched again from the next run"); return call("admin/tmdb/").then(showTmdb); })

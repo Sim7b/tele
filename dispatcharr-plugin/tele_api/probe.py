@@ -131,6 +131,56 @@ def request_title(redis_client, kind: str, uuid: str) -> str:
     return "queued"
 
 
+def selection_path() -> str:
+    return os.path.join(data_dir(), "groups.json")
+
+
+def load_selection() -> Dict[str, Any]:
+    """The VOD groups to process (probes and TMDB): every one, or the ones an admin selected on the Télé page."""
+    try:
+        with open(selection_path(), encoding="utf-8") as fh:
+            parsed = core.parse_selection(json.load(fh))
+    except (OSError, ValueError):
+        parsed = None
+    return parsed or {"mode": "all", "ids": []}
+
+
+def save_selection(selection: Dict[str, Any]) -> None:
+    os.makedirs(data_dir(), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=data_dir(), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(selection, fh)
+        os.replace(tmp, selection_path())
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def selected_ids() -> Optional[set]:
+    """Ids of the groups to process, None when every group is."""
+    selection = load_selection()
+    return None if selection["mode"] == "all" else set(selection["ids"])
+
+
+def served_groups() -> Dict[str, Any]:
+    """The groups chosen on the Télé page, by name and type, as the TVs know them (the standard API names them so)."""
+    selected = selected_ids()
+    if selected is None:
+        return {"mode": "all"}
+    from apps.vod.models import M3UVODCategoryRelation
+
+    rows = (
+        M3UVODCategoryRelation.objects.filter(category_id__in=selected)
+        .values_list("category__name", "category__category_type").distinct()
+    )
+    groups = sorted({(name, kind) for name, kind in rows if name and kind in ("movie", "series")})
+    return {"mode": "selected", "groups": [{"name": name, "type": kind} for name, kind in groups]}
+
+
 def load_results() -> Dict[str, Dict[str, Any]]:
     """Results by category id; empty when the file is missing or damaged."""
     return _read(results_path())
@@ -141,6 +191,17 @@ def save_result(category_id: int, entry: Dict[str, Any]) -> None:
     with _file_lock:
         results = load_results()
         results[str(category_id)] = entry
+        _write(results_path(), results)
+
+
+def save_results(entries: Dict[int, Dict[str, Any]]) -> None:
+    """Writes several results at once (a restored backup)."""
+    if not entries:
+        return
+    with _file_lock:
+        results = load_results()
+        for category_id, entry in entries.items():
+            results[str(category_id)] = entry
         _write(results_path(), results)
 
 
@@ -192,6 +253,7 @@ def candidates(settings: Dict[str, Any], results: Dict[str, Dict[str, Any]], now
     from apps.vod.models import M3UEpisodeRelation, M3UMovieRelation, M3UVODCategoryRelation
 
     probe_all = settings.get("probe_scope") == "all"
+    selected = selected_ids()
     links = (
         M3UVODCategoryRelation.objects.filter(enabled=True, m3u_account__is_active=True, m3u_account__account_type="XC")
         .select_related("category")
@@ -203,6 +265,8 @@ def candidates(settings: Dict[str, Any], results: Dict[str, Dict[str, Any]], now
         if category is None or category.id in seen:
             continue
         seen.add(category.id)
+        if selected is not None and category.id not in selected:
+            continue  # Not among the groups an admin chose to process
         previous = results.get(str(category.id)) or {}
         if previous.get("status") in ("manual", "excluded"):
             continue  # Set by an admin on the Télé page
@@ -249,6 +313,7 @@ def all_categories() -> List[Dict[str, Any]]:
     from apps.vod.models import M3UVODCategoryRelation
 
     results = load_results()
+    selected = selected_ids()
     listed: Dict[int, Dict[str, Any]] = {}
     links = (
         M3UVODCategoryRelation.objects.filter(enabled=True, m3u_account__is_active=True, m3u_account__account_type="XC")
@@ -272,8 +337,34 @@ def all_categories() -> List[Dict[str, Any]]:
             "sample": entry.get("sample"),
             "attempts": entry.get("attempts") or 0,
             "probed_at": entry.get("at"),
+            "estimated": core.group_languages(category.name),
+            "selected": selected is None or category.id in selected,
+            "titles": 0,
         }
+    for category_id, count in title_counts().items():
+        if category_id in listed:
+            listed[category_id]["titles"] = count
     return sorted(listed.values(), key=lambda c: (str(c["name"]).lower(), c["id"]))
+
+
+def title_counts() -> Dict[int, int]:
+    """Movies and series of each VOD group at the active accounts (one grouped query per kind)."""
+    from django.db.models import Count
+
+    from apps.vod.models import M3UMovieRelation, M3USeriesRelation
+
+    counts: Dict[int, int] = {}
+    for model in (M3UMovieRelation, M3USeriesRelation):
+        try:
+            rows = (
+                model.objects.filter(m3u_account__is_active=True, category__isnull=False)
+                .values("category_id").annotate(n=Count("id"))
+            )
+            for row in rows:
+                counts[row["category_id"]] = counts.get(row["category_id"], 0) + row["n"]
+        except Exception:
+            logger.debug("Télé API: titles not counted", exc_info=True)
+    return counts
 
 
 def category_link(category_id: int):

@@ -1521,6 +1521,7 @@ private fun vodRowLabel(kind: VodRow.Kind): String = stringResource(
     when (kind) {
         VodRow.Kind.CONTINUE -> R.string.vod_row_continue
         VodRow.Kind.TRENDING -> R.string.vod_row_trending
+        VodRow.Kind.SERVER_POPULAR -> R.string.vod_row_server_popular
         VodRow.Kind.MY_LIST -> R.string.vod_row_my_list
         VodRow.Kind.COLLECTION -> R.string.settings_vod_collections_row
         VodRow.Kind.RECENT_MOVIES -> R.string.vod_row_recent_movies

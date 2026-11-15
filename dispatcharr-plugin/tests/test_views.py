@@ -300,6 +300,63 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(tmdb_manual.call_args.args, ("movie", 6, 12345))
         self.assertEqual(wrong.status_code, 400)
 
+    def test_backup_for_admins_only(self):
+        self.assertEqual(self.call(views.AdminBackupView, who=user()).status_code, 403)
+        bad = self.call(views.AdminBackupView, "post", who=user(level=10), body={"format": "x"})
+        self.assertEqual(bad.status_code, 400)
+        with mock.patch("tele_api.backup.restore", return_value={"groups": 2}) as restore:
+            done = self.call(views.AdminBackupView, "post", who=user(level=10), body={"format": "tele-api-backup", "version": 1})
+        self.assertEqual(done.data["groups"], 2)
+        restore.assert_called_once()
+
+    def test_targeted_messages(self):
+        store = {}
+
+        class Store:
+            def hset(self, key, field, value):
+                store[field] = value
+
+            def hdel(self, key, *fields):
+                for field in fields:
+                    store.pop(field, None)
+
+            def hgetall(self, key):
+                return dict(store)
+
+        admin = user(level=10)
+        with mock.patch.object(views.data, "redis_client", return_value=Store()):
+            sent = self.call(views.AdminMessagesView, "post", who=admin, body={"kind": "user", "target": "7", "text": "Hello", "hours": 2})
+            bad = self.call(views.AdminMessagesView, "post", who=admin, body={"kind": "device", "target": "nope", "text": "x"})
+            listed = self.call(views.AdminMessagesView, who=admin)
+            info = self.call(views.InfoView, who=user())
+            self.call(views.AdminMessagesView, "post", who=admin, body={"kind": "user", "target": "7", "text": ""})
+        self.assertTrue(sent.data["ok"])
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(listed.data["messages"][0]["text"], "Hello")
+        self.assertEqual(info.data["message"], "Hello")
+        self.assertEqual(store, {})
+        self.assertEqual(self.call(views.AdminMessagesView, who=user()).status_code, 403)
+
+    def test_groups_served_to_the_tvs(self):
+        served = {"mode": "selected", "groups": [{"name": "FR | FILMS", "type": "movie"}]}
+        with mock.patch.object(views.probe, "served_groups", return_value=served):
+            response = self.call(views.VodGroupsView, who=user())
+            again = self.call(views.VodGroupsView, who=user(), HTTP_IF_NONE_MATCH=response["ETag"])
+        self.assertEqual(response.data["groups"], served["groups"])
+        self.assertEqual(again.status_code, 304)
+
+    def test_selection_of_the_groups_to_process(self):
+        admin = user(level=10)
+        with mock.patch.object(views.probe, "save_selection") as save:
+            done = self.call(views.AdminCategorySelectionView, "post", who=admin, body={"mode": "selected", "ids": [4, 2, 4]})
+            every = self.call(views.AdminCategorySelectionView, "post", who=admin, body={"mode": "all"})
+            bad = self.call(views.AdminCategorySelectionView, "post", who=admin, body={"mode": "selected", "ids": ["x"]})
+        self.assertEqual(done.data["selected"], 2)
+        self.assertEqual([c.args[0] for c in save.call_args_list], [{"mode": "selected", "ids": [2, 4]}, {"mode": "all", "ids": []}])
+        self.assertEqual(every.data["mode"], "all")
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(self.call(views.AdminCategorySelectionView, "post", who=user(), body={"mode": "all"}).status_code, 403)
+
     def test_admin_endpoints_are_for_admins_only(self):
         for view in (views.AdminProbesView, views.AdminExportView):
             self.assertEqual(self.call(view, who=user()).status_code, 403)

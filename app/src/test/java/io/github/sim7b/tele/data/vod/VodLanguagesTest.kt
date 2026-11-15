@@ -94,7 +94,13 @@ class VodLanguagesTest {
         assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "أفلام مصرية"))
         assertEquals("عربيه", VodLanguageGuess.arabicStem("العربية"))
         // The same in Latin letters
-        assertEquals(VodLanguages(setOf("en"), setOf("ar")), guess("Dune (2024)", "AR | FILMS"))
+        assertEquals(VodLanguages(setOf("en"), setOf("ar")), guess("Dune (2024)", "ARABIC MOVIES"))
+        // The Arabic code alone: Arabic audio
+        assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "AR | FILMS"))
+        assertEquals(VodLanguages(setOf("ar")), guess("Al Hayba S01E01", "[AR] SERIES"))
+        // Even when its Arabic name says foreign
+        assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "[AR] يعرض الآن أجنبي"))
+        assertEquals(VodLanguages(emptySet(), setOf("ar")), guess("Dune (2024)", "[AR] VOST"))
         assertEquals(VodLanguages(setOf("tr"), setOf("ar")), guess("Kuruluş Osman S01E01", "AR | TURKISH SERIES"))
         assertEquals(VodLanguages(setOf("ar")), guess("Dune (2024)", "ARABIC DUBBED MOVIES"))
     }

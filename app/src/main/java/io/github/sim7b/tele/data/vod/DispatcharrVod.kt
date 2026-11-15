@@ -131,16 +131,48 @@ object DispatcharrVod {
         return categories
     }
 
-    /** Categories of movies and series of the server, to choose what to load. */
-    suspend fun categoriesOf(client: DispatcharrClient): List<VodCategory> =
-        listCategories(client).mapNotNull { (type, name) ->
+    /**
+     * Groups the admin serves to the TVs (Télé API plugin), "name|type"; null when every group is (or without
+     * the plugin): the others are neither offered nor loaded.
+     */
+    suspend fun allowedGroups(client: DispatcharrClient): Set<String>? =
+        client.getVodGroups()?.takeIf { !it.all }?.groups
+
+    /** Whether [entry] belongs to a group of [allowed] (every entry when null). */
+    fun allows(allowed: Set<String>?, entry: VodEntry): Boolean =
+        allowed == null || entry.category?.let { "$it|${typeOf(entry.kind)}" in allowed } == true
+
+    /** [selection] limited to the [allowed] groups: "every category" becomes those groups. */
+    fun restrict(selection: VodSelection, allowed: Set<String>?): VodSelection {
+        if (allowed == null || !selection.all) return selection
+        val keys = allowed.mapNotNull { id ->
+            val kind = when (id.substringAfterLast('|')) {
+                "movie" -> VodKind.MOVIE
+                "series" -> VodKind.SERIES
+                else -> return@mapNotNull null
+            }
+            VodCategory(kind, id, id.substringBeforeLast('|')).key
+        }.toSet()
+        return VodSelection(all = false, keys = keys, known = selection.known)
+    }
+
+    /** A short mark of [allowed]: the catalog is loaded again when it changes. */
+    fun groupsStamp(allowed: Set<String>?): String = allowed?.sorted()?.joinToString("\n")?.hashCode()?.toString() ?: "all"
+
+    private fun typeOf(kind: VodKind) = if (kind == VodKind.MOVIE) "movie" else "series"
+
+    /** Categories of movies and series of the server, to choose what to load (the ones served to the TVs). */
+    suspend fun categoriesOf(client: DispatcharrClient): List<VodCategory> {
+        val allowed = allowedGroups(client)
+        return listCategories(client).mapNotNull { (type, name) ->
             val kind = when (type) {
                 "movie" -> VodKind.MOVIE
                 "series" -> VodKind.SERIES
                 else -> return@mapNotNull null
             }
-            VodCategory(kind, "$name|$type", name)
+            VodCategory(kind, "$name|$type", name).takeIf { allowed == null || it.id in allowed }
         }
+    }
 
     /**
      * Movies and series of the chosen categories only, a few categories at a time, each with its category

@@ -447,6 +447,13 @@ class SettingsRepository(context: Context) {
     }
 
     /** Categories of movies and series to load from source [configId]. */
+    /** Mark of the VOD groups the Dispatcharr server of [configId] served when its catalog was loaded. */
+    fun getVodGroupsStamp(configId: String): String = prefs.getString(KEY_VOD_GROUPS_PREFIX + configId, null) ?: "all"
+
+    fun setVodGroupsStamp(configId: String, stamp: String) {
+        prefs.edit().putString(KEY_VOD_GROUPS_PREFIX + configId, stamp).apply()
+    }
+
     fun setVodSelection(configId: String, selection: VodSelection) {
         val updated = _vodSelections.value + (configId to selection)
         prefs.edit().putString(KEY_VOD_SELECTIONS, VodCategories.toJson(updated)).apply()
@@ -935,7 +942,7 @@ class SettingsRepository(context: Context) {
      * and selected streams of its channels (ids prefixed by the source; Dispatcharr ones are UUIDs).
      */
     private fun forgetSourceData(configId: String) {
-        prefs.edit().remove(KEY_USER_NAME_PREFIX + configId).apply()
+        prefs.edit().remove(KEY_USER_NAME_PREFIX + configId).remove(KEY_VOD_GROUPS_PREFIX + configId).apply()
         if (configId in _vodSelections.value) {
             val kept = _vodSelections.value - configId
             prefs.edit().putString(KEY_VOD_SELECTIONS, VodCategories.toJson(kept)).apply()
@@ -986,6 +993,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_TRAKT_SESSION = "trakt_session"
         private const val KEY_VOD_DISPLAY = "vod_display"
         private const val KEY_VOD_SELECTIONS = "vod_selections"
+        private const val KEY_VOD_GROUPS_PREFIX = "vod_groups_"
         private const val VOD_STATE_FILE = "vod_state.json"
         private const val VOD_INDEX_FILE = "vod_tmdb_index.jsonl"
         private const val KEY_TMDB_KEY = "vod_tmdb_key"

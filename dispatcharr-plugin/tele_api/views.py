@@ -18,14 +18,14 @@ from rest_framework.response import Response
 from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
-from . import core, data, probe
+from . import core, data, messages, probe
 
 # Under "apps": a logger Dispatcharr sends to its console and log browser
 logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -153,7 +153,8 @@ class InfoView(TeleView):
                 "server_time": data.server_time(),
                 "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
-                "message": (core.to_text(self.setting("tv_message", "")) or "").strip()[:500] or None,
+                "message": messages.for_tv(data.redis_client(), self.setting("tv_message", ""),
+                                           request.headers.get("User-Agent"), user.id),
             }
         )
 
@@ -407,6 +408,36 @@ class TmdbIdsView(TeleView):
         return Response({"api": core.API_VERSION, "ids": found}, headers={"ETag": tag})
 
 
+class VodGroupsView(TeleView):
+    """The VOD groups served to the TVs, chosen by an admin on the Télé page: {"mode": "all"}, or {"mode":
+    "selected", "groups": [{"name", "type"}]} (Télé loads only those), with an ETag (304 while unchanged)."""
+
+    def get(self, request):
+        answer = {"api": core.API_VERSION, **probe.served_groups()}
+        tag = core.etag(answer)
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        return Response(answer, headers={"ETag": tag})
+
+
+class VodPopularView(TeleView):
+    """Movies and series most played on the server ("?days=" 1-30, 30 by default), adult ones left out:
+    {"titles": [{"kind": "movie" | "series", "id": <Dispatcharr id>, "plays"}]}, with an ETag."""
+
+    def get(self, request):
+        from . import stats
+
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        days = core.query_int(request.query_params.get("days"), 30, 1, core.STATS_DAYS)
+        answer = {"api": core.API_VERSION, "days": days, "titles": stats.popular(client, days)}
+        tag = core.etag(answer)
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        return Response(answer, headers={"ETag": tag})
+
+
 class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         user = request.user
@@ -430,6 +461,30 @@ class AdminDevicesView(AdminView):
         sessions = data.all_sessions() or []
         users = data.usernames(core.device_users(raw))
         return Response({"api": core.API_VERSION, "devices": core.devices_json(raw, users, sessions, time.time())})
+
+
+class AdminMessagesView(AdminView):
+    """Messages for one TV or one user: GET the ones shown; POST {"kind": "device" | "user", "target", "text" (empty or
+    null removes it), "hours" (1 to 720, 24 by default)}."""
+
+    def get(self, request):
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"api": core.API_VERSION, "messages": messages.active(client)})
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        key = core.message_target(body.get("kind"), body.get("target"))
+        text = (core.to_text(body.get("text")) or "").strip()
+        hours = core.query_int(body.get("hours"), 24, 1, core.MESSAGE_MAX_HOURS)
+        if key is None or len(text) > core.MAX_MESSAGE:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        messages.send(client, key, text or None, hours)
+        return Response({"api": core.API_VERSION, "ok": True})
 
 
 class AdminDeviceReleaseView(AdminView):
@@ -473,7 +528,8 @@ class AdminTmdbView(AdminView):
             "key_set": vault.tmdb_key() is not None,
             "enabled": bool(self.setting("tmdb_enabled", True)),
             "language": self.setting("tmdb_language", "fr-FR"),
-            "unmatched_titles": tmdb.unmatched(50),
+            "min_confidence": core.tmdb_min_confidence(self.setting("tmdb_min_confidence", core.TMDB_MIN_CONFIDENCE)),
+            "unmatched_titles": tmdb.unmatched(200),
             **tmdb.counts(),
         })
 
@@ -499,7 +555,23 @@ class AdminCategoriesView(AdminView):
     """Every enabled VOD category of the Xtream accounts with its probe state (filtered on the page)."""
 
     def get(self, request):
-        return Response({"api": core.API_VERSION, "categories": probe.all_categories()})
+        return Response({
+            "api": core.API_VERSION,
+            "selection_mode": probe.load_selection()["mode"],
+            "categories": probe.all_categories(),
+        })
+
+
+class AdminCategorySelectionView(AdminView):
+    """The VOD groups the probes and TMDB process: {"mode": "all"} or {"mode": "selected", "ids": [...]}."""
+
+    def post(self, request):
+        selection = core.parse_selection(request.data)
+        if selection is None:
+            return Response({"error": "invalid_selection"}, status=status.HTTP_400_BAD_REQUEST)
+        probe.save_selection(selection)
+        logger.info("Télé API: %s", "every VOD group processed" if selection["mode"] == "all" else f"{len(selection['ids'])} VOD groups processed")
+        return Response({"api": core.API_VERSION, "mode": selection["mode"], "selected": len(selection["ids"])})
 
 
 class AdminCategoryActionView(AdminView):
@@ -535,7 +607,8 @@ class AdminProbeRetryView(AdminView):
 
 
 class AdminTmdbItemView(AdminView):
-    """{"kind": "movie" | "series", "item": <Dispatcharr id>, "tmdb": <TMDB id> | null}, or {"retry": true}."""
+    """{"kind": "movie" | "series", "item": <Dispatcharr id>, "tmdb": <TMDB id> | null}, the same with {"accept": true}
+    to keep its candidate, {"accept_above": <confidence>} to keep every candidate from that one, or {"retry": true}."""
 
     def post(self, request):
         from . import tmdb
@@ -543,7 +616,18 @@ class AdminTmdbItemView(AdminView):
         body = request.data if isinstance(request.data, dict) else {}
         if body.get("retry") is True:
             return Response({"api": core.API_VERSION, "forgotten": tmdb.retry_unmatched()})
+        if "accept_above" in body:
+            above = core.to_int(body.get("accept_above"))
+            if above is None or not 1 <= above <= 100:
+                return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"api": core.API_VERSION, "accepted": tmdb.accept_candidates(above)})
         kind, item = body.get("kind"), core.to_int(body.get("item"))
+        if body.get("accept") is True:
+            if kind not in ("movie", "series") or item is None:
+                return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+            if not tmdb.accept(kind, item):
+                return Response({"error": "no_candidate"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"api": core.API_VERSION, "ok": True})
         tmdb_id = None if body.get("tmdb") is None else core.to_int(body.get("tmdb"))
         if kind not in ("movie", "series") or item is None or (body.get("tmdb") is not None and (tmdb_id is None or tmdb_id <= 0)):
             return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
@@ -633,6 +717,25 @@ class AdminExportView(AdminView):
         response = Response(probe.export())
         response["Content-Disposition"] = 'attachment; filename="vod-language-cases.json"'
         return response
+
+
+class AdminBackupView(AdminView):
+    """GET: a backup of the Télé page (groups, languages set by hand, TMDB ids) as a JSON file; POST: restores one."""
+
+    def get(self, request):
+        from . import backup
+
+        response = Response(backup.export())
+        response["Content-Disposition"] = 'attachment; filename="tele-api-backup.json"'
+        return response
+
+    def post(self, request):
+        from . import backup
+
+        restored = backup.restore(request.data)
+        if restored is None:
+            return Response({"error": "invalid_backup"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"api": core.API_VERSION, **restored})
 
 
 class UiView(APIView):

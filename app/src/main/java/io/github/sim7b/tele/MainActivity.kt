@@ -865,6 +865,7 @@ class MainActivity : ComponentActivity() {
                             val vodCollections by configRepository.vodStore.collections.collectAsState()
                             val vodRankings by viewModel.vod.rankings.collectAsState()
                             val platformLogos by viewModel.vod.platformLogos.collectAsState()
+                            val serverPopular by viewModel.vod.serverPopular.collectAsState()
                             val indexVersion by viewModel.vod.index.version.collectAsState()
                             val indexProgress by viewModel.vod.index.progress.collectAsState()
                             val tmdbKey by configRepository.tmdbKey.collectAsState()
@@ -889,6 +890,7 @@ class MainActivity : ComponentActivity() {
                                     myList = vodMyList,
                                     collections = vodCollections,
                                     rankings = vodRankings,
+                                    serverPopular = serverPopular,
                                     indexVersion = indexVersion,
                                     indexProgress = indexProgress,
                                     facts = { viewModel.vod.index.all() },

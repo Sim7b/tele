@@ -399,3 +399,29 @@ class RunnerTest(unittest.TestCase):
             setattr(sys, runner._HOLDER, object())
             thread.join(timeout=2)
         self.assertFalse(thread.is_alive())
+
+
+class SelectionTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        patcher = mock.patch.object(probe, "data_dir", return_value=self.dir.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_every_group_until_a_selection_is_saved(self):
+        self.assertIsNone(probe.selected_ids())
+        probe.save_selection({"mode": "selected", "ids": [3, 7]})
+        self.assertEqual(probe.selected_ids(), {3, 7})
+        probe.save_selection({"mode": "all", "ids": []})
+        self.assertIsNone(probe.selected_ids())
+
+    def test_damaged_file_means_every_group(self):
+        with open(probe.selection_path(), "w", encoding="utf-8") as fh:
+            fh.write('{"mode": "selected", "ids": ["x"]}')
+        self.assertIsNone(probe.selected_ids())
+
+
+class ServedGroupsTest(SelectionTest):
+    def test_every_group_without_a_selection(self):
+        self.assertEqual(probe.served_groups(), {"mode": "all"})

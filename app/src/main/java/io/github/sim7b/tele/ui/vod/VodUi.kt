@@ -193,6 +193,7 @@ internal fun PosterCard(
 internal fun rowTitle(row: VodRow): String = when (row.kind) {
     VodRow.Kind.CONTINUE -> stringResource(R.string.vod_row_continue)
     VodRow.Kind.TRENDING -> stringResource(R.string.vod_row_trending)
+    VodRow.Kind.SERVER_POPULAR -> stringResource(R.string.vod_row_server_popular)
     VodRow.Kind.MY_LIST -> stringResource(R.string.vod_row_my_list)
     VodRow.Kind.COLLECTION, VodRow.Kind.GENRE -> row.name.orEmpty()
     VodRow.Kind.RECENT_MOVIES -> stringResource(R.string.vod_row_recent_movies)

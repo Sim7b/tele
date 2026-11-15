@@ -45,6 +45,8 @@ class Plugin:
     actions = _MANIFEST.get("actions", [])
 
     def run(self, action, params, context):
+        if action == "open_page":
+            return {"status": "ok", "message": page_link(context), "url": "/api/tele/ui/"}
         if action == "status":
             return {"status": "ok", "message": status_message()}
         if action == "stream_health":
@@ -85,6 +87,11 @@ class Plugin:
     def stop(self, context):
         # Only this worker: the others refuse the requests once the plugin is disabled (views.PluginEnabled)
         routes.uninstall()
+
+
+def page_link(context) -> str:
+    """Where the Télé page is: the plugin cannot know the address the admin uses for Dispatcharr."""
+    return "Télé page: add /api/tele/ui/ to the address you use for Dispatcharr, e.g. http://192.168.1.10:9191/api/tele/ui/"
 
 
 def status_message() -> str:

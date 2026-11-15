@@ -1,6 +1,6 @@
 {
   "name": "Télé API",
-  "version": "0.3.2",
+  "version": "0.3.5",
   "description": "Endpoints and a page for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, playback sessions, and the audio and subtitle languages of the VOD measured with ffprobe.",
   "author": "Télé",
   "help_url": "/api/tele/ui/",
@@ -9,7 +9,7 @@
       "id": "info",
       "label": "Endpoints",
       "type": "info",
-      "description": "Served under /api/tele/v1/ with the API key of any standard user. Each user only sees their own channels and sessions. Admins: the Télé page is at /api/tele/ui/."
+      "description": "Served under /api/tele/v1/ with the API key of any standard user. Each user only sees their own channels and sessions. Admins: the Télé page is at /api/tele/ui/ (also in the actions)."
     },
     {
       "id": "allow_release",
@@ -105,6 +105,13 @@
       "help_text": "In the background, a few hundred titles every 10 minutes."
     },
     {
+      "id": "tmdb_min_confidence",
+      "label": "TMDB automatic match from (%)",
+      "type": "number",
+      "default": 85,
+      "help_text": "50 to 99. The confidence a search result needs to be kept: likeness of the title and of the year. Lower: more titles matched, more mistakes. The candidates below stay on the Télé page, to accept one by one or from a confidence."
+    },
+    {
       "id": "tmdb_language",
       "label": "TMDB search language",
       "type": "select",
@@ -142,6 +149,13 @@
     }
   ],
   "actions": [
+    {
+      "id": "open_page",
+      "label": "Télé page: /api/tele/ui/",
+      "description": "The dedicated page for admins (VOD groups, languages, TMDB, sessions, TVs, statistics): add /api/tele/ui/ to the address of this Dispatcharr, e.g. http://dispatcharr:9191/api/tele/ui/. The button gives the full link.",
+      "button_label": "Get the link",
+      "button_variant": "filled"
+    },
     {
       "id": "status",
       "label": "Status",
