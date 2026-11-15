@@ -16,7 +16,9 @@ data class DispatcharrChannel(
     // Resolved EPG key: tvg_id of the linked EPGData (epg_data_id) or tvg_id of the channel
     val tvgId: String = "",
     val isRadio: Boolean = false,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    // Current and next program, given with the channel by the Télé API plugin (before the guide is loaded)
+    val programs: List<GuideProgram> = emptyList()
 ) {
     fun toChannel(): Channel {
         return Channel(

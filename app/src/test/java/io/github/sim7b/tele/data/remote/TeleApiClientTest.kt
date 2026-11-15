@@ -71,7 +71,9 @@ class TeleApiClientTest {
                 TeleApi.CHANNELS_PATH -> json(
                     """{"api": 1, "count": 2, "results": [
                         {"id": 2, "uuid": "u2", "number": 2, "name": "France 2", "group": {"id": 5, "name": "TNT"}, "tvg_id": "F2.fr"},
-                        {"id": 1, "uuid": "u1", "number": 1, "name": "TF1", "group": null, "logo_id": 9}]}"""
+                        {"id": 1, "uuid": "u1", "number": 1, "name": "TF1", "group": null, "logo_id": 9,
+                         "now": {"title": "Journal", "start": "2026-11-09T20:00:00+00:00", "end": "2026-11-09T20:40:00+00:00"},
+                         "next": {"title": "Film", "start": "not a date", "end": "2026-11-09T22:40:00+00:00"}}]}"""
                 )
                 else -> null
             }
@@ -86,6 +88,12 @@ class TeleApiClientTest {
         assertTrue(channels[0].logoUrl!!.endsWith("/api/channels/logos/9/cache/"))
         assertTrue(channels[0].streamUrl.endsWith("/proxy/ts/stream/u1"))
         assertTrue("/api/channels/channels/" !in paths)
+        // The current program comes with the channel; a malformed one is left out
+        val program = channels[0].programs.single()
+        assertEquals("Journal", program.title)
+        assertEquals(1_794_254_400_000L, program.startMillis)
+        assertEquals(40 * 60_000L, program.endMillis - program.startMillis)
+        assertTrue(channels[1].programs.isEmpty())
     }
 
     @Test

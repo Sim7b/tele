@@ -559,13 +559,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val artworkDeferred = async { client.getProgramArtwork(now, now + ARTWORK_WINDOW_MS) }
         val epgDeferred = async { client.getEpgGrid() }
         val channelsResult = client.getChannels()
+        // Télé API plugin: the channels come with their current and next program, shown while the guide loads
+        val nowNext = channelsResult.getOrNull()?.let { list ->
+            list.filter { it.programs.isNotEmpty() }.associate { it.uuid to it.programs }
+        }.orEmpty()
+        if (nowNext.isNotEmpty() && !epgDeferred.isCompleted) {
+            source.channels = withContext(Dispatchers.Default) {
+                channelsResult.getOrThrow().map { it.toChannel().copy(sourceId = config.id) }
+            }
+            if (source.programs.isEmpty()) source.programs = nowNext
+            publishAll()
+        }
         val epgResult = epgDeferred.await()
         Log.i(TvPlayerManager.PERF_TAG, "Load: channels + guide in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
         channelsResult.onSuccess { dChannels ->
             val channels = withContext(Dispatchers.Default) { dChannels.map { it.toChannel().copy(sourceId = config.id) } }
             dropDirectSelections(channels, client)
-            source.programs = matchDispatcharrGuide(channels, epgResult.getOrNull().orEmpty(), client)
+            // Without the guide: at least the current and next programs of the plugin
+            source.programs = if (epgResult.isFailure && nowNext.isNotEmpty()) {
+                nowNext
+            } else {
+                matchDispatcharrGuide(channels, epgResult.getOrNull().orEmpty(), client)
+            }
             source.channels = channels
             source.error = epgResult.exceptionOrNull()?.let { UiText.Res(R.string.error_guide_unavailable, it.toUiText()) }
             publishAll()

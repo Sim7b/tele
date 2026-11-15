@@ -103,7 +103,8 @@ class DispatcharrClient(
         val seenUuids = HashSet<String>()
         for (page in 1..TeleApi.MAX_CHANNEL_PAGES) {
             var read = 0
-            val url = "$baseUrl${TeleApi.CHANNELS_PATH}?programs=0&page_size=${TeleApi.CHANNELS_PAGE_SIZE}&page=$page"
+            // With the current and next program of each channel: shown before the guide is loaded
+            val url = "$baseUrl${TeleApi.CHANNELS_PATH}?programs=1&page_size=${TeleApi.CHANNELS_PAGE_SIZE}&page=$page"
             val fetched = fetchObjects(url) { item ->
                 read++
                 TeleApi.parseChannel(item, baseUrl)?.takeIf { seenUuids.add(it.uuid) }?.let { channels.add(it) }
