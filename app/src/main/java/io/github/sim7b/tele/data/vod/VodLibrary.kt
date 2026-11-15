@@ -7,7 +7,12 @@ package io.github.sim7b.tele.data.vod
  */
 object VodLibrary {
 
-    fun build(entries: List<VodEntry>): List<VodTitle> {
+    /**
+     * Titles of [entries]. [measured]: languages measured on the server for the categories of a source (by
+     * source id, then [DispatcharrVod.measuredKey]): they replace what the category name tells, the tags of
+     * each name still count.
+     */
+    fun build(entries: List<VodEntry>, measured: Map<String, Map<String, VodLanguages>> = emptyMap()): List<VodTitle> {
         // Normalized titles, computed once (the costliest part of the grouping), shared by identical titles
         val titleKeys = HashMap<String, String>()
         fun titleKey(entry: VodEntry) = titleKeys.getOrPut(entry.title) { VodNames.key(entry.title) }
@@ -51,14 +56,15 @@ object VodLibrary {
         // Same languages for most titles: one shared instance of each
         val languages = HashMap<VodLanguages, VodLanguages>()
         val estimator = VodLanguageGuess.Estimator()
-        return groups.map { (key, group) -> merge(key, group, estimator, languages) }
+        return groups.map { (key, group) -> merge(key, group, estimator, languages, measured) }
     }
 
     private fun merge(
         key: String,
         group: List<VodEntry>,
         estimator: VodLanguageGuess.Estimator,
-        shared: MutableMap<VodLanguages, VodLanguages>
+        shared: MutableMap<VodLanguages, VodLanguages>,
+        measured: Map<String, Map<String, VodLanguages>>
     ): VodTitle {
         val first = group.first()
         // The most complete entry gives the texts; images from the first entry that has them
@@ -77,9 +83,22 @@ object VodLibrary {
             imdbId = group.firstNotNullOfOrNull { it.imdbId?.takeIf { id -> id.isNotBlank() } },
             addedAt = group.mapNotNull { it.addedAt }.maxOrNull(),
             entries = group,
-            languages = group.fold(VodLanguages()) { all, entry -> all + estimator.estimate(entry.name, entry.languageTags, entry.category) }
+            languages = group.fold(VodLanguages()) { all, entry -> all + languagesOf(entry, estimator, measured) }
                 .let { shared.getOrPut(it) { it } }
         )
+    }
+
+    private fun languagesOf(
+        entry: VodEntry,
+        estimator: VodLanguageGuess.Estimator,
+        measured: Map<String, Map<String, VodLanguages>>
+    ): VodLanguages {
+        val known = if (measured.isEmpty()) null else DispatcharrVod.measuredKey(entry)?.let { measured[entry.sourceId]?.get(it) }
+        return if (known == null) {
+            estimator.estimate(entry.name, entry.languageTags, entry.category)
+        } else {
+            known + estimator.estimate(entry.name, entry.languageTags, null)
+        }
     }
 
     private fun score(entry: VodEntry): Int =

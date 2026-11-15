@@ -278,5 +278,7 @@ data class VodDetailsPart(
     val tmdbId: String? = null,
     val durationSecs: Int? = null,
     val versions: List<VodVersion> = emptyList(),
-    val episodes: List<VodEpisode> = emptyList()
+    val episodes: List<VodEpisode> = emptyList(),
+    // A file without description is being measured on the server (Télé API plugin)
+    val mediaPending: Boolean = false
 )

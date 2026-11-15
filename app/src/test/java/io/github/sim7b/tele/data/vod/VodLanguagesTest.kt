@@ -126,6 +126,25 @@ class VodLanguagesTest {
     }
 
     @Test
+    fun `languages measured on the server replace what the category name tells`() {
+        val entries = listOf(
+            VodEntry("d", VodKind.MOVIE, "1", "Dune (2024)", "Dune", 2024, category = "FR | FILMS MULTI-SUB"),
+            VodEntry("d", VodKind.MOVIE, "2", "Alien (1979) VOSTFR", "Alien", 1979, languageTags = listOf("VOSTFR"), category = "NETFLIX"),
+            VodEntry("x", VodKind.MOVIE, "3", "Heat (1995)", "Heat", 1995, category = "FR | FILMS MULTI-SUB")
+        )
+        val measured = mapOf("d" to mapOf(
+            "movie:FR | FILMS MULTI-SUB" to VodLanguages(setOf("en"), setOf("en", "fr")),
+            "movie:NETFLIX" to VodLanguages(setOf("en"))
+        ))
+        val titles = VodLibrary.build(entries, measured).associateBy { it.title }
+        assertEquals(VodLanguages(setOf("en"), setOf("en", "fr")), titles.getValue("Dune").languages)
+        // The tags of the name still count
+        assertEquals(VodLanguages(setOf("en"), setOf("fr")), titles.getValue("Alien").languages)
+        // Another source: its own estimate
+        assertEquals(VodLanguages(subtitles = setOf("fr")), titles.getValue("Heat").languages)
+    }
+
+    @Test
     fun `several countries match any of them, and a former single country is read back`() {
         val facts = mapOf(
             "m:a:2019" to TmdbFacts("1", countries = listOf("KR")),

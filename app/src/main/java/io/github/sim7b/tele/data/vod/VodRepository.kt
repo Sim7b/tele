@@ -377,6 +377,7 @@ class VodRepository(
             if (keptLibrary == null) publish(loading = true)
         }
         val fresh = cached != null && System.currentTimeMillis() - cached.savedAt in 0..MAX_AGE_MS
+        if (config.type == SourceType.DISPATCHARR) refreshMeasuredLanguages(config)
         if (fresh && !force) return
         try {
             // Dispatcharr, loaded fully less than a week ago: only the titles added since (a page per list);
@@ -446,12 +447,31 @@ class VodRepository(
         }
     }
 
+    /** The languages of [title] come from a measure on the server (Télé API plugin) for one of its files. */
+    fun languagesMeasured(title: VodTitle): Boolean = measuredLanguages.isNotEmpty() && title.entries.any { entry ->
+        DispatcharrVod.measuredKey(entry)?.let { measuredLanguages[entry.sourceId]?.containsKey(it) } == true
+    }
+
+    /** Languages measured on a Dispatcharr server (Télé API plugin): the library is built again when they change. */
+    private suspend fun refreshMeasuredLanguages(config: SourceConfig) {
+        val measured = try {
+            DispatcharrVod.measuredLanguages(dispatcharr(config))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            return
+        }
+        if (measured == measuredLanguages[config.id].orEmpty()) return
+        if (measured.isEmpty()) measuredLanguages.remove(config.id) else measuredLanguages[config.id] = measured
+        if (catalogs[config.id] != null) publish(loading = _library.value.loading)
+    }
+
     private suspend fun publish(loading: Boolean) {
         val order = loadedFor.map { it.id }
         val sources = order.map { catalogs[it].orEmpty() }
         val hideTheater = settings.vodDisplay.value.hideTheater
+        val measured = order.mapNotNull { id -> measuredLanguages[id]?.let { id to it } }.toMap()
         val built = builtFrom
-        if (built != null && built.second == hideTheater && built.first.size == sources.size &&
+        if (built != null && built.second == hideTheater && built.first.size == sources.size && measured == builtMeasured &&
             built.first.indices.all { built.first[it] === sources[it] }
         ) {
             _library.value = _library.value.copy(
@@ -463,10 +483,11 @@ class VodRepository(
         }
         // The library kept on the device for these very catalogs: not built again
         val signature = librarySignature(order.filter { it in chosenIds }, hideTheater, catalogStamps)
+            ?.let { if (measured.isEmpty()) it else it + "|m" + measured.hashCode() }
         val kept = keptLibrary?.takeIf { signature != null && it.first == signature }?.second
         val buildStart = SystemClock.elapsedRealtime()
         val (titles, byKey, featured) = withContext(Dispatchers.Default) {
-            val titles = kept ?: VodLibrary.build(sources.flatten()).let { all ->
+            val titles = kept ?: VodLibrary.build(sources.flatten(), measured).let { all ->
                 if (hideTheater) all.filterNot { VodDisplay.isTheaterCopy(it) } else all
             }
             Triple(titles, titles.associateBy { it.key }, VodRows.featured(titles))
@@ -477,6 +498,7 @@ class VodRepository(
             if (signature != null) keepLibrary(signature, titles)
         }
         builtFrom = sources to hideTheater
+        builtMeasured = measured
         _library.value = VodLibraryState(
             titles = titles,
             byKey = byKey,
@@ -488,6 +510,10 @@ class VodRepository(
             newCategories = newCategories
         )
     }
+
+    // Dispatcharr sources: VOD languages measured by the Télé API plugin, by category (DispatcharrVod.measuredKey)
+    private val measuredLanguages = ConcurrentHashMap<String, Map<String, VodLanguages>>()
+    private var builtMeasured: Map<String, Map<String, VodLanguages>> = emptyMap()
 
     // The sources whose catalogs are loaded (their categories chosen)
     @Volatile
@@ -642,6 +668,9 @@ class VodRepository(
         return buildDetails(title)
     }
 
+    /** Sheet of [title] built again (a file was being measured on the server: its description may be there). */
+    suspend fun refreshDetails(title: VodTitle): VodDetails = buildDetails(title)
+
     /** The same files of the same sources: a sheet kept for one is still right for the other. */
     private fun sameFiles(kept: VodTitle, current: VodTitle): Boolean =
         kept.entries.map { it.sourceId to it.providerId }.toSet() == current.entries.map { it.sourceId to it.providerId }.toSet()
@@ -700,13 +729,15 @@ class VodRepository(
             director = parts.firstNotNullOfOrNull { it.director },
             cast = parts.firstOrNull { it.cast.isNotEmpty() }?.cast.orEmpty(),
             versions = versions,
-            seasons = seasons(episodes)
+            seasons = seasons(episodes),
+            mediaPending = parts.any { it.mediaPending }
         )
         val enrichment = VodMetadata.enrich(merged, episodes.map { it.season }.toSet(), settings.tmdbKey.value.takeIf { it.isNotBlank() })
         val result = enrichment?.let { enrich(base, it, preferEnrichment = settings.tmdbKey.value.isNotBlank()) } ?: base
         synchronized(details) { details[title.key] = result }
-        // Kept only when a source answered: a sheet without its files is not worth showing again
-        if (parts.isNotEmpty() || m3uEntries.isNotEmpty()) {
+        // Kept only when a source answered: a sheet without its files is not worth showing again; nor while a
+        // file is being measured (the sheet is built again once it is)
+        if ((parts.isNotEmpty() || m3uEntries.isNotEmpty()) && !result.mediaPending) {
             withContext(Dispatchers.IO) { settings.vodSnapshots.saveDetails(title.key, result) }
         }
         return result

@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.2.0"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -293,3 +293,560 @@ def visible_sessions(
 
 def may_release(session: Optional[Session], user_id: Any, *, admin: bool) -> bool:
     return session is not None and (admin or session.user_id == str(user_id))
+
+
+# ---------------------------------------------------------------------------------------------------------
+# VOD languages measured with ffprobe
+
+# ISO 639-2 (B and T) codes of the tracks to ISO 639-1, as Télé uses them
+_ISO639_2 = {
+    "fre": "fr", "fra": "fr", "eng": "en", "ara": "ar", "ger": "de", "deu": "de", "spa": "es", "ita": "it",
+    "por": "pt", "tur": "tr", "dut": "nl", "nld": "nl", "pol": "pl", "rus": "ru", "hin": "hi", "kor": "ko",
+    "jpn": "ja", "chi": "zh", "zho": "zh", "gre": "el", "ell": "el", "rum": "ro", "ron": "ro", "alb": "sq",
+    "sqi": "sq", "per": "fa", "fas": "fa", "heb": "he", "swe": "sv", "nor": "no", "nob": "no", "dan": "da",
+    "fin": "fi", "cze": "cs", "ces": "cs", "hun": "hu", "ukr": "uk", "tha": "th", "vie": "vi", "ind": "id",
+    "may": "ms", "msa": "ms", "tam": "ta", "tel": "te", "urd": "ur", "ben": "bn", "pan": "pa", "kur": "ku",
+    "bul": "bg", "hrv": "hr", "srp": "sr", "slv": "sl", "slo": "sk", "slk": "sk", "cat": "ca", "baq": "eu",
+    "eus": "eu", "glg": "gl", "wel": "cy", "cym": "cy", "gle": "ga", "ice": "is", "isl": "is", "lit": "lt",
+    "lav": "lv", "est": "et", "mac": "mk", "mkd": "mk", "arm": "hy", "hye": "hy", "geo": "ka", "kat": "ka",
+    "aze": "az", "kaz": "kk", "uzb": "uz", "fil": "tl", "tgl": "tl",
+}
+# Undetermined, no language, several: no language to tell
+_NO_LANGUAGE = {"und", "zxx", "mul", "mis", "qaa"}
+MAX_PROBE_OUTPUT = 2 * 1024 * 1024
+
+
+def track_language(value: Any) -> Optional[str]:
+    """ISO 639-1 code of a track language tag ("fre", "fr", "fr-FR", "French"); None when unknown."""
+    text = (to_text(value) or "").strip().lower()
+    if not text:
+        return None
+    base = re.split(r"[-_]", text, maxsplit=1)[0]
+    if base in _NO_LANGUAGE:
+        return None
+    if len(base) == 2 and base.isalpha():
+        return base
+    if len(base) == 3:
+        return _ISO639_2.get(base)
+    return {"french": "fr", "english": "en", "arabic": "ar", "german": "de", "spanish": "es", "italian": "it"}.get(base)
+
+
+def parse_probe(output: Any) -> Optional[Dict[str, List[str]]]:
+    """Audio and subtitle languages of an `ffprobe -show_streams -of json` output; None when unreadable.
+
+    Tracks without a language tag are counted (the file has audio) but give no language.
+    """
+    info = media_info(output)
+    if info is None:
+        return None
+    return {"audio": languages_of(info["audio"]), "subtitles": languages_of(info["subtitles"])}
+
+
+def languages_of(tracks: Iterable[Mapping[str, Any]]) -> List[str]:
+    found: List[str] = []
+    for track in tracks:
+        language = (track.get("tags") or {}).get("language")
+        if language and language not in found:
+            found.append(language)
+    return found
+
+
+_CLEAR_MARKERS = {
+    "VF", "VFF", "VFQ", "VFI", "VF2", "TRUEFRENCH", "FRENCH", "VOSTFR", "VOSTF", "SUBFRENCH", "VOSTA", "VOSTEN",
+    "VOSTENG", "VOSE", "LEGENDADO", "LEGENDADOS", "DUBLADO", "DUBLADOS", "DUBLAJ", "ALTYAZILI", "LEKTOR", "NAPISY",
+}
+_UNCLEAR_MARKERS = {"MULTI", "MULTISUB", "MULTISUBS", "DUAL", "VO", "VOST", "ARABIC", "ARABE", "AR", "SUB", "SUBS"}
+_LANGUAGE_HINTS = {
+    "FR", "EN", "DE", "ES", "IT", "PT", "TR", "NL", "PL", "RU", "UK", "US", "BR", "KR", "JP", "ENGLISH", "GERMAN",
+    "SPANISH", "ITALIAN", "PORTUGUESE", "TURKISH", "DUTCH", "POLISH", "RUSSIAN", "HINDI", "KOREAN", "JAPANESE",
+    "LATINO", "CASTELLANO", "DEUTSCH",
+}
+
+
+def category_needs_probe(name: Any) -> bool:
+    """Whether the name of a category leaves its languages uncertain, so that one of its files is worth probing.
+
+    Uncertain: nothing about the language ("NETFLIX", "Action"), several languages without saying which
+    (MULTI, MULTI-SUB, VOST, SUB), the original version (VO) or Arabic (often English subtitled in Arabic).
+    Clear: a dubbed or subtitled version named (VF, VOSTFR, LEGENDADO), or a country / language alone.
+    """
+    text = to_text(name) or ""
+    if any("؀" <= c <= "ۿ" for c in text):
+        return True
+    words = set(re.split(r"[^A-Z0-9]+", text.upper().replace("MULTI-SUB", "MULTISUB")))
+    if words & _UNCLEAR_MARKERS:
+        return True
+    if words & _CLEAR_MARKERS:
+        return False
+    return not (words & _LANGUAGE_HINTS)
+
+
+def profile_has_room(max_streams: int, used: int, min_free: int) -> bool:
+    """A probe may take a connection of this profile: unlimited, or at least min_free connections free."""
+    if max_streams <= 0:
+        return True
+    return max_streams - max(0, used) >= max(1, min_free)
+
+
+EXPORT_FORMAT = "tele-vod-language-cases"
+
+
+def export_cases(results: Mapping[str, Any], now: float) -> Dict[str, Any]:
+    """Measured languages as test cases for Télé: the group (category) and file names, and what ffprobe read.
+
+    Télé reads these files in its unit tests to compare its estimate from the names with the measure, so that
+    new rules come from real playlists. No address, no credential: names and languages only.
+    """
+    cases = []
+    for entry in results.values():
+        if not isinstance(entry, dict) or entry.get("status") != "ok":
+            continue
+        cases.append(
+            {
+                "group": to_text(entry.get("name")) or "",
+                "name": to_text(entry.get("sample")) or "",
+                "kind": "series" if entry.get("type") == "series" else "movie",
+                "audio": sorted({a for a in entry.get("audio") or [] if isinstance(a, str)}),
+                "subtitles": sorted({s for s in entry.get("subtitles") or [] if isinstance(s, str)}),
+                **({"quality": entry["quality"]} if isinstance(entry.get("quality"), dict) else {}),
+            }
+        )
+    cases.sort(key=lambda c: (c["group"].lower(), c["name"].lower()))
+    return {"format": EXPORT_FORMAT, "version": 1, "exported_at": int(now), "cases": cases}
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Addresses a probe may reach
+
+
+def is_public_address(address: Any) -> bool:
+    """Whether an IP address is on the internet: not private, loopback, link-local, multicast nor reserved."""
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(str(address).split("%", 1)[0])
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not ip.is_multicast
+
+
+def host_allowed(addresses: Iterable[Any], trusted: Iterable[Any] = ()) -> bool:
+    """A host may be probed when every address it resolves to is public or one of the [trusted] addresses
+    (those of the provider server set in Dispatcharr, which may well be on the local network)."""
+    resolved = [str(a) for a in addresses]
+    if not resolved:
+        return False
+    trusted_set = {str(a) for a in trusted}
+    return all(a in trusted_set or is_public_address(a) for a in resolved)
+
+
+def over_limit(count: Any, limit: int) -> bool:
+    """A request beyond [limit] in its minute ([count]: its rank in the minute)."""
+    return limit > 0 and (to_int(count, 0) or 0) > limit
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Technical description of one file (on-demand probes)
+
+_HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+MEDIA_KINDS = ("movie", "episode")
+
+
+def valid_uuid(value: Any) -> Optional[str]:
+    text = to_text(value)
+    return text.lower() if text and _UUID_RE.match(text) else None
+
+
+def _short(value: Any, limit: int = 32) -> Optional[str]:
+    text = to_text(value)
+    return text[:limit] if text else None
+
+
+def media_info(output: Any) -> Optional[Dict[str, Any]]:
+    """An `ffprobe -show_streams -show_format -of json` output in the format of the Xtream get_vod_info "info"
+    (the one Télé already reads): "video", "audio", "subtitles", "bitrate" (kb/s). Only the fields Télé uses,
+    bounded; None when unreadable or without audio."""
+    text = to_text(output)
+    if not text or len(text) > MAX_PROBE_OUTPUT:
+        return None
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError):
+        return None
+    streams = data.get("streams") if isinstance(data, dict) else None
+    if not isinstance(streams, list):
+        return None
+    video: Optional[Dict[str, Any]] = None
+    audio: List[Dict[str, Any]] = []
+    subtitles: List[Dict[str, Any]] = []
+    for stream in streams[:64]:
+        if not isinstance(stream, dict):
+            continue
+        tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
+        disposition = stream.get("disposition") if isinstance(stream.get("disposition"), dict) else {}
+        language = track_language(tags.get("language"))
+        kind = stream.get("codec_type")
+        if kind == "video" and video is None and not disposition.get("attached_pic"):
+            video = {
+                "codec_name": _short(stream.get("codec_name")),
+                "width": to_int(stream.get("width"), 0) or 0,
+                "height": to_int(stream.get("height"), 0) or 0,
+                "color_transfer": _short(stream.get("color_transfer")),
+                "profile": _short(stream.get("profile"), 64),
+            }
+        elif kind == "audio":
+            audio.append({
+                "codec_name": _short(stream.get("codec_name")),
+                "channels": to_int(stream.get("channels"), 0) or 0,
+                "profile": _short(stream.get("profile"), 64),
+                "tags": {"language": language} if language else {},
+            })
+        elif kind == "subtitle":
+            subtitles.append({
+                "codec_name": _short(stream.get("codec_name")),
+                "tags": {"language": language} if language else {},
+                "forced": bool(disposition.get("forced")),
+                "hearing_impaired": bool(disposition.get("hearing_impaired")),
+            })
+    if not audio:
+        return None
+    info: Dict[str, Any] = {"audio": audio, "subtitles": subtitles}
+    if video:
+        info["video"] = video
+    fmt = data.get("format") if isinstance(data.get("format"), dict) else {}
+    bitrate = to_int(fmt.get("bit_rate"), 0) or 0
+    if bitrate > 0:
+        info["bitrate"] = bitrate // 1000
+    duration = to_float(fmt.get("duration"))
+    if duration and duration > 0:
+        info["duration_secs"] = int(duration)
+    return info
+
+
+def quality_summary(info: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Short quality of a probed file, for the admin page and the export: height, codec, HDR, audio channels."""
+    if not info:
+        return None
+    video = info.get("video") or {}
+    audio = info.get("audio") or []
+    return {
+        "height": video.get("height") or None,
+        "video_codec": video.get("codec_name"),
+        "hdr": (video.get("color_transfer") or "") in _HDR_TRANSFERS or "dolby vision" in (video.get("profile") or "").lower(),
+        "audio_channels": max((a.get("channels") or 0 for a in audio), default=0) or None,
+        "audio_codecs": sorted({a["codec_name"] for a in audio if a.get("codec_name")}),
+    }
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Stream health, from the Dispatcharr events
+
+HEALTH_HALF_LIFE = 6 * 3600
+# Weight of an event: a failure counts fully, a buffering stall less
+HEALTH_WEIGHTS = {"failure": 1.0, "buffering": 0.3}
+# Decayed failures from which a stream is put after the others (about one failure in the last hours)
+UNHEALTHY_SCORE = 0.8
+MAX_HEALTH_IDS = 100
+
+
+def _decayed(value: float, since: float, now: float) -> float:
+    if since <= 0 or now <= since:
+        return value
+    return value * 0.5 ** ((now - since) / HEALTH_HALF_LIFE)
+
+
+def health_update(state: Optional[Mapping[str, Any]], kind: str, now: float) -> Dict[str, Any]:
+    """A stream health after one event ("failure", "buffering" or "play"), failures decaying by half every
+    HEALTH_HALF_LIFE."""
+    state = state or {}
+    failures = _decayed(to_float(state.get("f"), 0.0) or 0.0, to_float(state.get("t"), 0.0) or 0.0, now)
+    plays = _decayed(to_float(state.get("p"), 0.0) or 0.0, to_float(state.get("t"), 0.0) or 0.0, now)
+    last_failure = to_float(state.get("lf"), 0.0) or 0.0
+    if kind == "play":
+        plays += 1.0
+    else:
+        failures += HEALTH_WEIGHTS.get(kind, 0.0)
+        last_failure = now
+    return {"f": round(failures, 4), "p": round(plays, 4), "t": now, "lf": last_failure}
+
+
+def health_score(state: Optional[Mapping[str, Any]], now: float) -> float:
+    if not state:
+        return 0.0
+    return _decayed(to_float(state.get("f"), 0.0) or 0.0, to_float(state.get("t"), 0.0) or 0.0, now)
+
+
+def health_json(state: Optional[Mapping[str, Any]], now: float) -> Dict[str, Any]:
+    score = health_score(state, now)
+    last = to_float((state or {}).get("lf"), 0.0) or 0.0
+    return {"score": round(score, 3), "unhealthy": score >= UNHEALTHY_SCORE, "last_failure": last or None}
+
+
+def event_health(event: Any, payload: Any) -> Optional[Tuple[int, str]]:
+    """(stream id, kind of event) of a Dispatcharr system event, None when it says nothing of a stream's health.
+
+    A switch asked for by a viewer says nothing of the stream left, so stream_switch is not counted; a failover
+    (the stream stopped sending) and an error are failures, buffering a lesser one, a start a play.
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    kinds = {"channel_error": ("stream_id", "failure"), "channel_failover": ("previous_stream_id", "failure"),
+             "channel_buffering": ("stream_id", "buffering"), "channel_start": ("stream_id", "play")}
+    rule = kinds.get(to_text(event) or "")
+    if rule is None:
+        return None
+    stream_id = to_int(payload.get(rule[0]))
+    if stream_id is None or stream_id <= 0:
+        return None
+    return stream_id, rule[1]
+
+
+def parse_ids(value: Any) -> Optional[List[int]]:
+    """"1,2,3" -> [1, 2, 3]; None when malformed or too many."""
+    text = to_text(value) or ""
+    parts = [p for p in text.split(",") if p.strip()]
+    if not parts or len(parts) > MAX_HEALTH_IDS:
+        return None
+    ids = []
+    for part in parts:
+        number = to_int(part)
+        if number is None or number <= 0:
+            return None
+        ids.append(number)
+    return ids
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Télé TVs seen
+
+_DEVICE_RE = re.compile(r"; Tele-([0-9a-f]{12})\)")
+_VERSION_RE = re.compile(r"^[0-9A-Za-z.+_-]{1,32}$")
+DEVICE_FORGET_AFTER = 90 * 24 * 3600
+
+
+def device_id(user_agent: Any) -> Optional[str]:
+    """Install id of a Télé TV, from its User-Agent ("TV-AndroidTV/1.0 (Android TV; Tele-1a2b3c4d5e6f)")."""
+    match = _DEVICE_RE.search(to_text(user_agent) or "")
+    return match.group(1) if match else None
+
+
+def app_version(value: Any) -> Optional[str]:
+    text = to_text(value)
+    return text if text and _VERSION_RE.match(text) else None
+
+
+def devices_json(raw: Mapping[Any, Any], usernames: Mapping[str, str], sessions: Iterable[Session], now: float) -> List[Dict[str, Any]]:
+    """TVs seen in the last DEVICE_FORGET_AFTER, most recent first, with their open sessions."""
+    open_by_device: Dict[str, int] = {}
+    for session in sessions:
+        device = device_id(session.user_agent)
+        if device:
+            open_by_device[device] = open_by_device.get(device, 0) + 1
+    devices = []
+    for key, value in raw.items():
+        device = to_text(key)
+        try:
+            data = json.loads(to_text(value) or "")
+        except ValueError:
+            continue
+        if not device or not isinstance(data, dict):
+            continue
+        seen = to_float(data.get("seen"), 0.0) or 0.0
+        if now - seen > DEVICE_FORGET_AFTER:
+            continue
+        user = to_text(data.get("user"))
+        devices.append({
+            "id": device,
+            "user": usernames.get(user or "", None),
+            "version": app_version(data.get("version")),
+            "ip": to_text(data.get("ip")),
+            "last_seen": seen or None,
+            "sessions": open_by_device.get(device, 0),
+        })
+    devices.sort(key=lambda d: -(d["last_seen"] or 0))
+    return devices
+
+
+def device_users(raw: Mapping[Any, Any]) -> List[str]:
+    """User ids of the TVs recorded (to look their names up)."""
+    users = []
+    for value in raw.values():
+        try:
+            data = json.loads(to_text(value) or "")
+        except ValueError:
+            continue
+        if isinstance(data, dict) and to_text(data.get("user")):
+            users.append(to_text(data.get("user")))
+    return users
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Viewing statistics (admin page)
+
+STATS_DAYS = 30
+
+
+def day_key(timestamp: float) -> str:
+    import datetime
+
+    return datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc).strftime("%Y%m%d")
+
+
+def last_days(now: float, days: int) -> List[str]:
+    return [day_key(now - i * 86400) for i in range(max(1, days))]
+
+
+def top_channels(counts_by_day: Iterable[Mapping[Any, Any]], names: Mapping[Any, Any], limit: int = 20) -> List[Dict[str, Any]]:
+    """Channels most started over the days given (each day: channel id -> starts), with their name."""
+    totals: Dict[str, int] = {}
+    for day in counts_by_day:
+        for channel, count in (day or {}).items():
+            key = to_text(channel)
+            value = to_int(count, 0) or 0
+            if key and value > 0:
+                totals[key] = totals.get(key, 0) + value
+    ranked = sorted(totals.items(), key=lambda item: (-item[1], item[0]))[: max(1, limit)]
+    return [{"channel": key, "name": to_text(names.get(key)) or key, "starts": count} for key, count in ranked]
+
+
+def peaks(days: Iterable[str], peaks_by_day: Iterable[Mapping[Any, Any]], limits: Mapping[int, Tuple[str, int]]) -> List[Dict[str, Any]]:
+    """Highest connections used per account and day: [{"account", "name", "max", "days": [{"day", "used"}]}]."""
+    accounts: Dict[int, Dict[str, Any]] = {}
+    for day, values in zip(days, peaks_by_day):
+        for account, used in (values or {}).items():
+            account_id = to_int(account)
+            if account_id is None or account_id not in limits:
+                continue
+            name, maximum = limits[account_id]
+            entry = accounts.setdefault(account_id, {"account": account_id, "name": name, "max": maximum, "days": []})
+            entry["days"].append({"day": day, "used": to_int(used, 0) or 0})
+    result = sorted(accounts.values(), key=lambda a: (str(a["name"]).lower(), a["account"]))
+    for entry in result:
+        entry["days"].sort(key=lambda d: d["day"])
+    return result
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Compact guide
+
+GUIDE_LOOKBACK_HOURS = 1
+GUIDE_MAX_HOURS = 48
+MAX_PROGRAMS_PER_CHANNEL = 200
+MAX_DESCRIPTION = 1000
+
+
+GUIDE_MAX_PAST_HOURS = 24
+
+
+def guide_window(now: float, hours: Any, past: Any = None) -> Tuple[float, float]:
+    """(start, end) of the guide, on hour boundaries: the same window, so the same ETag, for a whole hour.
+    [past]: hours of past programs (1-24, a day for the replay)."""
+    span = query_int(hours, 24, 1, GUIDE_MAX_HOURS)
+    lookback = query_int(past, GUIDE_LOOKBACK_HOURS, 1, GUIDE_MAX_PAST_HOURS)
+    hour = int(now // 3600) * 3600
+    return float(hour - lookback * 3600), float(hour + (span + 1) * 3600)
+
+
+def guide_program(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """A program of the compact guide, in the fields Télé reads in the Dispatcharr grid."""
+    title = to_text(row.get("title"))
+    start, end = iso(row.get("start_time")), iso(row.get("end_time"))
+    if not title or not start or not end:
+        return None
+    data: Dict[str, Any] = {"id": to_text(row.get("id")), "title": title[:255], "start": start, "end": end}
+    description = to_text(row.get("description"))
+    if description:
+        data["description"] = description[:MAX_DESCRIPTION]
+    sub_title = to_text(row.get("sub_title"))
+    if sub_title:
+        data["sub_title"] = sub_title[:512]
+    props = row.get("custom_properties") if isinstance(row.get("custom_properties"), dict) else {}
+    rating = props.get("rating")
+    if isinstance(rating, str) and rating.strip():
+        data["rating"] = rating.strip()[:32]
+    icon = props.get("icon")
+    if isinstance(icon, str) and icon.startswith(("https://", "http://")) and len(icon) <= 1000:
+        data["icon"] = icon
+    return data
+
+
+def guide_channels(channels: Iterable[Tuple[str, Any]], programs_by_epg: Mapping[Any, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """[(channel uuid, epg data id)] -> [{"uuid", "programs"}] (channels sharing a guide each get it)."""
+    result = []
+    for uuid, epg_id in channels:
+        programs = programs_by_epg.get(epg_id)
+        if programs:
+            result.append({"uuid": uuid, "programs": programs[:MAX_PROGRAMS_PER_CHANNEL]})
+    return result
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Sync between the TVs of a user (last change wins, item by item)
+
+SYNC_COLLECTIONS = ("favorites", "vod_progress", "my_list", "collections", "reminders")
+MAX_SYNC_ITEMS = 5000
+MAX_SYNC_KEY = 200
+MAX_SYNC_VALUE = 4096
+SYNC_TOMBSTONE_DAYS = 60
+
+
+def _sync_entry(raw: Any) -> Optional[Dict[str, Any]]:
+    """{"v": value, "t": change time in ms, "d": deleted} from a client or the file; None when malformed."""
+    if not isinstance(raw, Mapping):
+        return None
+    changed = to_int(raw.get("t"))
+    if changed is None or changed <= 0:
+        return None
+    deleted = raw.get("d") is True
+    value = None if deleted else raw.get("v")
+    if not deleted:
+        try:
+            if len(json.dumps(value, separators=(",", ":"))) > MAX_SYNC_VALUE:
+                return None
+        except (TypeError, ValueError):
+            return None
+    return {"v": value, "t": changed, "d": deleted}
+
+
+def sync_merge(stored: Any, changes: Any, now_ms: int) -> Tuple[Dict[str, Dict[str, Any]], int]:
+    """Merges [changes] into [stored]: for each item, the most recent change wins (a change from the future is
+    taken as now). Returns the merged items and the number of changes kept. Unknown collections, bad keys
+    and values, items beyond MAX_SYNC_ITEMS and old deletions are dropped."""
+    merged: Dict[str, Dict[str, Any]] = {}
+    for collection in SYNC_COLLECTIONS:
+        items = (stored or {}).get(collection) if isinstance(stored, Mapping) else None
+        merged[collection] = {}
+        for key, raw in (items or {}).items() if isinstance(items, Mapping) else []:
+            entry = _sync_entry(raw)
+            if entry is not None and isinstance(key, str) and 0 < len(key) <= MAX_SYNC_KEY:
+                merged[collection][key] = entry
+    kept = 0
+    if isinstance(changes, Mapping):
+        for collection, items in changes.items():
+            if collection not in SYNC_COLLECTIONS or not isinstance(items, Mapping):
+                continue
+            target = merged[collection]
+            # Bounded work for a hostile client; the oldest go after the merge
+            for key, raw in list(items.items())[: MAX_SYNC_ITEMS * 4]:
+                if not isinstance(key, str) or not 0 < len(key) <= MAX_SYNC_KEY:
+                    continue
+                entry = _sync_entry(raw)
+                if entry is None:
+                    continue
+                entry["t"] = min(entry["t"], now_ms)
+                current = target.get(key)
+                if current is None or entry["t"] > current["t"]:
+                    target[key] = entry
+                    kept += 1
+    horizon = now_ms - SYNC_TOMBSTONE_DAYS * 86400 * 1000
+    for collection, items in merged.items():
+        for key in [k for k, e in items.items() if e["d"] and e["t"] < horizon]:
+            del items[key]
+        if len(items) > MAX_SYNC_ITEMS:
+            # The oldest changes go first
+            for key, _ in sorted(items.items(), key=lambda kv: kv[1]["t"])[: len(items) - MAX_SYNC_ITEMS]:
+                del items[key]
+    return merged, kept

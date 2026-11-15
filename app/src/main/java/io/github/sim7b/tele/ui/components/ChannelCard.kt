@@ -723,7 +723,11 @@ private fun StreamList(
                     val isSelected = stream.url == channel.selectedStreamUrl
                     MenuRow(
                         label = stream.name,
-                        subtitle = listOfNotNull(stream.provider, stream.details).joinToString("  ·  ").ifBlank { null },
+                        subtitle = listOfNotNull(
+                            stream.provider,
+                            stream.details,
+                            if (stream.recentFailures) stringResource(R.string.stream_recent_failures) else null
+                        ).joinToString("  ·  ").ifBlank { null },
                         onClick = { onSelect(stream) },
                         leading = { focused -> SelectionDot(selected = isSelected, focused = focused) },
                         trailing = { focused ->

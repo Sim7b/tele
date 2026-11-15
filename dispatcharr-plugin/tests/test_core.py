@@ -177,5 +177,28 @@ class VisibleSessionsTest(unittest.TestCase):
         self.assertFalse(core.may_release(None, 7, admin=True))
 
 
+class GuideTest(unittest.TestCase):
+    def test_window_on_hour_boundaries(self):
+        start, end = core.guide_window(3600 * 100 + 1234, "24")
+        self.assertEqual((start, end), (3600 * 99.0, 3600 * 125.0))
+        self.assertEqual(core.guide_window(3600 * 100 + 3000, None), (start, end))
+        self.assertEqual(core.guide_window(0, "9999")[1], 3600.0 * (core.GUIDE_MAX_HOURS + 1))
+        # A day of past programs for the replay, no more
+        self.assertEqual(core.guide_window(3600 * 100, "24", "24")[0], 3600 * 76.0)
+        self.assertEqual(core.guide_window(3600 * 100, "24", "999")[0], 3600 * 76.0)
+
+    def test_program_and_channels(self):
+        row = {"id": 5, "title": "Journal", "sub_title": None, "description": "x" * 5000, "start_time": NOW,
+               "end_time": NOW + timedelta(minutes=40), "custom_properties": {"rating": " 12 ", "icon": "javascript:x"}}
+        program = core.guide_program(row)
+        self.assertEqual(program["id"], "5")
+        self.assertEqual(len(program["description"]), core.MAX_DESCRIPTION)
+        self.assertEqual(program["rating"], "12")
+        self.assertNotIn("icon", program)
+        self.assertIsNone(core.guide_program({"title": "", "start_time": NOW, "end_time": NOW}))
+        channels = core.guide_channels([("u1", 3), ("u2", 3), ("u3", 4)], {3: [program]})
+        self.assertEqual([c["uuid"] for c in channels], ["u1", "u2"])
+
+
 if __name__ == "__main__":
     unittest.main()

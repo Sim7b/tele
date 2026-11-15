@@ -108,5 +108,7 @@ data class VodDetails(
     val versions: List<VodVersion> = emptyList(),
     val seasons: List<VodSeason> = emptyList(),
     // YouTube id of its trailer, with a TMDB key
-    val trailerKey: String? = null
+    val trailerKey: String? = null,
+    // A file is being measured on the server (Télé API plugin): the sheet is built again a little later
+    val mediaPending: Boolean = false
 )

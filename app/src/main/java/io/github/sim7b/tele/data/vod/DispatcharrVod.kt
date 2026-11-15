@@ -81,6 +81,17 @@ object DispatcharrVod {
         return entries.map { entry -> entry.withGroup(groups[groupKey(entry)]) }
     }
 
+    /**
+     * Languages measured by the Télé API plugin for the categories of the server, by [measuredKey]; empty
+     * without the plugin.
+     */
+    suspend fun measuredLanguages(client: DispatcharrClient): Map<String, VodLanguages> =
+        client.getVodLanguages().mapValues { (_, languages) -> VodLanguages(languages.first, languages.second) }
+
+    /** Key of the measured languages of the category of [entry]. */
+    fun measuredKey(entry: VodEntry): String? =
+        entry.category?.let { (if (entry.kind == VodKind.MOVIE) "movie:" else "series:") + it }
+
     private fun groupKey(entry: VodEntry) = (if (entry.kind == VodKind.MOVIE) "movie:" else "series:") + entry.providerId
 
     private fun VodEntry.withGroup(group: String?) = if (group == null || group == category) this else copy(category = group)
@@ -328,9 +339,13 @@ object DispatcharrVod {
 
     suspend fun movieDetails(config: SourceConfig, client: DispatcharrClient, entry: VodEntry): VodDetailsPart {
         val info = client.getVodObject("movies/${entry.providerId}/provider-info/")
-        val media = ProviderMedia.from(info)
+        val provided = ProviderMedia.from(info)
         val uuid = info?.optStringOrNull("uuid") ?: entry.uuid
+        // Nothing from the provider: what the Télé API plugin measured with ffprobe (or asks it to)
+        val measured = if (provided.isEmpty && uuid != null) client.getVodMedia("movie", uuid) else null
+        val media = measured?.info?.let { ProviderMedia.from(it) } ?: provided
         val duration = info?.optInt("duration_secs", 0)?.takeIf { it > 0 }
+            ?: measured?.info?.optInt("duration_secs", 0)?.takeIf { it > 0 }
         return VodDetailsPart(
             plot = info?.optStringOrNull("plot") ?: info?.optStringOrNull("description"),
             backdropUrl = ProviderMedia.firstImage(info?.opt("backdrop_path")),
@@ -340,7 +355,8 @@ object DispatcharrVod {
             cast = XtreamVod.splitPeople(info?.optStringOrNull("actors")),
             tmdbId = info?.optStringOrNull("tmdb_id")?.takeIf { it.isNotBlank() && it != "0" },
             durationSecs = duration,
-            versions = listOfNotNull(uuid?.let { version(config, entry, client.vodStreamUrl("movie", it), entry.name, media, duration) })
+            versions = listOfNotNull(uuid?.let { version(config, entry, client.vodStreamUrl("movie", it), entry.name, media, duration) }),
+            mediaPending = measured?.pending == true
         )
     }
 

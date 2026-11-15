@@ -112,6 +112,12 @@ class GuideStore(context: Context) {
 
     fun toggleReminder(reminder: Reminder) = saveReminders(Reminders.toggle(_reminders.value, reminder))
 
+    /** Reminders as synced from the other TVs of the user (Télé API plugin). */
+    fun replaceReminders(reminders: List<Reminder>) {
+        val kept = reminders.take(Reminders.MAX_REMINDERS)
+        if (kept != _reminders.value) saveReminders(kept)
+    }
+
     /** Drops [reminder] once shown, with the reminders already past. */
     fun dismiss(reminder: Reminder) =
         saveReminders(Reminders.pending(_reminders.value, System.currentTimeMillis()).filterNot { it == reminder })

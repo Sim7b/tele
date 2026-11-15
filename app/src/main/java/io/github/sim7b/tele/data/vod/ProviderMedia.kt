@@ -16,6 +16,10 @@ internal data class ProviderMedia(
     val audio: List<VodAudio>,
     val subtitles: List<String>
 ) {
+    /** Nothing about the file: no video, no audio track, no subtitle. */
+    val isEmpty: Boolean
+        get() = resolution == null && videoCodec == null && audio.isEmpty() && subtitles.isEmpty()
+
     companion object {
         fun from(info: JSONObject?): ProviderMedia {
             val video = info?.optJSONObject("video")

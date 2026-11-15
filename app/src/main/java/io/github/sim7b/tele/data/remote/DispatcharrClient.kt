@@ -1,7 +1,9 @@
 package io.github.sim7b.tele.data.remote
 
+import io.github.sim7b.tele.data.epg.Catchup
 import io.github.sim7b.tele.data.epg.EpgText
 import android.util.Log
+import io.github.sim7b.tele.BuildConfig
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.UserFacingException
 import io.github.sim7b.tele.data.UiText
@@ -37,6 +39,8 @@ class DispatcharrClient(
             val requestBuilder = chain.request().newBuilder()
                 .header("User-Agent", userAgent)
                 .header("Accept", "application/json")
+                // Shown with the TV in the admin page of the Télé API plugin
+                .header(DeviceUserAgent.VERSION_HEADER, BuildConfig.VERSION_NAME)
             config?.let { ApiKeyAuth.of(it) }?.let { requestBuilder.tag(ApiKeyAuth::class.java, it) }
 
             chain.proceed(requestBuilder.build())
@@ -53,6 +57,8 @@ class DispatcharrClient(
     @Volatile private var groupsCache: Map<Int, String>? = null
     @Volatile private var epgDataCache: Map<Int, DispatcharrEpgData>? = null
     @Volatile private var accountsCache: Map<Int, Pair<String, Boolean>>? = null
+    // Last guide of the plugin, with its URL and ETag: given again when the server answers 304
+    @Volatile private var guideCache: Triple<String, String, List<DispatcharrEpgChannel>>? = null
     // Features of the Télé API plugin of the server: null until probed, empty when not installed
     @Volatile private var teleApiFeatures: Set<String>? = null
 
@@ -67,6 +73,7 @@ class DispatcharrClient(
         epgDataCache = null
         accountsCache = null
         teleApiFeatures = null
+        guideCache = null
     }
 
     /**
@@ -80,6 +87,15 @@ class DispatcharrClient(
         val features = TeleApi.features(getPluginInfo()) ?: emptySet()
         if (features.isNotEmpty()) Log.i(TAG, "Télé API plugin: $features")
         return features.also { teleApiFeatures = it }
+    }
+
+    /**
+     * Message of the Dispatcharr admin for the TVs (Télé API plugin), read again at each call; null without the
+     * plugin or a message.
+     */
+    suspend fun getServerMessage(): String? {
+        if (baseUrl.isBlank() || teleApi().isEmpty()) return null
+        return TeleApi.message(getPluginInfo())
     }
 
     /** Answer of the plugin info endpoint; null, silently, when it is not a JSON object (plugin missing). */
@@ -103,7 +119,8 @@ class DispatcharrClient(
         val seenUuids = HashSet<String>()
         for (page in 1..TeleApi.MAX_CHANNEL_PAGES) {
             var read = 0
-            val url = "$baseUrl${TeleApi.CHANNELS_PATH}?programs=0&page_size=${TeleApi.CHANNELS_PAGE_SIZE}&page=$page"
+            // With the current and next program of each channel: shown before the guide is loaded
+            val url = "$baseUrl${TeleApi.CHANNELS_PATH}?programs=1&page_size=${TeleApi.CHANNELS_PAGE_SIZE}&page=$page"
             val fetched = fetchObjects(url) { item ->
                 read++
                 TeleApi.parseChannel(item, baseUrl)?.takeIf { seenUuids.add(it.uuid) }?.let { channels.add(it) }
@@ -292,7 +309,8 @@ class DispatcharrClient(
             streamUrl = "$baseUrl/proxy/ts/stream/$uuid",
             // Replaced by the tvg_id of the linked EPGData when there is one
             tvgId = item.optStringOrNull("effective_tvg_id") ?: item.optStringOrNull("tvg_id") ?: "",
-            isRadio = item.optBoolean("effective_is_radio", item.optBoolean("is_radio", false))
+            isRadio = item.optBoolean("effective_is_radio", item.optBoolean("is_radio", false)),
+            catchupDays = if (item.optBoolean("is_catchup", false)) item.optInt("catchup_days", 0).coerceIn(0, Catchup.MAX_DAYS) else 0
         )
         return ParsedChannel(
             channel = channel,
@@ -307,16 +325,39 @@ class DispatcharrClient(
      */
     suspend fun getEpgGrid(
         days: Int = 1,
-        channelProfileId: String? = null
+        channelProfileId: String? = null,
+        // Hours of past programs: a day for the channels with catch-up, else the hour of the server grid
+        pastHours: Int = 1
     ): Result<List<DispatcharrEpgChannel>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext failure(R.string.error_dispatcharr_not_configured)
+        }
+
+        // Télé API plugin: the programs of the user's channels only, and nothing sent again while unchanged (304)
+        if ("guide" in teleApi()) {
+            val url = "$baseUrl${TeleApi.GUIDE_PATH}?hours=${days.coerceIn(1, 2) * 24}&past=${pastHours.coerceIn(1, 24)}"
+            val cached = guideCache?.takeIf { it.first == url }
+            val request = Request.Builder().url(url).get()
+                .apply { cached?.second?.let { header("If-None-Match", it) } }
+                .build()
+            try {
+                val (code, etag, channels) = readGrid(request)
+                if (code == 304 && cached != null) return@withContext Result.success(cached.third)
+                if (code in 200..299) {
+                    guideCache = etag?.let { Triple(url, it, channels) }
+                    return@withContext Result.success(channels)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Guide of the plugin unavailable (${e.javaClass.simpleName}), Dispatcharr grid used")
+            }
         }
 
         val urlBuilder = "$baseUrl/api/epg/grid/".toHttpUrlOrNull()?.newBuilder()
             ?: return@withContext failure(R.string.error_invalid_address)
 
         urlBuilder.addQueryParameter("days", days.toString())
+        if (pastHours > 1) urlBuilder.addQueryParameter("prev_days", "1")
         channelProfileId?.let { urlBuilder.addQueryParameter("channel_profile_id", it) }
 
         val request = Request.Builder()
@@ -325,50 +366,52 @@ class DispatcharrClient(
             .build()
 
         try {
-            val epgMap = mutableMapOf<String, MutableList<GuideProgram>>()
-            client.newCall(request).executeCancellable { response ->
-                if (!response.isSuccessful) throw UserFacingException(UiText.Res(R.string.error_server_http, response.code))
-                var index = 0
-                JsonStreams.forEachObject(response.body.byteStream()) { item ->
-                    val i = index++
-                    // Case 1: channel object with a nested "programs" array
-                    if (item.has("programs")) {
-                        val channelKey = item.optStringOrNull("tvg_id")
-                            ?: item.optStringOrNull("channel_uuid")
-                            ?: item.optStringOrNull("uuid")
-                            ?: return@forEachObject
-                        val programsArray = item.optJSONArray("programs") ?: JSONArray()
-                        val progList = epgMap.getOrPut(channelKey) { mutableListOf() }
-
-                        for (j in 0 until programsArray.length()) {
-                            val progObj = programsArray.optJSONObject(j) ?: continue
-                            parseProgram(progObj, channelKey, "$channelKey-$j")?.let { progList.add(it) }
-                        }
-                    }
-                    // Case 2: flat array of individual programs (format of /api/epg/grid/)
-                    else if (item.has("title")) {
-                        val key = item.optStringOrNull("tvg_id")
-                            ?: item.optStringOrNull("channel_uuid")
-                            ?: item.optStringOrNull("channel_id")
-                            ?: return@forEachObject
-                        parseProgram(item, key, "$key-$i")?.let { epgMap.getOrPut(key) { mutableListOf() }.add(it) }
-                    }
-                }
-            }
-
-            val resultList = epgMap.map { (key, progs) ->
-                progs.sortBy { it.startMillis }
-                DispatcharrEpgChannel(
-                    channelUuid = key,
-                    channelName = key,
-                    programs = progs
-                )
-            }
-
-            Result.success(resultList)
+            val (code, _, channels) = readGrid(request)
+            if (code !in 200..299) throw UserFacingException(UiText.Res(R.string.error_server_http, code))
+            Result.success(channels)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /** HTTP code, ETag and channels of a grid answer (the Dispatcharr grid, or the guide of the plugin). */
+    private suspend fun readGrid(request: Request): Triple<Int, String?, List<DispatcharrEpgChannel>> {
+        val epgMap = mutableMapOf<String, MutableList<GuideProgram>>()
+        val (code, etag) = client.newCall(request).executeCancellable { response ->
+            if (!response.isSuccessful) return@executeCancellable response.code to null
+            var index = 0
+            JsonStreams.forEachObject(response.body.byteStream()) { item ->
+                val i = index++
+                // Case 1: channel object with a nested "programs" array
+                if (item.has("programs")) {
+                    val channelKey = item.optStringOrNull("tvg_id")
+                        ?: item.optStringOrNull("channel_uuid")
+                        ?: item.optStringOrNull("uuid")
+                        ?: return@forEachObject
+                    val programsArray = item.optJSONArray("programs") ?: JSONArray()
+                    val progList = epgMap.getOrPut(channelKey) { mutableListOf() }
+
+                    for (j in 0 until programsArray.length()) {
+                        val progObj = programsArray.optJSONObject(j) ?: continue
+                        parseProgram(progObj, channelKey, "$channelKey-$j")?.let { progList.add(it) }
+                    }
+                }
+                // Case 2: flat array of individual programs (format of /api/epg/grid/)
+                else if (item.has("title")) {
+                    val key = item.optStringOrNull("tvg_id")
+                        ?: item.optStringOrNull("channel_uuid")
+                        ?: item.optStringOrNull("channel_id")
+                        ?: return@forEachObject
+                    parseProgram(item, key, "$key-$i")?.let { epgMap.getOrPut(key) { mutableListOf() }.add(it) }
+                }
+            }
+            response.code to response.header("ETag")
+        }
+        val channels = epgMap.map { (key, progs) ->
+            progs.sortBy { it.startMillis }
+            DispatcharrEpgChannel(channelUuid = key, channelName = key, programs = progs)
+        }
+        return Triple(code, etag, channels)
     }
 
     private fun parseProgram(obj: JSONObject, channelKey: String, fallbackId: String): GuideProgram? {
@@ -497,11 +540,20 @@ class DispatcharrClient(
                         )
                     )
                 }
-                Result.success(streams)
+                Result.success(withHealth(streams))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /** [streams] with the ones that failed lately on the server marked (Télé API plugin); unchanged without it. */
+    private suspend fun withHealth(streams: List<StreamSource>): List<StreamSource> {
+        val ids = streams.mapNotNull { it.id?.takeIf { id -> id.toIntOrNull() != null } }.take(TeleApi.MAX_HEALTH_IDS)
+        if (ids.isEmpty() || "stream_health" !in teleApi()) return streams
+        val failing = TeleApi.unhealthyStreams(getObject("$baseUrl${TeleApi.STREAM_HEALTH_PATH}?ids=${ids.joinToString(",")}"))
+        if (failing.isEmpty()) return streams
+        return streams.map { if (it.id in failing) it.copy(recentFailures = true) else it }
     }
 
     /**
@@ -630,6 +682,57 @@ class DispatcharrClient(
         }
         if (released > 0) Log.i(TAG, "Sessions of this TV closed: $released")
         released
+    }
+
+    /**
+     * VOD languages measured by the Télé API plugin, by "movie:<category>" / "series:<category>" (audio to
+     * subtitles); empty without the plugin or on error.
+     */
+    suspend fun getVodLanguages(): Map<String, Pair<Set<String>, Set<String>>> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_languages" !in teleApi()) return@withContext emptyMap()
+        TeleApi.parseVodLanguages(getObject("$baseUrl${TeleApi.VOD_LANGUAGES_PATH}"))
+    }
+
+    /**
+     * Sync between the TVs of the user (Télé API plugin): sends [changes] ({collection: {key: {"v", "t", "d"}}})
+     * and answers every item of the user. Null without the plugin, when the sync is off on the server, or on error.
+     */
+    suspend fun syncTvs(changes: JSONObject): JSONObject? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "sync" !in teleApi()) return@withContext null
+        val body = JSONObject().put("changes", changes).toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl${TeleApi.SYNC_PATH}").post(body).build()
+        try {
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "HTTP ${response.code}: ${request.url.encodedPath}")
+                    return@executeCancellable null
+                }
+                JSONObject(HttpClients.jsonString(response.body))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            null
+        }
+    }
+
+    /** What the plugin knows of a file: measured ([info] in the Xtream "info" format), being measured, or not. */
+    data class VodMedia(val pending: Boolean, val info: JSONObject?)
+
+    /**
+     * Technical description of a movie or an episode ("movie" / "episode", its uuid) measured with ffprobe by
+     * the Télé API plugin; asking for an unknown one queues it on the server. Null without the plugin.
+     */
+    suspend fun getVodMedia(kind: String, uuid: String): VodMedia? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_media" !in teleApi()) return@withContext null
+        val url = "$baseUrl${TeleApi.VOD_MEDIA_PATH}".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("kind", kind)?.addQueryParameter("uuid", uuid)?.build() ?: return@withContext null
+        val answer = getObject(url.toString()) ?: return@withContext null
+        when (answer.optString("status")) {
+            "ok" -> VodMedia(pending = false, info = answer.optJSONObject("info"))
+            "queued" -> VodMedia(pending = true, info = null)
+            else -> VodMedia(pending = false, info = null)
+        }
     }
 
     /**

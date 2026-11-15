@@ -282,19 +282,24 @@ internal fun languageName(code: String?): String? {
  * the languages estimated from the playlist first when the provider gives none.
  */
 @Composable
-internal fun audioLabels(version: VodVersion, estimated: VodLanguages = VodLanguages()): List<String> {
+internal fun audioLabels(version: VodVersion, estimated: VodLanguages = VodLanguages(), measured: Boolean = false): List<String> {
     val labels = providerAudioLabels(version)
     // Without any language from the provider: the languages of the playlist groups and names
     val hasLanguage = version.audio.any { it.language != null } || version.languageTags.isNotEmpty()
     if (hasLanguage || estimated.audio.isEmpty()) return labels
-    return estimated.audio.map { stringResource(R.string.vod_lang_estimated, languageName(it) ?: it) } + labels
+    return estimated.audio.map { languageLabel(it, measured) } + labels
 }
 
-/** Subtitles of a file, else the ones estimated from the playlist. */
+/** A language of the playlist: measured on the server (Télé API plugin), or estimated from the names. */
 @Composable
-internal fun subtitleLabels(version: VodVersion, estimated: VodLanguages = VodLanguages()): List<String> =
+private fun languageLabel(code: String, measured: Boolean): String =
+    stringResource(if (measured) R.string.vod_lang_measured else R.string.vod_lang_estimated, languageName(code) ?: code)
+
+/** Subtitles of a file, else the ones estimated from the playlist (or measured on the server). */
+@Composable
+internal fun subtitleLabels(version: VodVersion, estimated: VodLanguages = VodLanguages(), measured: Boolean = false): List<String> =
     providerSubtitleLabels(version).ifEmpty {
-        estimated.subtitles.map { stringResource(R.string.vod_lang_estimated, languageName(it) ?: it) }
+        estimated.subtitles.map { languageLabel(it, measured) }
     }
 
 @Composable

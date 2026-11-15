@@ -16,7 +16,11 @@ data class DispatcharrChannel(
     // Resolved EPG key: tvg_id of the linked EPGData (epg_data_id) or tvg_id of the channel
     val tvgId: String = "",
     val isRadio: Boolean = false,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    // Current and next program, given with the channel by the Télé API plugin (before the guide is loaded)
+    val programs: List<GuideProgram> = emptyList(),
+    // Catch-up of Dispatcharr: days of past programs it keeps (0: none)
+    val catchupDays: Int = 0
 ) {
     fun toChannel(): Channel {
         return Channel(
@@ -28,7 +32,9 @@ data class DispatcharrChannel(
             tvgId = tvgId.ifBlank { uuid },
             isFavorite = isFavorite,
             serverId = id.takeIf { it != uuid },
-            number = channelNumber
+            number = channelNumber,
+            catchupDays = catchupDays,
+            catchupMode = if (catchupDays > 0) io.github.sim7b.tele.data.epg.Catchup.DISPATCHARR else null
         )
     }
 }

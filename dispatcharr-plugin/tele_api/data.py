@@ -52,7 +52,9 @@ _OVERRIDE_FIELDS = (
 def redis_client():
     try:
         from core.utils import RedisClient
-
+    except ImportError:
+        return None  # Not inside Dispatcharr (tests)
+    try:
         return RedisClient.get_client()
     except Exception:
         logger.exception("Télé API: Redis unavailable")
@@ -128,6 +130,36 @@ def programs_now_and_next(epg_ids: Iterable[int], now) -> Dict[int, Dict[str, An
           "end": r["end_time"]} for r in rows),
         now,
     )
+
+
+def guide(user, start: float, end: float):
+    """Programs of the user's channels between [start] and [end] (epoch seconds), for the compact guide."""
+    import datetime
+
+    from apps.epg.models import ProgramData
+
+    rows = channel_rows(visible_channels(user), 0, 100_000)
+    channels = []
+    for row in rows:
+        epg_id = core.effective(row.get("epg_data_id"), row.get("override__epg_data_id"))
+        if epg_id is not None:
+            channels.append((str(row["uuid"]), epg_id))
+    epg_ids = sorted({epg for _, epg in channels})
+    if not epg_ids:
+        return []
+    to_dt = lambda ts: datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)  # noqa: E731
+    programs: Dict[Any, List[Dict[str, Any]]] = {}
+    query = (
+        ProgramData.objects.filter(epg_id__in=epg_ids, end_time__gt=to_dt(start), start_time__lt=to_dt(end))
+        .order_by("epg_id", "start_time")
+        .values("id", "epg_id", "title", "sub_title", "description", "start_time", "end_time", "custom_properties")
+        .iterator(chunk_size=5000)
+    )
+    for row in query:
+        program = core.guide_program(row)
+        if program is not None:
+            programs.setdefault(row["epg_id"], []).append(program)
+    return core.guide_channels(channels, programs)
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -306,6 +338,19 @@ def usernames(user_ids: Iterable[Optional[str]]) -> Dict[str, str]:
     from django.contrib.auth import get_user_model
 
     return {str(pk): name for pk, name in get_user_model().objects.filter(id__in=ids).values_list("id", "username")}
+
+
+def adult_categories(category_ids: Iterable[int]) -> set:
+    """VOD categories holding adult movies (Dispatcharr marks movies only)."""
+    ids = [i for i in category_ids if i is not None]
+    if not ids:
+        return set()
+    from apps.vod.models import M3UMovieRelation
+
+    return set(
+        M3UMovieRelation.objects.filter(category_id__in=ids, movie__is_adult=True)
+        .values_list("category_id", flat=True).distinct()
+    )
 
 
 def client_ip(request) -> Optional[str]:

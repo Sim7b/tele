@@ -182,6 +182,23 @@ class VodStore(private val file: File) {
         }
     }
 
+    /** Positions, my list and collections as synced from the other TVs of the user (Télé API plugin). */
+    fun replaceSynced(progress: Map<String, VodProgress>, myList: List<String>, collections: List<VodCollection>) {
+        synchronized(lock) {
+            val kept = if (progress.size > MAX_PROGRESS) {
+                progress.values.sortedByDescending { it.updatedAt }.take(MAX_PROGRESS).associateBy { it.key }
+            } else {
+                progress
+            }
+            val list = myList.distinct()
+            if (kept == _progress.value && list == _myList.value && collections == _collections.value) return
+            _progress.value = kept
+            _myList.value = list
+            _collections.value = collections
+            write()
+        }
+    }
+
     fun toggleMyList(titleKey: String) {
         synchronized(lock) {
             val list = _myList.value

@@ -2,6 +2,7 @@ package io.github.sim7b.tele.data.remote
 
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.DispatcharrChannel
+import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.optStringOrNull
 import org.json.JSONObject
@@ -16,6 +17,12 @@ object TeleApi {
     const val INFO_PATH = "/api/tele/v1/info/"
     const val CHANNELS_PATH = "/api/tele/v1/channels/"
     const val SLOTS_PATH = "/api/tele/v1/slots/"
+    const val VOD_LANGUAGES_PATH = "/api/tele/v1/vod/languages/"
+    const val VOD_MEDIA_PATH = "/api/tele/v1/vod/media/"
+    const val STREAM_HEALTH_PATH = "/api/tele/v1/streams/health/"
+    const val GUIDE_PATH = "/api/tele/v1/guide/"
+    const val SYNC_PATH = "/api/tele/v1/sync/"
+    const val MAX_HEALTH_IDS = 100
     const val RELEASE_PATH = "/api/tele/v1/sessions/release/"
     const val CHANNELS_PAGE_SIZE = 2000
 
@@ -45,8 +52,46 @@ object TeleApi {
             logoUrl = if (logoId > 0) "$baseUrl/api/channels/logos/$logoId/cache/" else null,
             streamUrl = "$baseUrl/proxy/ts/stream/$uuid",
             tvgId = item.optStringOrNull("tvg_id") ?: "",
-            isRadio = item.optBoolean("is_radio", false)
+            isRadio = item.optBoolean("is_radio", false),
+            programs = listOfNotNull(program(item.optJSONObject("now"), uuid), program(item.optJSONObject("next"), uuid)),
+            catchupDays = item.optInt("catchup_days", 0).coerceIn(0, io.github.sim7b.tele.data.epg.Catchup.MAX_DAYS)
         )
+    }
+
+    /** A current or next program of the plugin ("title", "start", "end" in ISO 8601); null when malformed. */
+    internal fun program(item: JSONObject?, channelUuid: String): GuideProgram? {
+        if (item == null) return null
+        val title = item.optStringOrNull("title") ?: return null
+        val start = item.optStringOrNull("start") ?: return null
+        val end = item.optStringOrNull("end") ?: return null
+        val startMillis = isoMillis(start) ?: return null
+        val endMillis = isoMillis(end)?.takeIf { it > startMillis } ?: return null
+        return GuideProgram(
+            id = "tele:$channelUuid:$startMillis",
+            channelUuid = channelUuid,
+            title = title.take(MAX_TITLE),
+            description = item.optStringOrNull("sub_title")?.take(MAX_TITLE),
+            startTimeIso = start,
+            endTimeIso = end,
+            startMillis = startMillis,
+            endMillis = endMillis
+        )
+    }
+
+    private fun isoMillis(text: String): Long? = try {
+        java.time.OffsetDateTime.parse(text).toInstant().toEpochMilli()
+    } catch (e: java.time.format.DateTimeParseException) {
+        null
+    }
+
+    private const val MAX_TITLE = 512
+
+    /** Ids of the streams that failed lately, from the answer of [STREAM_HEALTH_PATH]. */
+    fun unhealthyStreams(answer: JSONObject?): Set<String> {
+        val streams = answer?.optJSONObject("streams") ?: return emptySet()
+        return streams.keys().asSequence().take(MAX_HEALTH_IDS)
+            .filter { streams.optJSONObject(it)?.optBoolean("unhealthy", false) == true }
+            .toSet()
     }
 
     /** Body asking to close every session of this TV (same address and User-Agent as the request). */
@@ -54,6 +99,37 @@ object TeleApi {
 
     /** Number of sessions closed, from the answer of [RELEASE_PATH]; 0 when malformed. */
     fun releasedCount(answer: JSONObject?): Int = answer?.optJSONArray("released")?.length() ?: 0
+
+    private val LANGUAGE_CODE = Regex("^[a-z]{2,3}$")
+
+    /**
+     * Audio and subtitle languages measured by the plugin (ffprobe on one file of each category), by
+     * "movie:<category name>" / "series:<category name>". Malformed entries are skipped.
+     */
+    fun parseVodLanguages(answer: JSONObject?): Map<String, Pair<Set<String>, Set<String>>> {
+        val list = answer?.optJSONArray("categories") ?: return emptyMap()
+        val measured = HashMap<String, Pair<Set<String>, Set<String>>>()
+        for (i in 0 until minOf(list.length(), MAX_MEASURED_CATEGORIES)) {
+            val item = list.optJSONObject(i) ?: continue
+            val name = item.optStringOrNull("name") ?: continue
+            val kind = if (item.optString("type") == "series") "series" else "movie"
+            measured["$kind:$name"] = codes(item.optJSONArray("audio")) to codes(item.optJSONArray("subtitles"))
+        }
+        return measured
+    }
+
+    private fun codes(array: org.json.JSONArray?): Set<String> {
+        if (array == null) return emptySet()
+        return (0 until minOf(array.length(), 16)).mapNotNull { array.optString(it).takeIf(LANGUAGE_CODE::matches) }.toSet()
+    }
+
+    private const val MAX_MEASURED_CATEGORIES = 20_000
+
+    /** Message of the Dispatcharr admin for the TVs (plugin setting), null when there is none. */
+    fun message(info: JSONObject?): String? =
+        info?.optStringOrNull("message")?.trim()?.take(MAX_MESSAGE)?.takeIf { it.isNotEmpty() }
+
+    private const val MAX_MESSAGE = 500
 
     /** Free provider connections; null when no account has a limit or the answer is malformed. */
     fun parseSlots(slots: JSONObject?): StreamSlots? {

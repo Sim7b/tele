@@ -15,18 +15,20 @@ import time
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
-from . import core, data
+from . import core, data, probe
 
 logger = logging.getLogger(__name__)
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
+DEFAULT_RATE_LIMIT = 120
 STANDARD_LEVEL = 1
 
 
@@ -63,6 +65,11 @@ def is_admin(user) -> bool:
     return getattr(user, "user_level", 0) >= ADMIN_LEVEL
 
 
+def hides_adult(user) -> bool:
+    """The Dispatcharr preference "Hide mature content" of a standard user (admins always see everything)."""
+    return not is_admin(user) and bool((getattr(user, "custom_properties", None) or {}).get("hide_adult_content"))
+
+
 class IsStandardUser(permissions.BasePermission):
     """Same rule as the Dispatcharr channel API: a logged-in user of the standard level or above."""
 
@@ -78,9 +85,53 @@ class PluginEnabled(permissions.BasePermission):
         return plugin_state.get()[0]
 
 
+class PerUserLimit(BaseThrottle):
+    """Requests of a user per minute (setting rate_limit_per_minute, 0 = no limit): a leaked standard key
+    cannot keep the database busy. Admins are not limited; without Redis, no limit (never a lockout)."""
+
+    def __init__(self):
+        self.wait_seconds = None
+
+    def allow_request(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated or is_admin(user):
+            return True
+        limit = core.query_int(plugin_state.get()[1].get("rate_limit_per_minute"), DEFAULT_RATE_LIMIT, 0, 100_000)
+        if limit == 0:
+            return True
+        client = data.redis_client()
+        if client is None:
+            return True
+        now = time.time()
+        key = f"tele_api:rate:{user.pk}:{int(now // 60)}"
+        try:
+            count = client.incr(key)
+            if count == 1:
+                client.expire(key, 61)
+        except Exception:
+            return True
+        if core.over_limit(count, limit):
+            self.wait_seconds = 60 - int(now % 60)
+            return False
+        return True
+
+    def wait(self):
+        return self.wait_seconds
+
+
 class TeleView(APIView):
     # Authentication classes: the defaults of the server (JWT and API key)
     permission_classes = [IsStandardUser, PluginEnabled]
+    throttle_classes = [PerUserLimit]
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        # A Télé TV (install id in its User-Agent): recorded for the list of the TVs of the admin page
+        if core.device_id(request.headers.get("User-Agent")):
+            from . import devices
+
+            devices.seen(data.redis_client(), request.headers.get("User-Agent"), request.user.pk,
+                         request.headers.get("X-Tele-Version"), data.client_ip(request))
 
     @staticmethod
     def setting(name, default):
@@ -99,8 +150,9 @@ class InfoView(TeleView):
                 "api": core.API_VERSION,
                 "features": list(FEATURES),
                 "server_time": data.server_time(),
-                "user": {"username": user.username, "admin": is_admin(user)},
+                "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
+                "message": (core.to_text(self.setting("tv_message", "")) or "").strip()[:500] or None,
             }
         )
 
@@ -143,6 +195,48 @@ class ChannelsView(TeleView):
         )
 
 
+class GuideView(TeleView):
+    """Programs of the caller's channels, from an hour ago to [hours] ahead (1-48, default 24), in the format of
+    the Dispatcharr grid (channel objects with their programs). The window moves by whole hours and the answer
+    has an ETag: If-None-Match answers 304 while the guide did not change."""
+
+    def get(self, request):
+        start, end = core.guide_window(time.time(), request.query_params.get("hours"), request.query_params.get("past"))
+        results = data.guide(request.user, start, end)
+        tag = core.etag([start, end, results])
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        return Response({"api": core.API_VERSION, "start": start, "end": end, "results": results}, headers={"ETag": tag})
+
+
+class SyncView(TeleView):
+    """Favorites, VOD positions, my list, collections and reminders of the caller, shared by their TVs.
+
+    GET: every item; POST {"changes": {collection: {key: {"v", "t", "d"}}}}: merged item by item (the most recent
+    change wins), answers every item. Turned off by the plugin setting allow_sync.
+    """
+
+    MAX_BODY = 2 * 1024 * 1024
+
+    def get(self, request):
+        from . import sync
+
+        if not self.setting("allow_sync", True):
+            return Response({"error": "sync_disabled"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"api": core.API_VERSION, "items": sync.load(request.user.pk)})
+
+    def post(self, request):
+        from . import sync
+
+        if not self.setting("allow_sync", True):
+            return Response({"error": "sync_disabled"}, status=status.HTTP_403_FORBIDDEN)
+        if int(request.META.get("CONTENT_LENGTH") or 0) > self.MAX_BODY:
+            return Response({"error": "too_large"}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        body = request.data if isinstance(request.data, dict) else {}
+        items, kept = sync.merge(request.user.pk, body.get("changes"))
+        return Response({"api": core.API_VERSION, "items": items, "kept": kept})
+
+
 class SlotsView(TeleView):
     """Free provider connections, by account and in total, read live (never cached)."""
 
@@ -151,7 +245,12 @@ class SlotsView(TeleView):
         used = data.connections_by_profile(p.profile_id for p in limits if p.active and p.max_streams > 0)
         if used is None:
             return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        return Response({"api": core.API_VERSION, **core.slots(limits, used)})
+        result = core.slots(limits, used)
+        if not is_admin(request.user) and not self.setting("show_provider_names", False):
+            # Provider accounts are the business of the admins: counts only for the players
+            for account in result["accounts"]:
+                account["name"] = None
+        return Response({"api": core.API_VERSION, **result})
 
 
 class SessionsView(TeleView):
@@ -223,7 +322,215 @@ class ReleaseSessionsView(TeleView):
                 ):
                     targets[session.id] = session
 
+        if body.get("this_device") is True:
+            # A viewer short of a connection (Télé on HTTP 503): a running VOD language probe gives its own back
+            client = data.redis_client()
+            if client is not None:
+                probe.ask_to_yield(client)
+
         released = [sid for sid, session in targets.items() if data.stop_session(session)]
         if released:
             logger.info("Télé API: %d session(s) released by user %s", len(released), user.pk)
         return Response({"api": core.API_VERSION, "released": released})
+
+
+class StreamHealthView(TeleView):
+    """Recent health of provider streams (?ids=1,2,3, at most 100): decayed failures, unhealthy flag."""
+
+    def get(self, request):
+        from . import health
+
+        ids = core.parse_ids(request.query_params.get("ids"))
+        if ids is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"api": core.API_VERSION, "streams": health.scores(client, ids)})
+
+
+class VodLanguagesView(TeleView):
+    """Audio and subtitle languages measured by category (ffprobe on one of its files)."""
+
+    def get(self, request):
+        categories = probe.measured_categories()
+        if hides_adult(request.user):
+            # Mature content hidden for this user: the categories holding adult movies are left out too
+            adult = data.adult_categories(c["id"] for c in categories if c["id"] is not None)
+            categories = [c for c in categories if c["id"] not in adult]
+        return Response({"api": core.API_VERSION, "categories": categories})
+
+
+class VodMediaView(TeleView):
+    """Technical description of a movie or an episode measured with ffprobe (?kind=movie|episode&uuid=...).
+
+    Unknown yet: the title is queued for a probe (same rules as the category probes: a free connection, after
+    the viewers) and the answer says "queued"; Télé asks again a little later.
+    """
+
+    def get(self, request):
+        kind = request.query_params.get("kind")
+        uuid = core.valid_uuid(request.query_params.get("uuid"))
+        if kind not in core.MEDIA_KINDS or uuid is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        result = probe.title_result(kind, uuid) or {}
+        if result.get("status") == "ok":
+            return Response({"api": core.API_VERSION, "status": "ok", "info": result.get("info") or {}})
+        if (result.get("attempts") or 0) >= probe.MAX_ATTEMPTS or not self.setting("probe_enabled", True):
+            return Response({"api": core.API_VERSION, "status": "failed"})
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        queued = probe.request_title(client, kind, uuid)
+        if queued == "queued":
+            from . import tasks
+
+            tasks.probe_vod_languages.delay()
+        return Response({"api": core.API_VERSION, "status": queued})
+
+
+class IsAdminUser(permissions.BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and is_admin(user))
+
+
+class AdminView(TeleView):
+    permission_classes = [IsAdminUser, PluginEnabled]
+
+
+class AdminDevicesView(AdminView):
+    """Télé TVs seen lately, with their user, version, address and open sessions."""
+
+    def get(self, request):
+        from . import devices
+
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        raw = devices.all_raw(client)
+        sessions = data.all_sessions() or []
+        users = data.usernames(core.device_users(raw))
+        return Response({"api": core.API_VERSION, "devices": core.devices_json(raw, users, sessions, time.time())})
+
+
+class AdminDeviceReleaseView(AdminView):
+    """Closes every session of one TV ({"device": install id})."""
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        device = core.to_text(body.get("device"))
+        if not device or core.device_id(f"; Tele-{device})") != device:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        sessions = data.all_sessions()
+        if sessions is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        released = [s.id for s in sessions if core.device_id(s.user_agent) == device and data.stop_session(s)]
+        logger.info("Télé API: %d session(s) of a TV closed by an admin", len(released))
+        return Response({"api": core.API_VERSION, "released": released})
+
+
+class AdminStatsView(AdminView):
+    """Most started channels and provider connection peaks of the last days (?days=1-30, default 7)."""
+
+    def get(self, request):
+        from . import stats
+
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        days = core.query_int(request.query_params.get("days"), 7, 1, core.STATS_DAYS)
+        return Response({"api": core.API_VERSION, **stats.report(client, days)})
+
+
+class AdminProbesView(AdminView):
+    """Every probe result (measured, retrying, failed) and the counts, for the Télé page."""
+
+    def get(self, request):
+        results = probe.load_results()
+        categories = []
+        for key, entry in results.items():
+            if not isinstance(entry, dict):
+                continue
+            categories.append(
+                {
+                    "id": core.to_int(key),
+                    "name": entry.get("name"),
+                    "type": entry.get("type"),
+                    "status": entry.get("status"),
+                    "attempts": entry.get("attempts") or 0,
+                    "audio": list(entry.get("audio") or []),
+                    "subtitles": list(entry.get("subtitles") or []),
+                    "sample": entry.get("sample"),
+                    "quality": entry.get("quality"),
+                    "probed_at": entry.get("at"),
+                }
+            )
+        categories.sort(key=lambda c: (str(c["name"] or "").lower(), c["id"] or 0))
+        return Response(
+            {
+                "api": core.API_VERSION,
+                "summary": probe.summary(),
+                "settings": {
+                    "enabled": bool(self.setting("probe_enabled", True)),
+                    "scope": self.setting("probe_scope", "uncertain"),
+                    "min_free": self.setting("probe_min_free", 1),
+                    "pause_seconds": self.setting("probe_pause_seconds", 5),
+                },
+                "categories": categories,
+            }
+        )
+
+
+class AdminProbeRunView(AdminView):
+    def post(self, request):
+        from . import tasks
+
+        tasks.probe_vod_languages.delay()
+        return Response({"api": core.API_VERSION, "queued": True})
+
+
+class AdminProbeResetView(AdminView):
+    """Forgets one result ({"id": category id}) or all of them ({})."""
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        category_id = body.get("id")
+        if category_id is not None and core.to_int(category_id) is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        probe.forget(core.to_int(category_id) if category_id is not None else None)
+        return Response({"api": core.API_VERSION, "forgotten": category_id if category_id is not None else "all"})
+
+
+class AdminExportView(AdminView):
+    """The measured languages as Télé test cases, downloaded as a JSON file."""
+
+    def get(self, request):
+        response = Response(probe.export())
+        response["Content-Disposition"] = 'attachment; filename="vod-language-cases.json"'
+        return response
+
+
+class UiView(APIView):
+    """The Télé page: static HTML, no data in it. Its script calls the admin endpoints with the session token
+    of the Dispatcharr web interface (same address), so only an admin signed in to Dispatcharr sees anything."""
+
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        if not plugin_state.get()[0]:
+            return HttpResponse("Télé API plugin is disabled", status=404, content_type="text/plain; charset=utf-8")
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
+        with open(path, encoding="utf-8") as fh:
+            response = HttpResponse(fh.read(), content_type="text/html; charset=utf-8")
+        # No framing by other sites, no inline content from elsewhere
+        response["X-Frame-Options"] = "SAMEORIGIN"
+        response["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; frame-ancestors 'self'"
+        )
+        response["Cache-Control"] = "no-store"
+        return response

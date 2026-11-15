@@ -80,11 +80,36 @@ class ViewTest(unittest.TestCase):
         self.state.return_value = (False, {})
         self.assertEqual(self.call(views.InfoView, who=user()).status_code, 403)
 
+    def test_message_for_the_tvs(self):
+        self.state.return_value = (True, {"tv_message": "  Maintenance tonight  " + "x" * 600})
+        message = self.call(views.InfoView, who=user()).data["message"]
+        self.assertTrue(message.startswith("Maintenance tonight"))
+        self.assertEqual(len(message), 500)
+        self.state.return_value = (True, {"tv_message": "   "})
+        self.assertIsNone(self.call(views.InfoView, who=user()).data["message"])
+
     def test_info(self):
         response = self.call(views.InfoView, who=user())
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["api"], core.API_VERSION)
         self.assertFalse(response.data["user"]["admin"])
+
+    def test_guide_answers_304_while_unchanged(self):
+        programs = [{"uuid": "u1", "programs": [{"id": "1", "title": "Journal", "start": "s", "end": "e"}]}]
+        with mock.patch.object(views.data, "guide", return_value=programs), \
+                mock.patch.object(views.time, "time", return_value=3600 * 1000.0):
+            first = self.call(views.GuideView, path="/?hours=24", who=user())
+            again = self.call(views.GuideView, path="/?hours=24", who=user(), HTTP_IF_NONE_MATCH=first["ETag"])
+        self.assertEqual(first.data["results"], programs)
+        self.assertEqual(again.status_code, 304)
+
+    def test_sync_is_per_user_and_can_be_turned_off(self):
+        with mock.patch("tele_api.sync.merge", return_value=({"favorites": {}}, 0)) as merge:
+            response = self.call(views.SyncView, "post", who=user(), body={"changes": {"favorites": {}}})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(merge.call_args.args[0], 7)
+        self.state.return_value = (True, {"allow_sync": False})
+        self.assertEqual(self.call(views.SyncView, who=user()).status_code, 403)
 
     def test_slots(self):
         limits = [core.ProfileLimit(1, 1, "P", 2, True)]
@@ -93,6 +118,15 @@ class ViewTest(unittest.TestCase):
             response = self.call(views.SlotsView, who=user())
         self.assertEqual(response.data["free"], 1)
         self.assertEqual(list(used.call_args[0][0]), [1])
+
+    def test_provider_names_are_for_admins_unless_shown(self):
+        limits = [core.ProfileLimit(1, 1, "My provider", 2, True)]
+        with mock.patch.object(views.data, "profile_limits", return_value=limits), \
+                mock.patch.object(views.data, "connections_by_profile", return_value={}):
+            self.assertIsNone(self.call(views.SlotsView, who=user()).data["accounts"][0]["name"])
+            self.assertEqual(self.call(views.SlotsView, who=user(level=10)).data["accounts"][0]["name"], "My provider")
+            self.state.return_value = (True, {"show_provider_names": True})
+            self.assertEqual(self.call(views.SlotsView, who=user()).data["accounts"][0]["name"], "My provider")
 
     def test_slots_without_redis(self):
         with mock.patch.object(views.data, "profile_limits", return_value=[]), \
@@ -141,6 +175,125 @@ class ViewTest(unittest.TestCase):
         self.state.return_value = (True, {"allow_release": False})
         response = self.call(views.ReleaseSessionsView, "post", who=user(), body={"ids": []})
         self.assertEqual(response.status_code, 403)
+
+
+class RateLimitTest(ViewTest):
+    class Counter:
+        def __init__(self):
+            self.counts = {}
+
+        def incr(self, key):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        def expire(self, key, ttl):
+            pass
+
+    def test_standard_users_are_limited_per_minute(self):
+        self.state.return_value = (True, {"rate_limit_per_minute": 2})
+        with mock.patch.object(views.data, "redis_client", return_value=self.Counter()):
+            codes = [self.call(views.InfoView, who=user()).status_code for _ in range(3)]
+            admin = [self.call(views.InfoView, who=user(pk=1, level=10)).status_code for _ in range(3)]
+        self.assertEqual(codes, [200, 200, 429])
+        self.assertEqual(admin, [200, 200, 200])
+
+    def test_no_limit_without_redis_or_when_off(self):
+        self.state.return_value = (True, {"rate_limit_per_minute": 1})
+        with mock.patch.object(views.data, "redis_client", return_value=None):
+            self.assertEqual([self.call(views.InfoView, who=user()).status_code for _ in range(3)], [200] * 3)
+        self.state.return_value = (True, {"rate_limit_per_minute": 0})
+        with mock.patch.object(views.data, "redis_client", return_value=self.Counter()):
+            self.assertEqual([self.call(views.InfoView, who=user()).status_code for _ in range(3)], [200] * 3)
+
+
+class VodLanguagesViewTest(ViewTest):
+    def test_adult_categories_hidden_for_users_hiding_mature_content(self):
+        measured = [{"id": 3, "name": "FR | FILMS"}, {"id": 4, "name": "XXX"}]
+        prudish = user()
+        prudish.custom_properties = {"hide_adult_content": True}
+        with mock.patch.object(views.probe, "measured_categories", return_value=measured), \
+                mock.patch.object(views.data, "adult_categories", return_value={4}):
+            self.assertEqual([c["id"] for c in self.call(views.VodLanguagesView, who=prudish).data["categories"]], [3])
+            self.assertEqual(len(self.call(views.VodLanguagesView, who=user()).data["categories"]), 2)
+            self.assertTrue(self.call(views.InfoView, who=prudish).data["user"]["hide_adult"])
+
+    def test_measured_languages_for_standard_users(self):
+        measured = [{"id": 3, "name": "FR | MULTI", "type": "movie", "audio": ["fr"], "subtitles": [], "probed_at": 1}]
+        with mock.patch.object(views.probe, "measured_categories", return_value=measured):
+            response = self.call(views.VodLanguagesView, who=user())
+        self.assertEqual(response.data["categories"], measured)
+
+    def test_media_of_a_title_is_measured_on_demand(self):
+        uuid = "0a1b2c3d-0000-4000-8000-000000000000"
+        query = f"/?kind=movie&uuid={uuid}"
+        with mock.patch.object(views.probe, "title_result", return_value={"status": "ok", "info": {"audio": []}}):
+            self.assertEqual(self.call(views.VodMediaView, path=query, who=user()).data["status"], "ok")
+        with mock.patch.object(views.probe, "title_result", return_value=None), \
+                mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch.object(views.probe, "request_title", return_value="queued") as queue, \
+                mock.patch("tele_api.tasks.probe_vod_languages") as task:
+            self.assertEqual(self.call(views.VodMediaView, path=query, who=user()).data["status"], "queued")
+        queue.assert_called_once()
+        task.delay.assert_called_once()
+        with mock.patch.object(views.probe, "title_result", return_value={"status": "failed", "attempts": 3}):
+            self.assertEqual(self.call(views.VodMediaView, path=query, who=user()).data["status"], "failed")
+        for bad in ("/?kind=movie&uuid=../x", "/?kind=series&uuid=" + uuid, "/"):
+            self.assertEqual(self.call(views.VodMediaView, path=bad, who=user()).status_code, 400)
+
+    def test_stream_health(self):
+        with mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch("tele_api.health.scores", return_value={"7": {"score": 1.0, "unhealthy": True}}) as scores:
+            response = self.call(views.StreamHealthView, path="/?ids=7,8", who=user())
+        self.assertTrue(response.data["streams"]["7"]["unhealthy"])
+        self.assertEqual(list(scores.call_args.args[1]), [7, 8])
+        self.assertEqual(self.call(views.StreamHealthView, path="/?ids=x", who=user()).status_code, 400)
+
+    def test_a_tv_is_recorded_and_its_sessions_closed_by_an_admin(self):
+        agent = "TV-AndroidTV/1.0 (Android TV; Tele-0a1b2c3d4e5f)"
+        with mock.patch("tele_api.devices.seen") as seen:
+            request = self.factory.get("/", HTTP_USER_AGENT=agent, HTTP_X_TELE_VERSION="0.3.27", REMOTE_ADDR="10.0.0.2")
+            force_authenticate(request, user=user())
+            views.InfoView.as_view()(request)
+        self.assertEqual(seen.call_args.args[1:4], (agent, 7, "0.3.27"))
+        tv = session("tv", ua=agent)
+        with mock.patch.object(views.data, "all_sessions", return_value=[tv, session("other")]), \
+                mock.patch.object(views.data, "stop_session", return_value=True):
+            response = self.call(views.AdminDeviceReleaseView, "post", who=user(level=10), body={"device": "0a1b2c3d4e5f"})
+            bad = self.call(views.AdminDeviceReleaseView, "post", who=user(level=10), body={"device": "../x"})
+            refused = self.call(views.AdminDeviceReleaseView, "post", who=user(), body={"device": "0a1b2c3d4e5f"})
+        self.assertEqual(response.data["released"], ["live:abc:tv"])
+        self.assertEqual((bad.status_code, refused.status_code), (400, 403))
+
+    def test_admin_endpoints_are_for_admins_only(self):
+        for view in (views.AdminProbesView, views.AdminExportView):
+            self.assertEqual(self.call(view, who=user()).status_code, 403)
+        with mock.patch.object(views.probe, "export", return_value={"cases": []}):
+            response = self.call(views.AdminExportView, who=user(level=10))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment", response["Content-Disposition"])
+
+    def test_reset_one_or_all(self):
+        with mock.patch.object(views.probe, "forget") as forget:
+            self.call(views.AdminProbeResetView, "post", who=user(level=10), body={"id": 4})
+            self.call(views.AdminProbeResetView, "post", who=user(level=10), body={})
+            bad = self.call(views.AdminProbeResetView, "post", who=user(level=10), body={"id": "x"})
+        self.assertEqual([c.args for c in forget.call_args_list], [(4,), (None,)])
+        self.assertEqual(bad.status_code, 400)
+
+    def test_the_page_is_static_and_off_with_the_plugin(self):
+        response = self.call(views.UiView)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Admins only", response.content)
+        self.assertIn("frame-ancestors", response["Content-Security-Policy"])
+        self.state.return_value = (False, {})
+        self.assertEqual(self.call(views.UiView).status_code, 404)
+
+    def test_a_tv_short_of_a_connection_makes_the_probes_yield(self):
+        with mock.patch.object(views.data, "all_sessions", return_value=[]), \
+                mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch.object(views.probe, "ask_to_yield") as yield_:
+            self.call(views.ReleaseSessionsView, "post", who=user(), body={"this_device": True})
+        yield_.assert_called_once()
 
 
 class ChannelJsonTest(unittest.TestCase):

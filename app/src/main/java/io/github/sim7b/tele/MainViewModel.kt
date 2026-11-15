@@ -1,11 +1,14 @@
 package io.github.sim7b.tele
 
 import android.app.Application
+import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sim7b.tele.data.UiText
+import io.github.sim7b.tele.data.storage.Reminders
+import io.github.sim7b.tele.data.sync.TvSync
 import io.github.sim7b.tele.data.bouquet.Bouquet
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.bouquet.ChannelGrouping
@@ -57,6 +60,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
@@ -103,6 +107,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Free / total playback slots of the Dispatcharr provider accounts, all servers together (null: not shown)
     private val _streamSlots = MutableStateFlow<StreamSlots?>(null)
     val streamSlots: StateFlow<StreamSlots?> = _streamSlots.asStateFlow()
+    // Messages of the Dispatcharr admins for the TVs (Télé API plugin), read again every few minutes. Declared
+    // before the init block: its first sync refreshes them
+    private val _serverMessage = MutableStateFlow<String?>(null)
+    val serverMessage: StateFlow<String?> = _serverMessage.asStateFlow()
+    private var serverMessageAt = 0L
+    // Sync between the TVs of the user (Télé API plugin): one at a time, every few minutes. Declared before the
+    // init block too
+    private val tvSyncLock = Mutex()
+    private var tvSyncAt = 0L
     private var slotsJob: Job? = null
 
     /** One enabled source with its client, channels and guide. Read and written on the main thread. */
@@ -218,12 +231,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Reloads the Dispatcharr playback slots (cheap request), added up over the enabled servers. Called every
      * 30 s and when the home screen is shown again, since leaving the player frees a slot.
      */
+    private fun refreshServerMessage(clients: List<DispatcharrClient>) {
+        val now = SystemClock.elapsedRealtime()
+        if (serverMessageAt != 0L && now - serverMessageAt < SERVER_MESSAGE_EVERY_MS) return
+        serverMessageAt = now
+        viewModelScope.launch {
+            _serverMessage.value = clients.map { async { it.getServerMessage() } }.awaitAll().filterNotNull()
+                .distinct().joinToString("\n").ifEmpty { null }
+        }
+    }
+
+    /**
+     * Sync of the favorites, VOD positions, my list, collections and reminders with the other TVs of the user,
+     * through the first Dispatcharr source (when its server has the Télé API plugin). [force]: now, else at
+     * most every [TV_SYNC_EVERY_MS].
+     */
+    private fun syncTvs(force: Boolean = false) {
+        val source = sources.firstOrNull { it.dispatcharr != null } ?: return
+        val client = source.dispatcharr ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && tvSyncAt != 0L && now - tvSyncAt < TV_SYNC_EVERY_MS) return
+        tvSyncAt = now
+        viewModelScope.launch {
+            if (!tvSyncLock.tryLock()) return@launch
+            try {
+                runTvSync(source.config.id, client)
+            } finally {
+                tvSyncLock.unlock()
+            }
+        }
+    }
+
+    private fun localSyncItems(): Map<String, Map<String, TvSync.Local>> {
+        val vod = configRepository.vodStore
+        return mapOf(
+            TvSync.FAVORITES to TvSync.favorites(configRepository.favoriteIds.value),
+            TvSync.VOD_PROGRESS to TvSync.progress(vod.progress.value),
+            TvSync.MY_LIST to TvSync.myList(vod.myList.value),
+            TvSync.COLLECTIONS to TvSync.collections(vod.collections.value),
+            TvSync.REMINDERS to TvSync.reminders(guideStore.reminders.value)
+        )
+    }
+
+    private suspend fun runTvSync(sourceId: String, client: DispatcharrClient) {
+        val app = getApplication<Application>()
+        val prefs = app.getSharedPreferences(TV_SYNC_PREFS, Context.MODE_PRIVATE)
+        val key = "synced_$sourceId"
+        val synced = withContext(Dispatchers.IO) { TvSync.fromJson(prefs.getString(key, null)) }
+        val sent = localSyncItems()
+        val answer = client.syncTvs(TvSync.changes(sent, synced, System.currentTimeMillis())) ?: return
+        val (kept, remembered) = withContext(Dispatchers.Default) { TvSync.resolve(TvSync.items(answer), sent, localSyncItems()) }
+        configRepository.replaceFavorites(TvSync.favoriteOrder(kept[TvSync.FAVORITES].orEmpty()))
+        withContext(Dispatchers.IO) {
+            configRepository.vodStore.replaceSynced(
+                TvSync.progressOf(kept[TvSync.VOD_PROGRESS].orEmpty()),
+                TvSync.myListOrder(kept[TvSync.MY_LIST].orEmpty()),
+                TvSync.collectionsOf(kept[TvSync.COLLECTIONS].orEmpty())
+            )
+            prefs.edit().putString(key, TvSync.toJson(remembered)).apply()
+        }
+        guideStore.replaceReminders(Reminders.pending(TvSync.remindersOf(kept[TvSync.REMINDERS].orEmpty()), System.currentTimeMillis()))
+    }
+
     fun refreshStreamSlots() {
         val clients = sources.mapNotNull { it.dispatcharr }
         if (clients.isEmpty()) {
             _streamSlots.value = null
+            _serverMessage.value = null
             return
         }
+        refreshServerMessage(clients)
+        syncTvs()
         if (slotsJob?.isActive == true) return
         slotsJob = viewModelScope.launch {
             val slots = clients.map { async { it.getStreamSlots() } }.awaitAll().filterNotNull()
@@ -377,7 +455,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             client.getChannelStreams(serverId).getOrNull()
         }?.also { streamsCache[key] = SystemClock.elapsedRealtime() to it }
         if (streams.isNullOrEmpty()) return emptyList()
-        return preference.sort(streams).map { it.url } + channel.streamUrl
+        // The streams that failed lately on the server (Télé API plugin) come last, in the same order
+        val (failing, healthy) = preference.sort(streams).partition { it.recentFailures }
+        return (healthy + failing).map { it.url } + channel.streamUrl
     }
 
     /**
@@ -557,20 +637,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Program artwork in parallel with channels and guide: it only depends on the time
         val now = System.currentTimeMillis()
         val artworkDeferred = async { client.getProgramArtwork(now, now + ARTWORK_WINDOW_MS) }
-        val epgDeferred = async { client.getEpgGrid() }
+        // A day of past programs for the replay when the channels (of the cache) have catch-up
+        val pastHours = if (source.channels.any { it.catchupDays > 0 }) CATCHUP_PAST_HOURS else 1
+        val epgDeferred = async { client.getEpgGrid(pastHours = pastHours) }
         val channelsResult = client.getChannels()
-        val epgResult = epgDeferred.await()
+        // Télé API plugin: the channels come with their current and next program, shown while the guide loads
+        val nowNext = channelsResult.getOrNull()?.let { list ->
+            list.filter { it.programs.isNotEmpty() }.associate { it.uuid to it.programs }
+        }.orEmpty()
+        if (nowNext.isNotEmpty() && !epgDeferred.isCompleted) {
+            source.channels = withContext(Dispatchers.Default) {
+                channelsResult.getOrThrow().map { it.toChannel().copy(sourceId = config.id) }
+            }
+            if (source.programs.isEmpty()) source.programs = nowNext
+            publishAll()
+        }
+        // Catch-up found with the channels but not in the cache: the guide again, with the past day
+        val catchup = channelsResult.getOrNull()?.any { it.catchupDays > 0 } == true
+        val epgResult = if (catchup && pastHours == 1) {
+            epgDeferred.cancel()
+            client.getEpgGrid(pastHours = CATCHUP_PAST_HOURS)
+        } else {
+            epgDeferred.await()
+        }
         Log.i(TvPlayerManager.PERF_TAG, "Load: channels + guide in ${SystemClock.elapsedRealtime() - startedAt} ms")
 
         channelsResult.onSuccess { dChannels ->
             val channels = withContext(Dispatchers.Default) { dChannels.map { it.toChannel().copy(sourceId = config.id) } }
             dropDirectSelections(channels, client)
-            source.programs = matchDispatcharrGuide(channels, epgResult.getOrNull().orEmpty(), client)
+            // Without the guide: at least the current and next programs of the plugin
+            source.programs = if (epgResult.isFailure && nowNext.isNotEmpty()) {
+                nowNext
+            } else {
+                matchDispatcharrGuide(channels, epgResult.getOrNull().orEmpty(), client)
+            }
             source.channels = channels
             source.error = epgResult.exceptionOrNull()?.let { UiText.Res(R.string.error_guide_unavailable, it.toUiText()) }
             publishAll()
             source.loading = false
             updateLoadingState()
+            // The favorites, positions and reminders of the other TVs of the user, once the channels are there
+            syncTvs(force = true)
 
             applyArtwork(source, artworkDeferred.await())
             Log.i(TvPlayerManager.PERF_TAG, "Load: artwork included in ${SystemClock.elapsedRealtime() - startedAt} ms")
@@ -824,6 +931,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val GUIDE_RELOAD_TICKS = 720 // every 6 hours
         // Channel streams kept for the automatic choice: zapping back to a channel costs no request
         private const val STREAMS_CACHE_MS = 10 * 60 * 1000L
+        private const val SERVER_MESSAGE_EVERY_MS = 5 * 60 * 1000L
+        private const val CATCHUP_PAST_HOURS = 24
+        private const val TV_SYNC_EVERY_MS = 5 * 60 * 1000L
+        private const val TV_SYNC_PREFS = "tv_sync"
         // Past this delay the channel plays in server order rather than making the user wait
         private const val STREAMS_TIMEOUT_MS = 2_000L
     }

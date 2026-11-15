@@ -1,0 +1,12 @@
+{
+  "format": "tele-vod-language-cases",
+  "version": 1,
+  "exported_at": 0,
+  "cases": [
+    {"group": "FR | FILMS MULTI-SUB", "name": "Dune (2024)", "kind": "movie", "audio": ["en"], "subtitles": ["en", "fr"]},
+    {"group": "FR | FILMS VOSTFR", "name": "Parasite (2019)", "kind": "movie", "audio": ["ko"], "subtitles": ["fr"]},
+    {"group": "أفلام أجنبية مترجمة", "name": "Dune (2024)", "kind": "movie", "audio": ["en"], "subtitles": ["ar"]},
+    {"group": "مسلسلات تركية مدبلجة", "name": "Kuruluş Osman S01E01", "kind": "series", "audio": ["ar"], "subtitles": []},
+    {"group": "DE | FILME MULTI", "name": "Dune (2024)", "kind": "movie", "audio": ["de", "en"], "subtitles": []}
+  ]
+}
