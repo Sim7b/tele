@@ -64,6 +64,15 @@ class VodRepository(
     private var rankingsJob: Job? = null
 
     // Logos of the streaming services (TMDB), fetched with the rankings
+    // A Dispatcharr source whose plugin searches subtitles with the key of the server
+    private val _serverSubtitles = MutableStateFlow(false)
+    val serverSubtitles: StateFlow<Boolean> = _serverSubtitles.asStateFlow()
+    private val subtitleSources = ConcurrentHashMap.newKeySet<String>()
+
+    /** The client of a Dispatcharr source whose plugin searches subtitles (null: none). */
+    fun subtitleServer(): DispatcharrClient? =
+        loadedFor.firstOrNull { it.type == SourceType.DISPATCHARR && it.id in subtitleSources }?.let { dispatcharr(it) }
+
     // Keys of the titles most watched on the Dispatcharr servers (Télé API plugin), most watched first
     private val _serverPopular = MutableStateFlow<List<String>>(emptyList())
     val serverPopular: StateFlow<List<String>> = _serverPopular.asStateFlow()
@@ -499,6 +508,14 @@ class VodRepository(
             if (e is CancellationException) throw e
             tmdbIds[config.id].orEmpty()
         }
+        val subtitles = try {
+            dispatcharr(config).hasServerSubtitles()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            config.id in subtitleSources
+        }
+        if (subtitles) subtitleSources.add(config.id) else subtitleSources.remove(config.id)
+        _serverSubtitles.value = subtitleSources.isNotEmpty()
         val popular = try {
             dispatcharr(config).getVodPopular()
         } catch (e: Exception) {

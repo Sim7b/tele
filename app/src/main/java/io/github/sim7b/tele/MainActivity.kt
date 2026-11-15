@@ -286,8 +286,10 @@ class MainActivity : ComponentActivity() {
             // OpenSubtitles: the search needs the key, the subtitles already downloaded are always read back
             val openSubtitlesKey by configRepository.openSubtitlesKey.collectAsState()
             val subtitlesRemaining by viewModel.subtitles.remaining.collectAsState()
+            // A Dispatcharr server searching with its own key (Télé API plugin) also lets the TV search
+            val serverSubtitles by viewModel.vod.serverSubtitles.collectAsState()
             val vodSubtitles = VodSubtitles(
-                canSearch = openSubtitlesKey.isNotBlank(),
+                canSearch = openSubtitlesKey.isNotBlank() || serverSubtitles,
                 search = { query, all -> viewModel.subtitles.search(query, all) },
                 download = { key, result -> viewModel.subtitles.download(key, result) },
                 cached = { key -> viewModel.subtitles.cached(key) },

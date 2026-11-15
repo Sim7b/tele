@@ -720,6 +720,48 @@ class DispatcharrClient(
      * TMDB ids the Télé API plugin found for the movies ("movie") or series ("series") Dispatcharr has none for,
      * by Dispatcharr id; empty without the plugin or a TMDB key on the server.
      */
+    /** Whether the plugin searches and downloads subtitles with an OpenSubtitles key of the server. */
+    suspend fun hasServerSubtitles(): Boolean = baseUrl.isNotBlank() && "subtitles" in teleApi()
+
+    /**
+     * OpenSubtitles search through the plugin, with the parameters of [search] (an OpenSubtitles search URL):
+     * its answer in the OpenSubtitles format. Errors of OpenSubtitles come back as [UserFacingException].
+     */
+    suspend fun searchSubtitles(search: HttpUrl): JSONObject = withContext(Dispatchers.IO) {
+        val url = "$baseUrl${TeleApi.SUBTITLES_SEARCH_PATH}".toHttpUrlOrNull()?.newBuilder()
+            ?: throw UserFacingException(UiText.Res(R.string.error_invalid_response))
+        search.queryParameterNames.forEach { name -> search.queryParameter(name)?.let { url.addQueryParameter(name, it) } }
+        val request = Request.Builder().url(url.build()).get().build()
+        client.newCall(request).executeCancellable { response ->
+            subtitleError(response)
+            JSONObject(HttpClients.jsonString(response.body))
+        }
+    }
+
+    /** A subtitle file downloaded by the plugin: (file, extension, downloads left today). */
+    suspend fun downloadSubtitle(fileId: Long): Triple<ByteArray, String, Int?> = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("file_id", fileId).toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl${TeleApi.SUBTITLES_DOWNLOAD_PATH}").post(body).build()
+        client.newCall(request).executeCancellable { response ->
+            subtitleError(response)
+            val source = response.body.source()
+            if (source.request(MAX_SUBTITLE_BYTES + 1)) throw UserFacingException(UiText.Res(R.string.subtitles_error_download))
+            val extension = response.header("X-Subtitle-Extension")?.takeIf { it in SUBTITLE_EXTENSIONS } ?: "srt"
+            Triple(source.readByteArray(), extension, response.header("X-Subtitle-Remaining")?.toIntOrNull())
+        }
+    }
+
+    private fun subtitleError(response: Response) {
+        if (response.isSuccessful) return
+        throw UserFacingException(
+            when (response.code) {
+                401, 403 -> UiText.Res(R.string.subtitles_error_key)
+                429 -> UiText.Res(R.string.subtitles_error_quota)
+                else -> UiText.Res(R.string.subtitles_error_server, response.code)
+            }
+        )
+    }
+
     /** Movies and series most played on the server (Télé API plugin, adult ones left out); empty without it. */
     suspend fun getVodPopular(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank() || "vod_popular" !in teleApi()) return@withContext emptyList()
@@ -774,6 +816,8 @@ class DispatcharrClient(
     }
 
     companion object {
+        private const val MAX_SUBTITLE_BYTES = 4L * 1024 * 1024
+        private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "ttml")
         private const val TAG = "Dispatcharr"
         const val DEFAULT_USER_AGENT = HttpClients.DEFAULT_USER_AGENT
         private const val ARTWORK_PAGE_SIZE = 500
