@@ -30,7 +30,8 @@ Télé uses the plugin when it is installed and falls back to the standard Dispa
 
 ## Installation
 
-1. Download `tele_api-<version>.zip` (artifact `tele-api-plugin` of the CI run, or `scripts/build_zip.sh`).
+1. Download `tele_api-<version>.zip` from the latest [Télé release](https://github.com/Sim7b/tele/releases/latest)
+   (or the artifact `tele-api-plugin` of a CI run, or `scripts/build_zip.sh`).
 2. In Dispatcharr: **Plugins → Import**, choose the zip, then enable **Télé API**.
 3. Restart Dispatcharr once (`docker restart dispatcharr`), so that every web worker loads the routes.
    **Status** on the plugin card checks the routes of the worker that answers.
