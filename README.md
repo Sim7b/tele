@@ -60,7 +60,7 @@ Only live TV is handled: movies and series (VOD) in playlists are ignored.
 
 ## Télé API plugin for Dispatcharr
 
-An optional Dispatcharr plugin (separate repository) adds endpoints under `/api/tele/v1/` that work with the API key of a **standard user**: the channels with their group and guide key in one paged list (in place of the channel, group and EPG data lists), and the free provider connections. Télé checks `/api/tele/v1/info/` once per server (and on each manual refresh) and uses the standard API when the plugin is missing or fails.
+An optional Dispatcharr plugin ([`dispatcharr-plugin/`](dispatcharr-plugin/README.md)) adds endpoints under `/api/tele/v1/` that work with the API key of a **standard user**: the channels with their group and guide key in one paged list (in place of the channel, group and EPG data lists), and the free provider connections. Télé checks `/api/tele/v1/info/` once per server (and on each manual refresh) and uses the standard API when the plugin is missing or fails.
 
 ## Installation
 

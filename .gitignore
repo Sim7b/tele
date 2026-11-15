@@ -31,3 +31,8 @@ epg_visualizer.html
 # Release tooling
 node_modules/
 dist/
+
+# Dispatcharr plugin (Python)
+__pycache__/
+*.pyc
+/dispatcharr-plugin/.venv/
