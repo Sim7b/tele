@@ -102,6 +102,8 @@ fun HomeScreen(
     isLoading: Boolean,
     loadError: UiText? = null,
     streamSlots: StreamSlots? = null,
+    // Message of the Dispatcharr admin (Télé API plugin), shown under the header
+    serverMessage: String? = null,
     updateAvailable: Boolean = false,
     onChannelSelected: (Channel) -> Unit,
     onToggleFavorite: (String) -> Unit,
@@ -438,6 +440,8 @@ fun HomeScreen(
                 SettingsButton(updateAvailable = updateAvailable, onClick = onOpenSettings)
             }
 
+            serverMessage?.let { ServerMessage(it) }
+
             if (isLoading && !hasContent) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -730,6 +734,23 @@ internal fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) {
             )
         }
     }
+}
+
+/** Message of the Dispatcharr admin: read only, never focused (the remote goes on to the channels). */
+@Composable
+private fun ServerMessage(text: String) {
+    Text(
+        text = text,
+        fontSize = 13.sp,
+        color = TextPrimary,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .background(TextSecondary.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    )
 }
 
 /** Header of a phone: time, search and settings, then the guide, the movies and the sync status below them. */

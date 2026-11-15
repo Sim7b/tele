@@ -218,12 +218,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Reloads the Dispatcharr playback slots (cheap request), added up over the enabled servers. Called every
      * 30 s and when the home screen is shown again, since leaving the player frees a slot.
      */
+    // Messages of the Dispatcharr admins for the TVs (Télé API plugin), read again every few minutes
+    private val _serverMessage = MutableStateFlow<String?>(null)
+    val serverMessage: StateFlow<String?> = _serverMessage.asStateFlow()
+    private var serverMessageAt = 0L
+
+    private fun refreshServerMessage(clients: List<DispatcharrClient>) {
+        val now = SystemClock.elapsedRealtime()
+        if (serverMessageAt != 0L && now - serverMessageAt < SERVER_MESSAGE_EVERY_MS) return
+        serverMessageAt = now
+        viewModelScope.launch {
+            _serverMessage.value = clients.map { async { it.getServerMessage() } }.awaitAll().filterNotNull()
+                .distinct().joinToString("\n").ifEmpty { null }
+        }
+    }
+
     fun refreshStreamSlots() {
         val clients = sources.mapNotNull { it.dispatcharr }
         if (clients.isEmpty()) {
             _streamSlots.value = null
+            _serverMessage.value = null
             return
         }
+        refreshServerMessage(clients)
         if (slotsJob?.isActive == true) return
         slotsJob = viewModelScope.launch {
             val slots = clients.map { async { it.getStreamSlots() } }.awaitAll().filterNotNull()
@@ -842,6 +859,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val GUIDE_RELOAD_TICKS = 720 // every 6 hours
         // Channel streams kept for the automatic choice: zapping back to a channel costs no request
         private const val STREAMS_CACHE_MS = 10 * 60 * 1000L
+        private const val SERVER_MESSAGE_EVERY_MS = 5 * 60 * 1000L
         // Past this delay the channel plays in server order rather than making the user wait
         private const val STREAMS_TIMEOUT_MS = 2_000L
     }

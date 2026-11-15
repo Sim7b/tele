@@ -33,6 +33,14 @@
       "help_text": "Off: standard users only get the numbers of free connections; admins always see the names."
     },
     {
+      "id": "tv_message",
+      "label": "Message for the TVs",
+      "type": "text",
+      "default": "",
+      "placeholder": "Maintenance tonight from 2 am…",
+      "help_text": "Shown on the home screen of the Télé TVs (read again every 5 minutes); empty: no message. 500 characters at most."
+    },
+    {
       "id": "vod_info",
       "label": "VOD languages",
       "type": "info",

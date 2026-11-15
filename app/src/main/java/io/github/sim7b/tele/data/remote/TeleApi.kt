@@ -122,6 +122,12 @@ object TeleApi {
 
     private const val MAX_MEASURED_CATEGORIES = 20_000
 
+    /** Message of the Dispatcharr admin for the TVs (plugin setting), null when there is none. */
+    fun message(info: JSONObject?): String? =
+        info?.optStringOrNull("message")?.trim()?.take(MAX_MESSAGE)?.takeIf { it.isNotEmpty() }
+
+    private const val MAX_MESSAGE = 500
+
     /** Free provider connections; null when no account has a limit or the answer is malformed. */
     fun parseSlots(slots: JSONObject?): StreamSlots? {
         if (slots == null || !slots.optBoolean("limited", false)) return null

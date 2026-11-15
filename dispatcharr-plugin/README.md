@@ -57,6 +57,7 @@ The plugin card (**Plugins**) has the settings and the actions; Dispatcharr show
 | Let players close their own sessions | on | Télé closes the preview or the channel it left open |
 | Requests per minute and user | 120 | Beyond, 429 for the rest of the minute; 0: no limit; admins not limited |
 | Show the provider account names to players | off | Standard users get the counts only |
+| Message for the TVs | empty | Shown on the home screen of the Télé TVs, read again every 5 minutes |
 | Measure VOD languages with ffprobe | on | Every 10 minutes, in the background |
 | Categories to probe | uncertain ones | Or every category |
 | Free connections to keep | 1 | On the provider profile, before a probe starts |

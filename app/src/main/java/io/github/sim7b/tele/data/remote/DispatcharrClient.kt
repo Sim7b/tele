@@ -85,6 +85,15 @@ class DispatcharrClient(
         return features.also { teleApiFeatures = it }
     }
 
+    /**
+     * Message of the Dispatcharr admin for the TVs (Télé API plugin), read again at each call; null without the
+     * plugin or a message.
+     */
+    suspend fun getServerMessage(): String? {
+        if (baseUrl.isBlank() || teleApi().isEmpty()) return null
+        return TeleApi.message(getPluginInfo())
+    }
+
     /** Answer of the plugin info endpoint; null, silently, when it is not a JSON object (plugin missing). */
     private suspend fun getPluginInfo(): JSONObject? = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("$baseUrl${TeleApi.INFO_PATH}").get().build()

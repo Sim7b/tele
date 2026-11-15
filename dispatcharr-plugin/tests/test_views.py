@@ -80,6 +80,14 @@ class ViewTest(unittest.TestCase):
         self.state.return_value = (False, {})
         self.assertEqual(self.call(views.InfoView, who=user()).status_code, 403)
 
+    def test_message_for_the_tvs(self):
+        self.state.return_value = (True, {"tv_message": "  Maintenance tonight  " + "x" * 600})
+        message = self.call(views.InfoView, who=user()).data["message"]
+        self.assertTrue(message.startswith("Maintenance tonight"))
+        self.assertEqual(len(message), 500)
+        self.state.return_value = (True, {"tv_message": "   "})
+        self.assertIsNone(self.call(views.InfoView, who=user()).data["message"])
+
     def test_info(self):
         response = self.call(views.InfoView, who=user())
         self.assertEqual(response.status_code, 200)

@@ -152,6 +152,7 @@ class InfoView(TeleView):
                 "server_time": data.server_time(),
                 "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
+                "message": (core.to_text(self.setting("tv_message", "")) or "").strip()[:500] or None,
             }
         )
 

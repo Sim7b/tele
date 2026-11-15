@@ -226,6 +226,7 @@ class MainActivity : ComponentActivity() {
             val isLoadingChannels by viewModel.isLoading.collectAsState()
             val loadError by viewModel.loadError.collectAsState()
             val streamSlots by viewModel.streamSlots.collectAsState()
+            val serverMessage by viewModel.serverMessage.collectAsState()
             val updateState by updateViewModel.state.collectAsState()
             val previewDelay by configRepository.previewDelay.collectAsState()
             // Movies and series module (its library and positions are read in its own screens only:
@@ -711,6 +712,7 @@ class MainActivity : ComponentActivity() {
                                     isLoading = isLoadingChannels,
                                     loadError = loadError,
                                     streamSlots = streamSlots,
+                                    serverMessage = serverMessage,
                                     updateAvailable = updateState.release != null && updateState !is UpdateState.Failed,
                                     onChannelSelected = { channel ->
                                         currentScreen = CurrentScreen.Player(channel)

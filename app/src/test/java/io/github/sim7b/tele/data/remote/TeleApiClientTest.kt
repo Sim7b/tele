@@ -265,6 +265,10 @@ class TeleApiClientTest {
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))
         assertEquals(setOf("slots"), TeleApi.features(JSONObject("""{"api": 1, "features": ["slots", ""]}""")))
 
+        assertEquals("Maintenance tonight", TeleApi.message(JSONObject("""{"message": "  Maintenance tonight "}""")))
+        assertNull(TeleApi.message(JSONObject("""{"message": null}""")))
+        assertEquals(500, TeleApi.message(JSONObject(JSONObject().put("message", "x".repeat(900)).toString()))?.length)
+
         assertNull(TeleApi.parseSlots(JSONObject("""{"limited": false, "total": 0}""")))
         assertNull(TeleApi.parseSlots(JSONObject("""{"limited": true, "total": -2}""")))
         assertEquals(StreamSlots(used = 2, total = 2), TeleApi.parseSlots(JSONObject("""{"limited": true, "total": 2, "used": 9}""")))
