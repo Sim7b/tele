@@ -76,6 +76,9 @@ A probe opens a real provider connection, so it never comes before a viewer:
 
 - it only starts when the profile keeps the free connections set (1 by default), and takes its connection
   through the same reservation as playback, so the limit of the provider is never exceeded;
+- the address of the file and its redirects are checked by hand before ffprobe opens it: a redirect to the
+  local network (other than the provider server set in Dispatcharr) is refused, and ffprobe only gets the
+  network protocols (no `file:`), so a provider answer cannot reach the services or files of the server;
 - one probe at a time on the server, 25 seconds at most, a pause between two, runs of 8 minutes at most;
 - when Télé finds no free connection (HTTP 503), it asks the plugin to close its own sessions: a running probe
   stops at once, gives its connection back, and probes pause for 2 minutes.

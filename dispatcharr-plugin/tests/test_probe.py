@@ -174,6 +174,59 @@ class RunTest(unittest.TestCase):
         self.assertEqual(probe.run({"probe_enabled": False}), 0)
 
 
+class AddressTest(unittest.TestCase):
+    def test_public_addresses_only(self):
+        for address in ("8.8.8.8", "2606:4700:4700::1111", "::ffff:8.8.8.8"):
+            self.assertTrue(core.is_public_address(address), address)
+        for address in ("10.0.0.1", "192.168.1.20", "172.16.0.5", "127.0.0.1", "::1", "169.254.169.254",
+                        "fe80::1%eth0", "100.64.0.1", "0.0.0.0", "224.0.0.1", "::ffff:192.168.1.1", "nonsense"):
+            self.assertFalse(core.is_public_address(address), address)
+
+    def test_trusted_provider_addresses(self):
+        self.assertTrue(core.host_allowed(["192.168.1.20"], trusted=["192.168.1.20"]))
+        self.assertFalse(core.host_allowed(["8.8.8.8", "192.168.1.20"]))
+        self.assertFalse(core.host_allowed([]))
+
+
+class SafeUrlTest(unittest.TestCase):
+    """Redirects followed by hand against a local server standing for the provider (trusted, as set in Dispatcharr)."""
+
+    def setUp(self):
+        import http.server
+        import threading
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                targets = {"/to-lan": "http://10.0.0.1/movie.mkv", "/to-self": "/movie.mkv"}
+                if self.path in targets:
+                    self.send_response(302)
+                    self.send_header("Location", targets[self.path])
+                    self.end_headers()
+                else:
+                    self.send_response(206)
+                    self.end_headers()
+                    self.wfile.write(b"x")
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+
+    def test_redirects_on_the_provider_are_followed(self):
+        self.assertEqual(probe.safe_url(self.base + "/to-self", "127.0.0.1", None), self.base + "/movie.mkv")
+
+    def test_a_redirect_to_the_local_network_is_refused(self):
+        self.assertIsNone(probe.safe_url(self.base + "/to-lan", "127.0.0.1", None))
+
+    def test_a_local_host_that_is_not_the_provider_is_refused(self):
+        self.assertIsNone(probe.safe_url(self.base + "/movie.mkv", "provider.example", None))
+        self.assertIsNone(probe.safe_url("file:///etc/passwd", "127.0.0.1", None))
+
+
 @unittest.skipIf(os.name != "posix", "fake ffprobe is a shell script")
 class FfprobeTest(unittest.TestCase):
     def fake(self, script):

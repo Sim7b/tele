@@ -36,6 +36,7 @@ LOCK_TTL = 15 * 60
 # A run stops after this long, the next one goes on (every 10 minutes)
 RUN_BUDGET = 8 * 60
 PROBE_TIMEOUT = 25
+MAX_REDIRECTS = 5
 PROTOCOLS = "http,https,tcp,tls,crypto"
 YIELD_PAUSE = 120
 MAX_ATTEMPTS = 3
@@ -221,6 +222,54 @@ def run_ffprobe(url: str, user_agent: Optional[str], redis_client) -> Optional[s
             process.stdout.close()
 
 
+def resolve(host: str) -> List[str]:
+    import socket
+
+    try:
+        return sorted({info[4][0] for info in socket.getaddrinfo(host, None)})
+    except (OSError, UnicodeError):
+        return []
+
+
+def safe_url(url: str, trusted_host: Optional[str], user_agent: Optional[str]) -> Optional[str]:
+    """[url] after its redirects, followed by hand: None when one of them leads to the local network.
+
+    A provider could otherwise send ffprobe to a service of the network of the server (a redirect to
+    192.168.x.x). The host of the provider set in Dispatcharr stays allowed, local or not. ffprobe is then given
+    the final address, so it has no redirect left to follow.
+    """
+    import urllib.error
+    import urllib.request
+    from urllib.parse import urljoin, urlsplit
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    trusted = resolve(trusted_host) if trusted_host else []
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        parts = urlsplit(current)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return None
+        if parts.hostname != trusted_host and not core.host_allowed(resolve(parts.hostname), trusted):
+            logger.warning("Télé API: probe refused, a redirect leads to the local network")
+            return None
+        request = urllib.request.Request(current, headers={"Range": "bytes=0-0", **({"User-Agent": user_agent} if user_agent else {})})
+        try:
+            with opener.open(request, timeout=10):
+                return current
+        except urllib.error.HTTPError as error:
+            location = error.headers.get("Location") if error.code in (301, 302, 303, 307, 308) else None
+            if not location:
+                return current if error.code < 500 else None
+            current = urljoin(current, location)
+        except (OSError, ValueError):
+            return None
+    return None
+
+
 def probe_one(category, relation, profile, redis_client, previous: Dict[str, Any]) -> bool:
     """Probes one file of [category] on [profile]; False when the slot could not be reserved."""
     from apps.m3u.connection_pool import release_profile_slot, reserve_profile_slot
@@ -232,6 +281,10 @@ def probe_one(category, relation, profile, redis_client, previous: Dict[str, Any
         url = relation.get_stream_url(profile)
         account = relation.m3u_account
         user_agent = account.get_user_agent_string() if hasattr(account, "get_user_agent_string") else None
+        from urllib.parse import urlsplit
+
+        trusted = urlsplit(account.server_url or "").hostname if getattr(account, "server_url", None) else None
+        url = safe_url(url, trusted, user_agent) if url else None
         output = run_ffprobe(url, user_agent, redis_client) if url else None
     finally:
         release_profile_slot(profile.id, redis_client)

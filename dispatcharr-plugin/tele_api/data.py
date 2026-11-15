@@ -52,7 +52,9 @@ _OVERRIDE_FIELDS = (
 def redis_client():
     try:
         from core.utils import RedisClient
-
+    except ImportError:
+        return None  # Not inside Dispatcharr (tests)
+    try:
         return RedisClient.get_client()
     except Exception:
         logger.exception("Télé API: Redis unavailable")

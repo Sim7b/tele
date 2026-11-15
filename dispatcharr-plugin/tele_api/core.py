@@ -427,3 +427,30 @@ def export_cases(results: Mapping[str, Any], now: float) -> Dict[str, Any]:
         )
     cases.sort(key=lambda c: (c["group"].lower(), c["name"].lower()))
     return {"format": EXPORT_FORMAT, "version": 1, "exported_at": int(now), "cases": cases}
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Addresses a probe may reach
+
+
+def is_public_address(address: Any) -> bool:
+    """Whether an IP address is on the internet: not private, loopback, link-local, multicast nor reserved."""
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(str(address).split("%", 1)[0])
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not ip.is_multicast
+
+
+def host_allowed(addresses: Iterable[Any], trusted: Iterable[Any] = ()) -> bool:
+    """A host may be probed when every address it resolves to is public or one of the [trusted] addresses
+    (those of the provider server set in Dispatcharr, which may well be on the local network)."""
+    resolved = [str(a) for a in addresses]
+    if not resolved:
+        return False
+    trusted_set = {str(a) for a in trusted}
+    return all(a in trusted_set or is_public_address(a) for a in resolved)
