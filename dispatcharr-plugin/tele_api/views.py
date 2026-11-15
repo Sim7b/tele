@@ -20,11 +20,12 @@ from rest_framework.views import APIView
 
 from . import core, data, probe
 
-logger = logging.getLogger(__name__)
+# Under "apps": a logger Dispatcharr sends to its console and log browser
+logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -389,6 +390,23 @@ class VodMediaView(TeleView):
         return Response({"api": core.API_VERSION, "status": queued})
 
 
+class TmdbIdsView(TeleView):
+    """TMDB ids the plugin found for the movies or series Dispatcharr has none for (?kind=movie|series):
+    {"ids": {"<Dispatcharr id>": "<TMDB id>"}}, with an ETag (304 while unchanged)."""
+
+    def get(self, request):
+        from . import tmdb
+
+        kind = request.query_params.get("kind")
+        if kind not in ("movie", "series"):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        found = tmdb.ids(kind)
+        tag = core.etag(found)
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        return Response({"api": core.API_VERSION, "ids": found}, headers={"ETag": tag})
+
+
 class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         user = request.user
@@ -443,6 +461,110 @@ class AdminStatsView(AdminView):
         return Response({"api": core.API_VERSION, **stats.report(client, days)})
 
 
+class AdminTmdbView(AdminView):
+    """TMDB of the plugin: GET whether a key is set (never the key) and the counts; POST {"key": "..."} sets it after
+    TMDB accepted it, {"key": null} removes it."""
+
+    def get(self, request):
+        from . import tmdb, vault
+
+        return Response({
+            "api": core.API_VERSION,
+            "key_set": vault.tmdb_key() is not None,
+            "enabled": bool(self.setting("tmdb_enabled", True)),
+            "language": self.setting("tmdb_language", "fr-FR"),
+            "unmatched_titles": tmdb.unmatched(50),
+            **tmdb.counts(),
+        })
+
+    def post(self, request):
+        from . import tmdb, vault
+
+        body = request.data if isinstance(request.data, dict) else {}
+        key = body.get("key")
+        if key is None:
+            vault.set_tmdb_key(None)
+            return Response({"api": core.API_VERSION, "key_set": False})
+        key = core.to_text(key) or ""
+        if not 16 <= len(key.strip()) <= 512 or any(c.isspace() for c in key.strip()):
+            return Response({"error": "invalid_key"}, status=status.HTTP_400_BAD_REQUEST)
+        if not tmdb.test_key(key):
+            return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
+        vault.set_tmdb_key(key)
+        logger.info("Télé API: TMDB key set by an admin")
+        return Response({"api": core.API_VERSION, "key_set": True})
+
+
+class AdminCategoriesView(AdminView):
+    """Every enabled VOD category of the Xtream accounts with its probe state (filtered on the page)."""
+
+    def get(self, request):
+        return Response({"api": core.API_VERSION, "categories": probe.all_categories()})
+
+
+class AdminCategoryActionView(AdminView):
+    """One category: {"id", "action": "probe" | "manual" | "clear" | "exclude" | "include", "audio", "subtitles"}."""
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        category_id = core.to_int(body.get("id"))
+        action = body.get("action")
+        if category_id is None or action not in ("probe", "manual", "clear", "exclude", "include"):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        if action == "probe":
+            ok, message = probe.probe_category_now(category_id, plugin_state.get()[1])
+            return Response({"api": core.API_VERSION, "ok": ok, "message": message})
+        if action == "manual":
+            audio, subtitles = core.language_codes(body.get("audio")), core.language_codes(body.get("subtitles"))
+            if audio is None or subtitles is None or not (audio or subtitles):
+                return Response({"error": "invalid_languages"}, status=status.HTTP_400_BAD_REQUEST)
+            ok = probe.set_manual(category_id, audio, subtitles)
+        elif action == "clear":
+            probe.forget(category_id)
+            ok = True
+        else:
+            ok = probe.set_excluded(category_id, action == "exclude")
+        if not ok:
+            return Response({"error": "unknown_category"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"api": core.API_VERSION, "ok": True})
+
+
+class AdminProbeRetryView(AdminView):
+    def post(self, request):
+        return Response({"api": core.API_VERSION, "forgotten": probe.retry_failed()})
+
+
+class AdminTmdbItemView(AdminView):
+    """{"kind": "movie" | "series", "item": <Dispatcharr id>, "tmdb": <TMDB id> | null}, or {"retry": true}."""
+
+    def post(self, request):
+        from . import tmdb
+
+        body = request.data if isinstance(request.data, dict) else {}
+        if body.get("retry") is True:
+            return Response({"api": core.API_VERSION, "forgotten": tmdb.retry_unmatched()})
+        kind, item = body.get("kind"), core.to_int(body.get("item"))
+        tmdb_id = None if body.get("tmdb") is None else core.to_int(body.get("tmdb"))
+        if kind not in ("movie", "series") or item is None or (body.get("tmdb") is not None and (tmdb_id is None or tmdb_id <= 0)):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        tmdb.set_manual(kind, item, tmdb_id)
+        return Response({"api": core.API_VERSION, "ok": True})
+
+
+class AdminDeviceForgetView(AdminView):
+    def post(self, request):
+        from . import devices
+
+        body = request.data if isinstance(request.data, dict) else {}
+        device = core.to_text(body.get("device"))
+        if not device or core.device_id(f"; Tele-{device})") != device:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"api": core.API_VERSION, "forgotten": devices.forget(client, device)})
+
+
 class AdminProbesView(AdminView):
     """Every probe result (measured, retrying, failed) and the counts, for the Télé page."""
 
@@ -467,10 +589,12 @@ class AdminProbesView(AdminView):
                 }
             )
         categories.sort(key=lambda c: (str(c["name"] or "").lower(), c["id"] or 0))
+        client = data.redis_client()
         return Response(
             {
                 "api": core.API_VERSION,
                 "summary": probe.summary(),
+                "last_run": probe.last_run(client) if client is not None else None,
                 "settings": {
                     "enabled": bool(self.setting("probe_enabled", True)),
                     "scope": self.setting("probe_scope", "uncertain"),

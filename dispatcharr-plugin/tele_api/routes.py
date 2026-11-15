@@ -15,9 +15,12 @@ import importlib
 import logging
 from typing import Any, Optional
 
-logger = logging.getLogger(__name__)
+# Under "apps": a logger Dispatcharr sends to its console and log browser
+logger = logging.getLogger("apps.tele_api.routes")
 
 PREFIX = "api/tele/"
+# Why the last install failed (shown by the Status action), None when it worked
+LAST_ERROR = None
 ROUTES_NAME = "tele_api_routes"
 
 
@@ -27,11 +30,13 @@ def _is_ours(pattern: Any) -> bool:
 
 def install(urlconf: Optional[str] = None) -> bool:
     """Adds (or replaces) the plugin routes; False when Django is not configured or the URLs are unknown."""
+    global LAST_ERROR
     try:
         from django.conf import settings
         from django.urls import clear_url_caches, include, path
 
         if not settings.configured:
+            LAST_ERROR = "Django not configured"
             return False
         module_name = urlconf or getattr(settings, "ROOT_URLCONF", None)
         if not module_name:
@@ -39,6 +44,7 @@ def install(urlconf: Optional[str] = None) -> bool:
         module = importlib.import_module(module_name)
         patterns = getattr(module, "urlpatterns", None)
         if not isinstance(patterns, list):
+            LAST_ERROR = f"{module_name} has no urlpatterns list"
             logger.warning("Télé API: %s has no urlpatterns list, routes not installed", module_name)
             return False
 
@@ -48,9 +54,11 @@ def install(urlconf: Optional[str] = None) -> bool:
         entry.tele_api_routes = True
         patterns[:] = [entry] + [p for p in patterns if not _is_ours(p)]
         clear_url_caches()
+        LAST_ERROR = None
         logger.info("Télé API: routes installed under /%s", PREFIX)
         return True
-    except Exception:
+    except Exception as error:
+        LAST_ERROR = f"{type(error).__name__}: {error}"[:300]
         logger.exception("Télé API: routes not installed")
         return False
 

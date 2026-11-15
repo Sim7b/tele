@@ -12,7 +12,8 @@ from typing import Optional
 
 from . import core
 
-logger = logging.getLogger(__name__)
+# Under "apps": a logger Dispatcharr sends to its console and log browser
+logger = logging.getLogger("apps.tele_api.devices")
 
 DEVICES_KEY = "tele_api:devices"
 WRITE_EVERY = 60
@@ -42,3 +43,10 @@ def all_raw(redis_client):
         return redis_client.hgetall(DEVICES_KEY) or {}
     except Exception:
         return {}
+
+
+def forget(redis_client, device: str) -> bool:
+    try:
+        return bool(redis_client.hdel(DEVICES_KEY, device))
+    except Exception:
+        return False

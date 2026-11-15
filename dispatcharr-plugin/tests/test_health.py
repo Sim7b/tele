@@ -114,6 +114,10 @@ class StatsTest(unittest.TestCase):
         self.assertEqual(peaks, [{"account": 1, "name": "Provider", "max": 4,
                                   "days": [{"day": "20261114", "used": 1}, {"day": "20261115", "used": 3}]}])
         self.assertEqual(len(core.last_days(0, 7)), 7)
+        daily = core.daily_starts(["20261115", "20261114"], [{"a": "3", "b": 1}, {}])
+        self.assertEqual(daily, [{"day": "20261114", "starts": 0}, {"day": "20261115", "starts": 4}])
+        hours = core.hourly_starts([{"20": "2", "99": 5, "x": 1}, {b"20": b"1", "0": 4}])
+        self.assertEqual((hours[20], hours[0], sum(hours)), (3, 4, 7))
 
     def test_views_are_counted_from_the_start_events(self):
         from tele_api import stats
@@ -130,7 +134,8 @@ class StatsTest(unittest.TestCase):
         store = Store()
         with mock.patch("tele_api.data.redis_client", return_value=store):
             Plugin().run("stream_health", {"event": "channel_start", "payload": {"channel_id": "u1", "channel_name": "TF1", "stream_id": 3}}, {})
-        self.assertEqual(list(counts.values()), [1])
+        self.assertEqual(sorted(counts.values()), [1, 1])
+        self.assertTrue(any(key.startswith("tele_api:stats:hours:") for key, _ in counts))
         self.assertEqual(store.values["u1"], "TF1")
         stats.record_view(store, {"channel_id": "x" * 100})
-        self.assertEqual(len(counts), 1)
+        self.assertEqual(len(counts), 2)

@@ -6,143 +6,301 @@
 <meta name="referrer" content="no-referrer">
 <title>Télé · Dispatcharr</title>
 <style>
-  :root { color-scheme: dark; --bg: #101113; --card: #1a1b1e; --line: #2c2e33; --field: #25262b; --text: #e9ecef;
-    --muted: #909296; --accent: #1c7ed6; --accent-text: #74c0fc; --ok: #69db7c; --warn: #ffd43b; --bad: #ff8787; --danger: #c92a2a; }
+  :root { color-scheme: dark;
+    --bg: #0d0e11; --card: #16181c; --card-2: #1c1f24; --line: #2a2d34; --field: #22252b; --text: #eceef2; --muted: #8d929b;
+    --accent: #4c8dff; --accent-2: #8b6cff; --accent-soft: rgba(76, 141, 255, 0.14);
+    --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --idle: #4b5059; --danger: #dc2626;
+    --s1: #4c8dff; --s2: #8b6cff; --s3: #22d3ee; --s4: #f472b6; --s5: #fbbf24; --s6: #4ade80; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 1200px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 24px; }
+  body { margin: 0; background: radial-gradient(1200px 600px at 10% -10%, rgba(76,141,255,0.10), transparent 60%), var(--bg);
+    background-attachment: fixed; color: var(--text); font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 28px 16px 56px; display: flex; flex-direction: column; gap: 20px; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+  .logo { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; font-size: 20px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; box-shadow: 0 6px 24px rgba(76,141,255,0.35); }
   header .titles { flex: 1 1 240px; }
-  h1 { margin: 0; font-size: 24px; }
-  h2 { margin: 0; font-size: 15px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
   .muted { color: var(--muted); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .small { font-size: 12px; }
+  nav { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); overflow-x: auto; }
+  nav button { border: 0; background: transparent; color: var(--muted); height: 36px; padding: 0 16px; border-radius: 8px; white-space: nowrap; }
+  nav button[aria-selected="true"] { background: var(--accent-soft); color: var(--text); }
+  nav .badge { margin-left: 6px; padding: 0 7px; border-radius: 10px; background: var(--line); font-size: 11px; color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+  .grid.wide { grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .card { background: linear-gradient(180deg, var(--card-2), var(--card)); border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+    display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .kpi { flex-direction: row; align-items: center; gap: 14px; padding: 16px; }
+  .kpi .value { font-size: 26px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; }
+  .kpi .label { color: var(--muted); font-size: 12px; }
+  .kpi .sub { color: var(--muted); font-size: 12px; }
+  .kpi .grow { flex: 1; min-width: 0; }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .row h2 { flex: 1 1 200px; }
-  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
-  .bar > div { height: 8px; background: var(--accent); }
-  .counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .counts strong { display: block; font-size: 24px; }
-  button, a.button { height: 36px; padding: 0 14px; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer;
-    border: 1px solid var(--line); background: transparent; color: var(--text); display: inline-flex; align-items: center; text-decoration: none; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger { border-color: var(--danger); color: var(--bad); }
-  button:disabled { opacity: 0.5; cursor: default; }
-  button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
-  input { height: 34px; width: 220px; max-width: 100%; padding: 0 10px; border: 1px solid #373a40; border-radius: 6px; background: var(--field); color: var(--text); font: inherit; }
-  .table { overflow-x: auto; }
-  table { width: 100%; min-width: 640px; border-collapse: collapse; }
-  th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  td { padding: 10px; border-bottom: 1px solid var(--field); vertical-align: top; }
+  .spread { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .bar { height: 10px; border-radius: 6px; background: var(--field); overflow: hidden; display: flex; }
+  .bar > span { height: 100%; transition: width 0.5s ease; }
+  .bar.thin { height: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .legend button { height: auto; padding: 2px 6px; border: 0; color: var(--muted); font-weight: 500; font-size: 12px; }
+  .legend button:hover { color: var(--text); }
+  .hbar { display: grid; grid-template-columns: minmax(80px, 38%) 1fr 48px; align-items: center; gap: 10px; font-size: 13px; }
+  .hbar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hbar .num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  svg { display: block; overflow: visible; }
+  svg text { fill: var(--muted); font-size: 10px; font-family: inherit; }
+  .chart { width: 100%; height: 160px; }
+  button, a.button { height: 36px; padding: 0 14px; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--line); background: var(--field); color: var(--text); display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+  button:hover, a.button:hover { border-color: #3a3e47; }
+  button.primary { background: linear-gradient(135deg, var(--accent), #3b74e0); border-color: transparent; color: #fff; }
+  button.danger { background: transparent; border-color: rgba(220,38,38,0.6); color: var(--bad); }
+  button.ghost { background: transparent; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; height: 32px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+  input, select { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--text); font: inherit; }
+  input { width: 220px; max-width: 100%; }
+  input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); vertical-align: -3px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .table { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); }
+  table { width: 100%; min-width: 680px; border-collapse: collapse; }
+  th { text-align: left; color: var(--muted); font-size: 12px; font-weight: 600; padding: 10px 12px; background: var(--card-2);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
   td.actions { text-align: right; white-space: nowrap; }
-  .chip { display: inline-block; padding: 1px 8px; margin: 0 4px 4px 0; border-radius: 10px; background: var(--line); font-size: 12px; }
-  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
-  #message { min-height: 21px; }
+  td.actions button { height: 30px; padding: 0 10px; font-weight: 500; margin-left: 4px; font-size: 13px; }
+  .scroll { max-height: 560px; overflow: auto; }
+  .chip { display: inline-block; padding: 1px 8px; margin: 2px 4px 2px 0; border-radius: 10px; background: var(--line); font-size: 12px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; background: var(--field); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); } .idle { color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--ok); box-shadow: 0 0 0 4px rgba(74,222,128,0.15); }
+  .dot.off { background: var(--idle); box-shadow: none; }
+  .empty { color: var(--muted); text-align: center; padding: 18px; }
+  details > summary { cursor: pointer; color: var(--muted); }
+  #toast { position: fixed; right: 16px; bottom: 16px; max-width: min(420px, calc(100vw - 32px)); padding: 12px 16px; border-radius: 10px;
+    background: #23262d; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,0.4); opacity: 0; transform: translateY(8px);
+    transition: opacity 0.2s, transform 0.2s; pointer-events: none; z-index: 10; }
+  #toast.show { opacity: 1; transform: none; }
+  .skeleton { color: transparent !important; background: linear-gradient(90deg, var(--field), var(--line), var(--field)); background-size: 200% 100%;
+    animation: shimmer 1.2s infinite; border-radius: 6px; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } .skeleton { animation: none; } }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
   <header>
+    <div class="logo" aria-hidden="true">T</div>
     <div class="titles">
       <h1>Télé</h1>
-      <div class="muted" id="subtitle">Dispatcharr plugin</div>
+      <div class="muted small" id="subtitle">Dispatcharr plugin</div>
     </div>
-    <a class="button" href="/">Back to Dispatcharr</a>
+    <label class="muted small"><input type="checkbox" id="auto"> Refresh every 30 s</label>
+    <button id="refresh" type="button" class="ghost">Refresh</button>
+    <a class="button ghost" href="/">Back to Dispatcharr</a>
   </header>
-
-  <div id="message" role="status" class="muted"></div>
 
   <section class="card" id="signin" hidden>
     <h2>Admins only</h2>
     <p class="muted">Sign in to Dispatcharr with an admin account in this browser, then reload this page.</p>
   </section>
 
-  <div id="content" hidden>
-    <div class="grid">
-      <section class="card" aria-labelledby="slots-title">
-        <h2 id="slots-title">Free provider connections</h2>
-        <div id="slots"></div>
-        <div class="muted">Bar: connections in use, as Dispatcharr counts them before opening a stream.</div>
-      </section>
-      <section class="card" aria-labelledby="probes-title">
-        <h2 id="probes-title">VOD languages</h2>
-        <div class="counts">
-          <div><strong id="count-measured">–</strong><span class="muted">measured</span></div>
-          <div><strong id="count-retrying">–</strong><span class="muted">to retry</span></div>
-          <div><strong id="count-failed">–</strong><span class="muted">failed</span></div>
+  <div id="content" hidden style="display:flex;flex-direction:column;gap:20px">
+    <nav role="tablist" aria-label="Sections">
+      <button role="tab" type="button" data-tab="overview" aria-selected="true">Overview</button>
+      <button role="tab" type="button" data-tab="vod" aria-selected="false">VOD</button>
+      <button role="tab" type="button" data-tab="sessions" aria-selected="false">Sessions &amp; TVs <span class="badge" id="badge-sessions">0</span></button>
+      <button role="tab" type="button" data-tab="stats" aria-selected="false">Statistics</button>
+    </nav>
+
+    <!-- Overview -->
+    <div role="tabpanel" data-panel="overview" style="display:flex;flex-direction:column;gap:16px">
+      <div class="kpis">
+        <div class="card kpi"><div class="grow"><div class="label">Sessions open</div><div class="value" id="kpi-sessions">–</div><div class="sub" id="kpi-sessions-sub"></div></div><div id="kpi-sessions-chart"></div></div>
+        <div class="card kpi"><div class="grow"><div class="label">Connections in use</div><div class="value" id="kpi-slots">–</div><div class="sub" id="kpi-slots-sub"></div></div><div id="kpi-slots-ring"></div></div>
+        <div class="card kpi"><div class="grow"><div class="label">Télé TVs</div><div class="value" id="kpi-tvs">–</div><div class="sub" id="kpi-tvs-sub"></div></div></div>
+        <div class="card kpi"><div class="grow"><div class="label">Starts today</div><div class="value" id="kpi-starts">–</div><div class="sub" id="kpi-starts-sub"></div></div><div id="kpi-starts-spark"></div></div>
+        <div class="card kpi"><div class="grow"><div class="label">VOD languages known</div><div class="value" id="kpi-vod">–</div><div class="sub" id="kpi-vod-sub"></div></div><div id="kpi-vod-ring"></div></div>
+        <div class="card kpi"><div class="grow"><div class="label">TMDB matched</div><div class="value" id="kpi-tmdb">–</div><div class="sub" id="kpi-tmdb-sub"></div></div><div id="kpi-tmdb-ring"></div></div>
+      </div>
+      <div class="grid wide">
+        <section class="card" aria-labelledby="slots-title">
+          <div class="spread"><h2 id="slots-title">Provider connections</h2><span class="muted small" id="slots-total"></span></div>
+          <div class="list" id="slots"></div>
+          <div class="muted small">As Dispatcharr counts them before opening a stream. Green below 70 %, amber below 90 %.</div>
+        </section>
+        <section class="card" aria-labelledby="days-title">
+          <div class="spread"><h2 id="days-title">Channel starts, last 14 days</h2><span class="muted small" id="days-total"></span></div>
+          <div id="overview-days" class="chart"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- VOD -->
+    <div role="tabpanel" data-panel="vod" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="grid wide">
+        <section class="card" aria-labelledby="probes-title">
+          <div class="spread"><h2 id="probes-title">Language probes</h2><span class="muted small" id="probe-last"></span></div>
+          <div>
+            <div class="spread small"><span class="muted">Categories with known languages</span><strong id="probe-percent">–</strong></div>
+            <div class="bar" id="probe-bar" role="img" aria-label="Categories by state" style="margin-top:6px"></div>
+          </div>
+          <div class="legend" id="probe-legend"></div>
+          <div class="muted small" id="probe-settings"></div>
+          <div class="row">
+            <button class="primary" id="probe-now" type="button">Probe now</button>
+            <button id="retry-failed" type="button">Retry the failed ones</button>
+            <button id="export" type="button">Export as Télé test cases</button>
+            <button class="danger" id="reset-all" type="button">Forget all</button>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="langs-title">
+          <div class="spread"><h2 id="langs-title">Languages found</h2>
+            <div class="seg" role="group" aria-label="Track"><button type="button" id="lang-audio" aria-pressed="true">Audio</button><button type="button" id="lang-subs" aria-pressed="false">Subtitles</button></div>
+          </div>
+          <div class="list" id="langs"></div>
+          <div class="muted small">Number of categories per language. Click a language to filter the table.</div>
+        </section>
+      </div>
+
+      <section class="card" aria-labelledby="tmdb-title">
+        <div class="spread"><h2 id="tmdb-title">TMDB</h2><span class="muted small" id="tmdb-state">–</span></div>
+        <div>
+          <div class="spread small"><span class="muted">Titles matched to a TMDB id (the same movie from several categories is grouped in Télé)</span><strong id="tmdb-percent">–</strong></div>
+          <div class="bar" id="tmdb-bar" style="margin-top:6px"></div>
         </div>
-        <div class="muted" id="probe-settings"></div>
-        <div class="row">
-          <button class="primary" id="probe-now" type="button">Probe now</button>
-          <button id="export" type="button">Export as Télé test cases</button>
-          <button class="danger" id="reset-all" type="button">Forget all</button>
+        <form id="tmdb-form" class="row" autocomplete="off">
+          <label for="tmdb-key" class="muted small">API key or read token</label>
+          <input id="tmdb-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
+          <button class="primary" type="submit">Save</button>
+          <button class="danger" type="button" id="tmdb-remove">Remove</button>
+          <span class="muted small">Kept in the Dispatcharr data folder, readable by the server only, never shown again.</span>
+        </form>
+        <details>
+          <summary>Titles without a sure match <span id="tmdb-unmatched-count"></span></summary>
+          <div class="filters" style="margin:10px 0">
+            <input id="tmdb-find" type="search" placeholder="Search a name" autocomplete="off" aria-label="Search a name">
+            <select id="tmdb-kind" aria-label="Type"><option value="">Movies and series</option><option value="movie">Movies</option><option value="series">Series</option></select>
+            <button type="button" id="tmdb-retry">Search them all again</button>
+          </div>
+          <div class="table scroll"><table><thead><tr><th>Name at the provider</th><th>Searched</th><th>Year</th><th>Type</th><th></th></tr></thead><tbody id="tmdb-unmatched"></tbody></table></div>
+        </details>
+      </section>
+
+      <section class="card" aria-labelledby="categories-title">
+        <div class="spread"><h2 id="categories-title">VOD categories</h2><span class="muted small" id="categories-count"></span></div>
+        <div class="filters">
+          <input id="find" type="search" placeholder="Search a category" autocomplete="off" aria-label="Search a category">
+          <select id="filter-state" aria-label="State">
+            <option value="">Every state</option><option value="pending">Not probed</option><option value="measured">Measured</option>
+            <option value="manual">Set by hand</option><option value="retrying">To retry</option><option value="failed">Failed</option>
+            <option value="excluded">Excluded</option>
+          </select>
+          <select id="filter-type" aria-label="Type"><option value="">Movies and series</option><option value="movie">Movies</option><option value="series">Series</option></select>
+          <select id="filter-audio" aria-label="Audio"><option value="">Any audio</option></select>
+          <select id="filter-subtitles" aria-label="Subtitles"><option value="">Any subtitles</option></select>
+          <label class="muted small"><input type="checkbox" id="filter-uncertain"> Uncertain name only</label>
+          <button type="button" class="ghost" id="filter-clear">Clear the filters</button>
+        </div>
+        <div class="table scroll">
+          <table>
+            <thead><tr><th>Category</th><th>Account</th><th>Quality</th><th>Audio</th><th>Subtitles</th><th>State</th><th></th></tr></thead>
+            <tbody id="categories"></tbody>
+          </table>
         </div>
       </section>
     </div>
 
-    <section class="card" aria-labelledby="stats-title" style="margin-top: 16px">
-      <div class="row">
-        <h2 id="stats-title">Statistics</h2>
-        <button type="button" id="stats-7" class="primary" aria-pressed="true">7 days</button>
-        <button type="button" id="stats-30" aria-pressed="false">30 days</button>
+    <!-- Sessions & TVs -->
+    <div role="tabpanel" data-panel="sessions" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="grid wide">
+        <section class="card" aria-labelledby="by-user-title">
+          <h2 id="by-user-title">Sessions by user</h2>
+          <div class="list" id="by-user"></div>
+        </section>
+        <section class="card" aria-labelledby="by-kind-title">
+          <h2 id="by-kind-title">Sessions by kind</h2>
+          <div class="row" style="gap:20px"><div id="by-kind-donut"></div><div class="legend" id="by-kind-legend" style="flex-direction:column"></div></div>
+        </section>
       </div>
-      <div class="grid">
-        <div>
-          <h3 class="muted" style="font-size:13px;font-weight:500;margin:0 0 8px">Most watched channels (starts)</h3>
-          <div class="table"><table style="min-width:0"><tbody id="top-channels"></tbody></table></div>
+      <section class="card" aria-labelledby="sessions-title">
+        <div class="spread"><h2 id="sessions-title">Open sessions</h2><span class="muted small" id="sessions-count"></span></div>
+        <div class="filters">
+          <select id="session-user" aria-label="User"><option value="">Every user</option></select>
+          <select id="session-kind" aria-label="Kind"><option value="">Live and VOD</option><option value="live">Live</option><option value="vod">Movie / episode</option></select>
+          <button class="danger" id="close-shown" type="button">Close the sessions shown</button>
         </div>
-        <div>
-          <h3 class="muted" style="font-size:13px;font-weight:500;margin:0 0 8px">Highest connections used per day</h3>
-          <div id="peaks"></div>
+        <div class="table scroll">
+          <table>
+            <thead><tr><th>Playing</th><th>Kind</th><th>User</th><th>Player</th><th>Since</th><th></th></tr></thead>
+            <tbody id="sessions"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="card" aria-labelledby="devices-title">
+        <div class="spread"><h2 id="devices-title">Télé TVs</h2><span class="muted small" id="devices-versions"></span></div>
+        <div class="table scroll">
+          <table>
+            <thead><tr><th></th><th>TV</th><th>User</th><th>Télé</th><th>Address</th><th>Last seen</th><th>Sessions</th><th></th></tr></thead>
+            <tbody id="devices"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Statistics -->
+    <div role="tabpanel" data-panel="stats" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="row">
+        <h2 style="flex:1">Statistics</h2>
+        <div class="seg" role="group" aria-label="Period">
+          <button type="button" data-days="7" aria-pressed="true">7 days</button>
+          <button type="button" data-days="14" aria-pressed="false">14 days</button>
+          <button type="button" data-days="30" aria-pressed="false">30 days</button>
         </div>
       </div>
-    </section>
-
-    <section class="card" aria-labelledby="sessions-title" style="margin-top: 16px">
-      <div class="row">
-        <h2 id="sessions-title">Open sessions</h2>
-        <button id="refresh" type="button">Refresh</button>
+      <div class="grid wide">
+        <section class="card" aria-labelledby="stats-days-title">
+          <div class="spread"><h2 id="stats-days-title">Channel starts per day</h2><span class="muted small" id="stats-days-total"></span></div>
+          <div id="stats-days" class="chart"></div>
+        </section>
+        <section class="card" aria-labelledby="stats-hours-title">
+          <div class="spread"><h2 id="stats-hours-title">Starts by hour</h2><span class="muted small" id="stats-hours-peak"></span></div>
+          <div id="stats-hours" class="chart"></div>
+        </section>
       </div>
-      <div class="table">
-        <table>
-          <thead><tr><th>Playing</th><th>Kind</th><th>User</th><th>Player</th><th>Since</th><th></th></tr></thead>
-          <tbody id="sessions"></tbody>
-        </table>
+      <div class="grid wide">
+        <section class="card" aria-labelledby="top-title">
+          <h2 id="top-title">Most watched channels</h2>
+          <div class="list" id="top-channels"></div>
+        </section>
+        <section class="card" aria-labelledby="peaks-title">
+          <h2 id="peaks-title">Highest connections used per day</h2>
+          <div id="peaks" class="list" style="gap:18px"></div>
+        </section>
       </div>
-    </section>
-
-    <section class="card" aria-labelledby="devices-title" style="margin-top: 16px">
-      <h2 id="devices-title">Télé TVs</h2>
-      <div class="table">
-        <table>
-          <thead><tr><th>TV</th><th>User</th><th>Télé</th><th>Address</th><th>Last seen</th><th>Sessions</th><th></th></tr></thead>
-          <tbody id="devices"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="card" aria-labelledby="categories-title" style="margin-top: 16px">
-      <div class="row">
-        <h2 id="categories-title">Probed categories</h2>
-        <label for="find" class="muted">Search</label>
-        <input id="find" type="search" placeholder="Category name" autocomplete="off">
-      </div>
-      <div class="table">
-        <table>
-          <thead><tr><th>Category</th><th>File probed</th><th>Quality</th><th>Audio</th><th>Subtitles</th><th>Status</th><th></th></tr></thead>
-          <tbody id="categories"></tbody>
-        </table>
-      </div>
-    </section>
+    </div>
   </div>
 </main>
+<div id="toast" role="status" aria-live="polite"></div>
 <script>
 (function () {
   "use strict";
   var API = "/api/tele/v1/";
-  var categories = [];
+  var SVG = "http://www.w3.org/2000/svg";
+  var state = { categories: [], sessions: [], devices: [], unmatched: [], stats: null, slots: null, tmdb: null, probes: null,
+    statsDays: 7, lang: "audio", overviewDays: null };
 
   // Everything shown comes from the server (provider names included): text nodes only, never HTML
   function el(tag, attrs, children) {
@@ -155,15 +313,152 @@
     (children || []).forEach(function (child) { if (child) node.appendChild(child); });
     return node;
   }
-  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
-  function say(text) { document.getElementById("message").textContent = text || ""; }
-  function since(seconds) {
+  function svg(tag, attrs, children) {
+    var node = document.createElementNS(SVG, tag);
+    Object.keys(attrs || {}).forEach(function (key) {
+      if (key === "text") node.textContent = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    });
+    (children || []).forEach(function (child) { if (child) node.appendChild(child); });
+    return node;
+  }
+  function $(id) { return document.getElementById(id); }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
+  function text(id, value) { $(id).textContent = value; }
+  var toastTimer;
+  function say(message) {
+    var toast = $("toast");
+    toast.textContent = message || "";
+    toast.className = message ? "show" : "";
+    clearTimeout(toastTimer);
+    if (message) toastTimer = setTimeout(function () { toast.className = ""; }, 4500);
+  }
+  function fail(prefix) { return function (error) { say(prefix + ": " + error.message); }; }
+  function pct(part, whole) { return whole > 0 ? Math.round(100 * part / whole) : 0; }
+  function fmt(n) { return Number(n || 0).toLocaleString(); }
+  function ago(seconds) {
     if (!seconds) return "";
-    var date = new Date(seconds * 1000);
-    return date.toLocaleString();
+    var s = Math.max(0, Date.now() / 1000 - seconds);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " h ago";
+    return Math.floor(s / 86400) + " d ago";
+  }
+  function when(seconds) { return seconds ? new Date(seconds * 1000).toLocaleString() : ""; }
+  function dayLabel(day, long) {
+    var d = new Date(Date.UTC(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6, 8)));
+    return d.toLocaleDateString(undefined, long ? { weekday: "short", day: "numeric", month: "short" } : { day: "numeric", month: "numeric" });
+  }
+  var languageNames = null;
+  try { languageNames = new Intl.DisplayNames([navigator.language || "en"], { type: "language" }); } catch (e) {}
+  function language(code) { try { return (languageNames && languageNames.of(code)) || code; } catch (e) { return code; } }
+  function loadColor(p) { return p >= 90 ? "var(--bad)" : p >= 70 ? "var(--warn)" : "var(--ok)"; }
+  function empty(body, cols, message) { if (!body.firstChild) body.appendChild(el("tr", {}, [el("td", { colspan: String(cols), class: "empty", text: message })])); }
+
+  // ---------- Charts (SVG, sized by a viewBox so they follow the card width)
+  function ring(percent, color, size) {
+    size = size || 56;
+    var r = size / 2 - 5, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, percent || 0));
+    return svg("svg", { width: size, height: size, viewBox: "0 0 " + size + " " + size, role: "img", "aria-label": p + " %" }, [
+      svg("circle", { cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: "var(--field)", "stroke-width": 6 }),
+      svg("circle", { cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: color || "var(--accent)", "stroke-width": 6, "stroke-linecap": "round",
+        "stroke-dasharray": (c * p / 100) + " " + c, transform: "rotate(-90 " + size / 2 + " " + size / 2 + ")" }),
+      svg("text", { x: size / 2, y: size / 2 + 4, "text-anchor": "middle", style: "fill:var(--text);font-size:12px;font-weight:700", text: p + "%" })
+    ]);
   }
 
-  // Session of the Dispatcharr web interface (same address): its access token, refreshed when expired
+  function donut(parts, size) {
+    size = size || 120;
+    var total = parts.reduce(function (s, p) { return s + p.value; }, 0);
+    var r = size / 2 - 10, c = 2 * Math.PI * r, offset = 0;
+    var node = svg("svg", { width: size, height: size, viewBox: "0 0 " + size + " " + size, role: "img", "aria-label": parts.map(function (p) { return p.label + " " + p.value; }).join(", ") }, [
+      svg("circle", { cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: "var(--field)", "stroke-width": 16 })
+    ]);
+    parts.forEach(function (p) {
+      if (!total || !p.value) return;
+      var length = c * p.value / total;
+      node.appendChild(svg("circle", { cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: p.color, "stroke-width": 16,
+        "stroke-dasharray": Math.max(0, length - 2) + " " + c, "stroke-dashoffset": -offset, transform: "rotate(-90 " + size / 2 + " " + size / 2 + ")" },
+        [svg("title", { text: p.label + ": " + p.value })]));
+      offset += length;
+    });
+    node.appendChild(svg("text", { x: size / 2, y: size / 2 + 2, "text-anchor": "middle", style: "fill:var(--text);font-size:20px;font-weight:700", text: String(total) }));
+    node.appendChild(svg("text", { x: size / 2, y: size / 2 + 18, "text-anchor": "middle", text: "open" }));
+    return node;
+  }
+
+  function sparkline(values, width, height) {
+    width = width || 90; height = height || 36;
+    var max = Math.max.apply(null, values.concat([1]));
+    var step = values.length > 1 ? width / (values.length - 1) : width;
+    var points = values.map(function (v, i) { return (i * step).toFixed(1) + "," + (height - 2 - (height - 4) * v / max).toFixed(1); });
+    return svg("svg", { width: width, height: height, viewBox: "0 0 " + width + " " + height, "aria-hidden": "true" }, [
+      svg("polygon", { points: "0," + height + " " + points.join(" ") + " " + width + "," + height, fill: "var(--accent-soft)" }),
+      svg("polyline", { points: points.join(" "), fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" })
+    ]);
+  }
+
+  // Vertical bars: items [{label, value, title}], a horizontal line at "limit" when given
+  function columns(box, items, options) {
+    options = options || {};
+    clear(box);
+    var H = box.clientHeight || 160, W = Math.max(240, box.clientWidth || 600), left = 28, bottom = 20, top = 8;
+    var max = Math.max.apply(null, items.map(function (i) { return i.value; }).concat([options.limit || 0, 1]));
+    var nice = Math.ceil(max / 4) * 4 || 4;
+    var node = svg("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H, role: "img", "aria-label": options.label || "" });
+    for (var g = 0; g <= 4; g++) {
+      var y = top + (H - top - bottom) * (1 - g / 4);
+      node.appendChild(svg("line", { x1: left, x2: W, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
+      node.appendChild(svg("text", { x: left - 6, y: y + 3, "text-anchor": "end", text: String(Math.round(nice * g / 4)) }));
+    }
+    var band = (W - left) / Math.max(1, items.length);
+    var labelEvery = Math.ceil(items.length / 10);
+    items.forEach(function (item, i) {
+      var h = (H - top - bottom) * item.value / nice;
+      var x = left + i * band + band * 0.18;
+      node.appendChild(svg("rect", { x: x, y: H - bottom - h, width: band * 0.64, height: Math.max(h, item.value ? 2 : 0), rx: 3,
+        fill: item.highlight ? "var(--accent-2)" : "var(--accent)" }, [svg("title", { text: item.title || (item.label + ": " + item.value) })]));
+      if (i % labelEvery === 0) node.appendChild(svg("text", { x: x + band * 0.32, y: H - 6, "text-anchor": "middle", text: item.label }));
+    });
+    if (options.limit) {
+      var ly = top + (H - top - bottom) * (1 - options.limit / nice);
+      node.appendChild(svg("line", { x1: left, x2: W, y1: ly, y2: ly, stroke: "var(--bad)", "stroke-width": 1.5, "stroke-dasharray": "4 4", "vector-effect": "non-scaling-stroke" }));
+      node.appendChild(svg("text", { x: W, y: ly - 4, "text-anchor": "end", style: "fill:var(--bad)", text: "limit " + options.limit }));
+    }
+    box.appendChild(node);
+    if (!items.some(function (i) { return i.value; })) {
+      node.appendChild(svg("text", { x: (W + left) / 2, y: H / 2, "text-anchor": "middle", style: "font-size:12px", text: options.empty || "Nothing yet." }));
+    }
+  }
+
+  function hbars(box, items, options) {
+    options = options || {};
+    clear(box);
+    var max = Math.max.apply(null, items.map(function (i) { return i.value; }).concat([1]));
+    items.forEach(function (item, index) {
+      var row = el("div", { class: "hbar" }, [
+        el("span", { class: "name", title: item.label, text: item.label }),
+        el("div", { class: "bar thin" }, [el("span", { style: "width:" + pct(item.value, max) + "%;background:" + (item.color || "var(--s" + (1 + index % 6) + ")") })]),
+        el("span", { class: "num", text: fmt(item.value) })
+      ]);
+      if (item.onclick) { row.style.cursor = "pointer"; row.addEventListener("click", item.onclick); row.title = options.hint || ""; }
+      box.appendChild(row);
+    });
+    if (!items.length) box.appendChild(el("div", { class: "muted small", text: options.empty || "Nothing yet." }));
+  }
+
+  function stacked(bar, legend, parts, onpick) {
+    clear(bar); clear(legend);
+    var total = parts.reduce(function (s, p) { return s + p.value; }, 0);
+    parts.forEach(function (p) {
+      if (p.value) bar.appendChild(el("span", { style: "width:" + (100 * p.value / Math.max(1, total)) + "%;background:" + p.color, title: p.label + ": " + p.value }));
+      var item = el("button", { type: "button" }, [el("i", { style: "background:" + p.color }), document.createTextNode(p.label + " · " + p.value)]);
+      if (onpick) item.addEventListener("click", function () { onpick(p.key); }); else item.disabled = true;
+      legend.appendChild(item);
+    });
+  }
+
+  // ---------- Dispatcharr session of this browser: its access token, refreshed when expired
   function refreshToken() {
     var refresh = localStorage.getItem("refreshToken");
     if (!refresh) return Promise.reject(new Error("signed out"));
@@ -192,113 +487,279 @@
         return options.raw ? response.blob() : response.json();
       });
   }
+  function post(path, body) { return call(path, { method: "POST", body: body || {} }); }
 
+  // ---------- Tabs
+  function showTab(name) {
+    document.querySelectorAll("[role=tab]").forEach(function (tab) { tab.setAttribute("aria-selected", String(tab.dataset.tab === name)); });
+    document.querySelectorAll("[role=tabpanel]").forEach(function (panel) { panel.hidden = panel.dataset.panel !== name; });
+    try { sessionStorage.setItem("tele-tab", name); } catch (e) {}
+    redraw();
+  }
+  // The charts are drawn at the width of their card: again once it is shown or resized
+  function redraw() {
+    if (state.overviewDays) showOverviewDays(state.overviewDays);
+    if (state.stats) showStats(state.stats);
+  }
+  var resizeTimer;
+  window.addEventListener("resize", function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(redraw, 150); });
+  document.querySelectorAll("[role=tab]").forEach(function (tab) {
+    tab.addEventListener("click", function () { showTab(tab.dataset.tab); });
+    tab.addEventListener("keydown", function (event) {
+      var tabs = Array.from(document.querySelectorAll("[role=tab]"));
+      var i = tabs.indexOf(tab);
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        var next = tabs[(i + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+        next.focus(); showTab(next.dataset.tab);
+      }
+    });
+  });
+
+  // ---------- Overview
   function showSlots(slots) {
-    var box = document.getElementById("slots");
-    clear(box);
-    (slots.accounts || []).forEach(function (account) {
-      var used = account.total ? Math.round(100 * account.used / account.total) : 0;
-      box.appendChild(el("div", { style: "display:flex;flex-direction:column;gap:6px;margin-bottom:10px" }, [
-        el("div", { class: "row", style: "justify-content:space-between" }, [
-          el("span", { text: account.name }),
-          el("span", { class: "muted", text: account.unlimited && !account.total ? "Unlimited" : account.free + " free of " + account.total })
+    state.slots = slots;
+    var box = clear($("slots"));
+    var accounts = slots.accounts || [];
+    accounts.forEach(function (account) {
+      var p = pct(account.used, account.total);
+      box.appendChild(el("div", {}, [
+        el("div", { class: "spread small" }, [
+          el("span", { text: account.name || "Account " + account.id }),
+          el("span", { class: "muted", text: account.unlimited && !account.total ? "Unlimited" : account.used + " / " + account.total + " · " + account.free + " free" })
         ]),
-        el("div", { class: "bar", role: "img", "aria-label": used + "% in use" }, [el("div", { style: "width:" + used + "%" })])
+        el("div", { class: "bar", style: "margin-top:6px", role: "img", "aria-label": p + " % in use" },
+          [el("span", { style: "width:" + p + "%;background:" + loadColor(p) })])
       ]));
     });
-    if (!box.firstChild) box.appendChild(el("div", { class: "muted", text: "No provider account." }));
+    if (!accounts.length) box.appendChild(el("div", { class: "muted", text: "No provider account." }));
+    var total = slots.total || 0, used = slots.used || 0;
+    text("slots-total", total ? used + " of " + total + " in use" : "");
+    text("kpi-slots", total ? used + " / " + total : (accounts.length ? "∞" : "–"));
+    text("kpi-slots-sub", total ? (slots.free || 0) + " free" + (slots.unlimited ? " · + unlimited" : "") : "");
+    clear($("kpi-slots-ring")).appendChild(ring(pct(used, total), loadColor(pct(used, total))));
+  }
+
+  function showOverviewDays(data) {
+    state.overviewDays = data;
+    var days = (data.daily_starts || []).slice(-14);
+    var total = days.reduce(function (s, d) { return s + d.starts; }, 0);
+    text("days-total", fmt(total) + " starts");
+    columns($("overview-days"), days.map(function (d, i) {
+      return { label: dayLabel(d.day), value: d.starts, title: dayLabel(d.day, true) + ": " + d.starts + " starts", highlight: i === days.length - 1 };
+    }), { label: "Channel starts per day", empty: "Counted from the channel start events of Dispatcharr." });
+    var today = days.length ? days[days.length - 1].starts : 0;
+    var yesterday = days.length > 1 ? days[days.length - 2].starts : 0;
+    text("kpi-starts", fmt(today));
+    var diff = today - yesterday;
+    $("kpi-starts-sub").textContent = (diff >= 0 ? "▲ " : "▼ ") + Math.abs(diff) + " vs yesterday";
+    $("kpi-starts-sub").className = "sub " + (diff >= 0 ? "ok" : "bad");
+    clear($("kpi-starts-spark")).appendChild(sparkline(days.map(function (d) { return d.starts; })));
+  }
+
+  // ---------- Sessions & TVs
+  function shownSessions() {
+    var user = $("session-user").value, kind = $("session-kind").value;
+    return state.sessions.filter(function (s) { return (!user || s.user === user) && (!kind || s.kind === kind); });
   }
 
   function showSessions(list) {
-    var body = document.getElementById("sessions");
-    clear(body);
-    list.forEach(function (session) {
+    if (list) {
+      state.sessions = list;
+      var select = $("session-user"), current = select.value;
+      while (select.options.length > 1) select.remove(1);
+      Array.from(new Set(list.map(function (s) { return s.user; }).filter(Boolean))).sort().forEach(function (name) {
+        select.appendChild(el("option", { value: name, text: name }));
+      });
+      select.value = current;
+      var live = list.filter(function (s) { return s.kind !== "vod"; }).length, vod = list.length - live;
+      text("kpi-sessions", String(list.length));
+      text("kpi-sessions-sub", live + " live · " + vod + " VOD");
+      text("badge-sessions", String(list.length));
+      clear($("kpi-sessions-chart")).appendChild(donutSmall([{ value: live, color: "var(--s1)" }, { value: vod, color: "var(--s2)" }]));
+      var users = {};
+      list.forEach(function (s) { var u = s.user || "?"; users[u] = (users[u] || 0) + 1; });
+      hbars($("by-user"), Object.keys(users).sort(function (a, b) { return users[b] - users[a]; }).map(function (u) {
+        return { label: u, value: users[u], onclick: function () { $("session-user").value = u === "?" ? "" : u; showSessions(); } };
+      }), { empty: "No session open.", hint: "Show only this user" });
+      var parts = [{ label: "Live", value: live, color: "var(--s1)" }, { label: "Movie / episode", value: vod, color: "var(--s2)" }];
+      clear($("by-kind-donut")).appendChild(donut(parts));
+      var legend = clear($("by-kind-legend"));
+      parts.forEach(function (p) { legend.appendChild(el("span", {}, [el("i", { style: "background:" + p.color }), document.createTextNode(p.label + " · " + p.value + " (" + pct(p.value, list.length) + " %)")])); });
+    }
+    var shown = shownSessions();
+    text("sessions-count", shown.length + " of " + state.sessions.length);
+    $("close-shown").disabled = !shown.length;
+    var body = clear($("sessions"));
+    shown.forEach(function (session) {
       var button = el("button", { class: "danger", type: "button", text: "Close", onclick: function () {
         button.disabled = true;
-        call("sessions/release/", { method: "POST", body: { ids: [session.id] } })
-          .then(function () { say("Session closed"); load(); })
+        post("sessions/release/", { ids: [session.id] }).then(function () { say("Session closed"); load(); })
           .catch(function (error) { button.disabled = false; say("Not closed: " + error.message); });
       } });
       body.appendChild(el("tr", {}, [
         el("td", { text: session.title || "" }),
-        el("td", { text: session.kind === "vod" ? "Movie / episode" : "Live" }),
+        el("td", {}, [el("span", { class: "pill", style: "color:" + (session.kind === "vod" ? "var(--s2)" : "var(--s1)"), text: session.kind === "vod" ? "VOD" : "Live" })]),
         el("td", { text: session.user || "" }),
-        el("td", { text: session.user_agent || "" }),
-        el("td", { class: "muted", text: since(session.connected_at) }),
+        el("td", { class: "muted small", text: session.user_agent || "" }),
+        el("td", { class: "muted", title: when(session.connected_at), text: ago(session.connected_at) }),
         el("td", { class: "actions" }, [button])
       ]));
     });
-    if (!list.length) body.appendChild(el("tr", {}, [el("td", { colspan: "6", class: "muted", text: "No session open." })]));
+    empty(body, 6, "No session open.");
   }
 
-  var statsDays = 7;
-
-  function showStats(data) {
-    var top = document.getElementById("top-channels");
-    clear(top);
-    (data.top_channels || []).forEach(function (c) {
-      top.appendChild(el("tr", {}, [el("td", { text: c.name }), el("td", { class: "actions", text: String(c.starts) })]));
+  function donutSmall(parts) {
+    var size = 48, r = 18, c = 2 * Math.PI * r, total = parts.reduce(function (s, p) { return s + p.value; }, 0), offset = 0;
+    var node = svg("svg", { width: size, height: size, viewBox: "0 0 48 48", "aria-hidden": "true" }, [svg("circle", { cx: 24, cy: 24, r: r, fill: "none", stroke: "var(--field)", "stroke-width": 7 })]);
+    parts.forEach(function (p) {
+      if (!total || !p.value) return;
+      var length = c * p.value / total;
+      node.appendChild(svg("circle", { cx: 24, cy: 24, r: r, fill: "none", stroke: p.color, "stroke-width": 7, "stroke-dasharray": length + " " + c, "stroke-dashoffset": -offset, transform: "rotate(-90 24 24)" }));
+      offset += length;
     });
-    if (!top.firstChild) top.appendChild(el("tr", {}, [el("td", { class: "muted", text: "No channel started yet." })]));
-    var box = document.getElementById("peaks");
-    clear(box);
-    (data.peaks || []).forEach(function (account) {
-      var highest = Math.max.apply(null, account.days.map(function (d) { return d.used; }).concat([0]));
-      box.appendChild(el("div", { class: "row", style: "justify-content:space-between;margin-top:6px" }, [
-        el("span", { text: account.name }),
-        el("span", { class: "muted", text: "peak " + highest + (account.max ? " of " + account.max : "") })
-      ]));
-      var bars = el("div", { style: "display:flex;gap:2px;align-items:flex-end;height:40px", role: "img",
-        "aria-label": account.name + ": highest connections used per day" });
-      account.days.forEach(function (d) {
-        var height = account.max ? Math.max(2, Math.round(40 * Math.min(1, d.used / account.max))) : (d.used ? 20 : 2);
-        bars.appendChild(el("div", { title: d.day + ": " + d.used, style: "flex:1;min-width:3px;background:var(--accent);height:" + height + "px" }));
-      });
-      box.appendChild(bars);
-    });
-    if (!box.firstChild) box.appendChild(el("div", { class: "muted", text: "Sampled every 10 minutes; nothing yet." }));
-  }
-
-  function loadStats(days) {
-    statsDays = days;
-    document.getElementById("stats-7").setAttribute("aria-pressed", String(days === 7));
-    document.getElementById("stats-30").setAttribute("aria-pressed", String(days === 30));
-    document.getElementById("stats-7").className = days === 7 ? "primary" : "";
-    document.getElementById("stats-30").className = days === 30 ? "primary" : "";
-    return call("admin/stats/?days=" + days).then(showStats).catch(function () { showStats({}); });
+    return node;
   }
 
   function showDevices(list) {
-    var body = document.getElementById("devices");
-    clear(body);
+    state.devices = list;
+    var active = list.filter(function (d) { return d.last_seen && Date.now() / 1000 - d.last_seen < 86400; }).length;
+    text("kpi-tvs", String(list.length));
+    text("kpi-tvs-sub", active + " seen in the last 24 h · " + list.filter(function (d) { return d.sessions; }).length + " playing");
+    var versions = {};
+    list.forEach(function (d) { if (d.version) versions[d.version] = (versions[d.version] || 0) + 1; });
+    text("devices-versions", Object.keys(versions).sort().reverse().map(function (v) { return "v" + v + " × " + versions[v]; }).join(" · "));
+    var body = clear($("devices"));
     list.forEach(function (device) {
+      var recent = device.last_seen && Date.now() / 1000 - device.last_seen < 900;
       var button = el("button", { class: "danger", type: "button", text: "Close its sessions", onclick: function () {
         button.disabled = true;
-        call("admin/devices/release/", { method: "POST", body: { device: device.id } })
-          .then(function (data) { say((data.released || []).length + " session(s) closed"); load(); })
+        post("admin/devices/release/", { device: device.id }).then(function (data) { say((data.released || []).length + " session(s) closed"); load(); })
           .catch(function (error) { button.disabled = false; say("Not closed: " + error.message); });
       } });
       if (!device.sessions) button.disabled = true;
+      var forget = el("button", { type: "button", text: "Forget", onclick: function () {
+        if (!window.confirm("Forget this TV? It comes back at its next request.")) return;
+        post("admin/devices/forget/", { device: device.id }).then(function () { say("TV forgotten"); load(); }).catch(fail("Not done"));
+      } });
       body.appendChild(el("tr", {}, [
-        el("td", { text: device.id }),
+        el("td", {}, [el("span", { class: "dot" + (recent ? "" : " off"), title: recent ? "Seen in the last 15 minutes" : "Not seen lately" })]),
+        el("td", { style: "font-family:ui-monospace,monospace;font-size:12px", text: device.id }),
         el("td", { text: device.user || "" }),
-        el("td", { text: device.version || "" }),
+        el("td", { text: device.version ? "v" + device.version : "" }),
         el("td", { class: "muted", text: device.ip || "" }),
-        el("td", { class: "muted", text: since(device.last_seen) }),
+        el("td", { class: "muted", title: when(device.last_seen), text: ago(device.last_seen) }),
         el("td", { text: String(device.sessions || 0) }),
-        el("td", { class: "actions" }, [button])
+        el("td", { class: "actions" }, [button, forget])
       ]));
     });
-    if (!list.length) body.appendChild(el("tr", {}, [el("td", { colspan: "7", class: "muted", text: "No Télé TV seen yet." })]));
+    empty(body, 8, "No Télé TV seen yet.");
+  }
+
+  // ---------- Statistics
+  function showStats(data) {
+    state.stats = data;
+    var days = data.daily_starts || [];
+    var total = days.reduce(function (s, d) { return s + d.starts; }, 0);
+    text("stats-days-total", fmt(total) + " starts · " + fmt(Math.round(total / Math.max(1, days.length))) + " a day");
+    columns($("stats-days"), days.map(function (d) { return { label: dayLabel(d.day), value: d.starts, title: dayLabel(d.day, true) + ": " + d.starts }; }),
+      { label: "Channel starts per day" });
+    // Hours of the server are UTC: shown in the time zone of this browser
+    var utc = data.hourly_starts_utc || [], shift = -new Date().getTimezoneOffset() / 60, hours = [];
+    for (var h = 0; h < 24; h++) hours.push(utc[((h - shift) % 24 + 24) % 24 | 0] || 0);
+    var peak = hours.indexOf(Math.max.apply(null, hours));
+    text("stats-hours-peak", hours[peak] ? "busiest at " + peak + ":00" : "");
+    columns($("stats-hours"), hours.map(function (v, i) { return { label: i + "h", value: v, title: i + ":00 – " + (i + 1) + ":00: " + v, highlight: i === peak && v > 0 }; }),
+      { label: "Channel starts by hour" });
+    hbars($("top-channels"), (data.top_channels || []).slice(0, 15).map(function (c) { return { label: c.name, value: c.starts }; }),
+      { empty: "No channel started yet." });
+    var box = clear($("peaks"));
+    (data.peaks || []).forEach(function (account) {
+      var highest = Math.max.apply(null, account.days.map(function (d) { return d.used; }).concat([0]));
+      var chart = el("div", { class: "chart", style: "height:120px" });
+      box.appendChild(el("div", {}, [
+        el("div", { class: "spread small" }, [el("strong", { text: account.name || "" }),
+          el("span", { class: highest && account.max && highest >= account.max ? "bad" : "muted", text: "peak " + highest + (account.max ? " of " + account.max : "") })]),
+        chart
+      ]));
+      columns(chart, account.days.map(function (d) { return { label: dayLabel(d.day), value: d.used, title: dayLabel(d.day, true) + ": " + d.used + " used" }; }),
+        { limit: account.max, label: account.name + ": highest connections used per day" });
+    });
+    if (!box.firstChild) box.appendChild(el("div", { class: "muted small", text: "Sampled every 10 minutes; nothing yet." }));
+  }
+
+  function loadStats(days) {
+    state.statsDays = days;
+    document.querySelectorAll("[data-days]").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.dataset.days === days)); });
+    return call("admin/stats/?days=" + days).then(showStats).catch(function () { showStats({}); });
+  }
+
+  // ---------- VOD: probes, languages, TMDB, categories
+  var STATES = {
+    measured: ["Measured", "var(--ok)", "ok"], manual: ["Set by hand", "var(--s3)", "ok"], pending: ["Not probed", "var(--idle)", "idle"],
+    retrying: ["To retry", "var(--warn)", "warn"], failed: ["Failed", "var(--bad)", "bad"], excluded: ["Excluded", "#2f333b", "idle"]
+  };
+
+  function showProbes(data) {
+    state.probes = data;
+    var s = data.settings;
+    text("probe-settings", s.enabled
+      ? (s.scope === "all" ? "Every category" : "Uncertain categories only") + " · " + s.min_free + " free connection(s) kept for viewers · " + s.pause_seconds + " s between two probes"
+      : "Probes turned off in the plugin settings.");
+    var last = data.last_run;
+    text("probe-last", last ? "last run " + ago(last.at) + (last.probed !== undefined ? " · " + last.probed + " probed" : "") : "never run");
+  }
+
+  function showCategoryCharts() {
+    var list = state.categories, counts = {};
+    Object.keys(STATES).forEach(function (k) { counts[k] = 0; });
+    list.forEach(function (c) { counts[c.state] = (counts[c.state] || 0) + 1; });
+    var known = counts.measured + counts.manual, counted = list.length - counts.excluded;
+    text("probe-percent", pct(known, counted) + " % · " + known + " / " + counted);
+    stacked($("probe-bar"), $("probe-legend"), Object.keys(STATES).map(function (k) {
+      return { key: k, label: STATES[k][0], value: counts[k], color: STATES[k][1] };
+    }), function (key) { $("filter-state").value = key; showCategories(); $("categories").scrollIntoView({ behavior: "smooth", block: "nearest" }); });
+    text("kpi-vod", pct(known, counted) + " %");
+    text("kpi-vod-sub", known + " of " + counted + " categories" + (counts.failed ? " · " + counts.failed + " failed" : ""));
+    clear($("kpi-vod-ring")).appendChild(ring(pct(known, counted), "var(--ok)"));
+    showLanguages();
+  }
+
+  function showLanguages() {
+    var field = state.lang === "audio" ? "audio" : "subtitles", counts = {};
+    state.categories.forEach(function (c) { (c[field] || []).forEach(function (code) { counts[code] = (counts[code] || 0) + 1; }); });
+    hbars($("langs"), Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 12).map(function (code) {
+      return { label: language(code), value: counts[code], onclick: function () {
+        $("filter-" + field).value = code; showCategories(); $("categories").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } };
+    }), { empty: "No language measured yet.", hint: "Show these categories" });
+    $("lang-audio").setAttribute("aria-pressed", String(field === "audio"));
+    $("lang-subs").setAttribute("aria-pressed", String(field !== "audio"));
+  }
+
+  function categoryAction(c, body, done) {
+    return post("admin/categories/action/", Object.assign({ id: c.id }, body))
+      .then(function (answer) { say(answer.message || done); return loadCategories(); })
+      .catch(fail("Not done"));
+  }
+
+  function askCodes(label, current) {
+    var value = window.prompt(label + " (ISO codes separated by commas, e.g. fr,en; empty for none)", (current || []).join(","));
+    if (value === null) return null;
+    var codes = value.split(",").map(function (v) { return v.trim().toLowerCase(); }).filter(Boolean);
+    return codes.every(function (c) { return /^[a-z]{2}$/.test(c); }) ? codes : false;
+  }
+
+  function fillLanguageFilter(id, codes) {
+    var select = $(id), current = select.value;
+    while (select.options.length > 1) select.remove(1);
+    codes.map(function (code) { return [code, language(code)]; }).sort(function (a, b) { return a[1].localeCompare(b[1]); })
+      .forEach(function (pair) { select.appendChild(el("option", { value: pair[0], text: pair[1] })); });
+    select.value = current;
   }
 
   function chips(codes) {
     var cell = el("td", {});
-    (codes || []).forEach(function (code) {
-      var name = code;
-      try { name = new Intl.DisplayNames([navigator.language || "en"], { type: "language" }).of(code) || code; } catch (e) {}
-      cell.appendChild(el("span", { class: "chip", text: name }));
-    });
+    (codes || []).forEach(function (code) { cell.appendChild(el("span", { class: "chip", title: code, text: language(code) })); });
     return cell;
   }
 
@@ -313,86 +774,208 @@
   }
 
   function showCategories() {
-    var filter = document.getElementById("find").value.trim().toLowerCase();
-    var body = document.getElementById("categories");
-    clear(body);
-    categories.filter(function (c) { return !filter || String(c.name || "").toLowerCase().indexOf(filter) >= 0; })
-      .forEach(function (c) {
-        var state = c.status === "ok" ? ["Measured", "ok"] : c.attempts >= 3 ? ["Failed (" + c.attempts + " attempts)", "bad"] : ["To retry", "warn"];
-        var again = el("button", { type: "button", text: "Probe again", onclick: function () {
-          again.disabled = true;
-          call("admin/probes/reset/", { method: "POST", body: { id: c.id } })
-            .then(function () { say("Probed again at the next run"); load(); })
-            .catch(function (error) { again.disabled = false; say("Not done: " + error.message); });
+    var find = $("find").value.trim().toLowerCase(), st = $("filter-state").value, type = $("filter-type").value;
+    var audio = $("filter-audio").value, subtitles = $("filter-subtitles").value, uncertain = $("filter-uncertain").checked;
+    var shown = state.categories.filter(function (c) {
+      return (!find || String(c.name || "").toLowerCase().indexOf(find) >= 0) && (!st || c.state === st) &&
+        (!type || c.type === type) && (!audio || c.audio.indexOf(audio) >= 0) &&
+        (!subtitles || c.subtitles.indexOf(subtitles) >= 0) && (!uncertain || c.uncertain);
+    });
+    text("categories-count", shown.length + " of " + state.categories.length + (shown.length > 500 ? " · first 500 shown" : ""));
+    var body = clear($("categories"));
+    shown.slice(0, 500).forEach(function (c) {
+      var label = STATES[c.state] || [c.state, "var(--idle)", "idle"];
+      var buttons = [];
+      if (c.state !== "excluded") {
+        var now = el("button", { type: "button", text: "Probe", title: "Probe one file of this category now", onclick: function () {
+          now.disabled = true; now.textContent = "…";
+          say("Probing " + c.name + "…");
+          categoryAction(c, { action: "probe" }, "Probed");
         } });
-        body.appendChild(el("tr", {}, [
-          el("td", { text: c.name || "" }),
-          el("td", { class: "muted", text: c.sample || "" }),
-          el("td", { text: quality(c.quality) }),
-          chips(c.audio),
-          chips(c.subtitles),
-          el("td", { class: state[1], text: state[0] }),
-          el("td", { class: "actions" }, [again])
-        ]));
-      });
-    if (!body.firstChild) body.appendChild(el("tr", {}, [el("td", { colspan: "7", class: "muted", text: "No category probed yet." })]));
+        buttons.push(now);
+      }
+      buttons.push(el("button", { type: "button", text: "Languages…", title: "Set the languages by hand", onclick: function () {
+        var a = askCodes("Audio of “" + c.name + "”", c.audio);
+        if (a === null) return;
+        var t = askCodes("Subtitles of “" + c.name + "”", c.subtitles);
+        if (t === null) return;
+        if (a === false || t === false || (!a.length && !t.length)) { say("Two-letter codes only, e.g. fr,en"); return; }
+        categoryAction(c, { action: "manual", audio: a, subtitles: t }, "Languages set by hand");
+      } }));
+      if (c.state === "manual" || c.state === "measured" || c.state === "failed" || c.state === "retrying") {
+        buttons.push(el("button", { type: "button", class: "ghost", text: "Forget", title: "Probe it again from the next run", onclick: function () { categoryAction(c, { action: "clear" }, "Forgotten: probed again"); } }));
+      }
+      buttons.push(c.state === "excluded"
+        ? el("button", { type: "button", text: "Include", onclick: function () { categoryAction(c, { action: "include" }, "Included again"); } })
+        : el("button", { class: "danger", type: "button", text: "Exclude", title: "Never probe this category", onclick: function () { categoryAction(c, { action: "exclude" }, "Excluded from the probes"); } }));
+      body.appendChild(el("tr", {}, [
+        el("td", {}, [el("div", { text: c.name || "" }), el("div", { class: "muted small", text: (c.type === "series" ? "Series" : "Movies") + (c.uncertain ? " · uncertain name" : "") + (c.sample ? " · " + c.sample : "") })]),
+        el("td", { class: "muted", text: c.account || "" }),
+        el("td", { class: "small", text: quality(c.quality) }),
+        chips(c.audio),
+        chips(c.subtitles),
+        el("td", {}, [el("span", { class: "pill " + label[2], title: c.probed_at ? when(c.probed_at) : "",
+          text: label[0] + (c.state === "failed" || c.state === "retrying" ? " (" + c.attempts + ")" : "") })]),
+        el("td", { class: "actions" }, buttons)
+      ]));
+    });
+    empty(body, 7, "No category matches.");
   }
 
-  function showProbes(data) {
-    document.getElementById("count-measured").textContent = data.summary.measured;
-    document.getElementById("count-retrying").textContent = data.summary.retrying;
-    document.getElementById("count-failed").textContent = data.summary.failed;
-    var s = data.settings;
-    document.getElementById("probe-settings").textContent = s.enabled
-      ? (s.scope === "all" ? "Every category" : "Uncertain categories") + " · " + s.min_free + " free connection(s) kept · " + s.pause_seconds + " s between two probes"
-      : "Probes turned off in the plugin settings.";
-    categories = data.categories || [];
-    showCategories();
+  function loadCategories() {
+    return call("admin/categories/").then(function (data) {
+      state.categories = data.categories || [];
+      var audio = {}, subtitles = {};
+      state.categories.forEach(function (c) { c.audio.forEach(function (a) { audio[a] = 1; }); c.subtitles.forEach(function (t) { subtitles[t] = 1; }); });
+      fillLanguageFilter("filter-audio", Object.keys(audio));
+      fillLanguageFilter("filter-subtitles", Object.keys(subtitles));
+      showCategoryCharts();
+      showCategories();
+    });
   }
 
+  function showTmdb(data) {
+    if (data) {
+      state.tmdb = data;
+      state.unmatched = data.unmatched_titles || [];
+      var matched = data.matched || 0, missed = data.unmatched || 0, p = pct(matched, matched + missed);
+      text("tmdb-state", data.key_set ? (data.enabled ? "Key set · language " + (data.language || "") : "Key set · matching turned off in the settings") : "No key: missing TMDB ids are not looked up");
+      text("tmdb-percent", data.key_set ? p + " % · " + fmt(matched) + " / " + fmt(matched + missed) : "–");
+      stacked($("tmdb-bar"), document.createElement("div"), [
+        { label: "Matched", value: matched, color: "var(--ok)" }, { label: "Without a sure match", value: missed, color: "var(--warn)" }]);
+      text("kpi-tmdb", data.key_set ? p + " %" : "Off");
+      text("kpi-tmdb-sub", data.key_set ? fmt(matched) + " titles · " + fmt(missed) + " unsure" : "Set a key in VOD");
+      clear($("kpi-tmdb-ring")).appendChild(ring(data.key_set ? p : 0, "var(--accent-2)"));
+      $("tmdb-remove").disabled = !data.key_set;
+      text("tmdb-unmatched-count", missed ? "(" + fmt(missed) + ", latest " + state.unmatched.length + " listed)" : "");
+    }
+    var find = $("tmdb-find").value.trim().toLowerCase(), kind = $("tmdb-kind").value;
+    var body = clear($("tmdb-unmatched"));
+    state.unmatched.filter(function (t) {
+      return (!kind || t.kind === kind) && (!find || String(t.name || "").toLowerCase().indexOf(find) >= 0);
+    }).forEach(function (t) {
+      var set = el("button", { type: "button", text: "Set the TMDB id…", onclick: function () {
+        var value = window.prompt("TMDB id of “" + t.name + "” (the number in its themoviedb.org address)");
+        if (!value || !/^[0-9]{1,10}$/.test(value.trim())) return;
+        post("admin/tmdb/item/", { kind: t.kind, item: t.item, tmdb: parseInt(value.trim(), 10) })
+          .then(function () { say("TMDB id saved"); return call("admin/tmdb/").then(showTmdb); }).catch(fail("Not saved"));
+      } });
+      var again = el("button", { type: "button", class: "ghost", text: "Search again", onclick: function () {
+        post("admin/tmdb/item/", { kind: t.kind, item: t.item, tmdb: null })
+          .then(function () { say("Searched again at the next run"); return call("admin/tmdb/").then(showTmdb); }).catch(fail("Not done"));
+      } });
+      body.appendChild(el("tr", {}, [
+        el("td", { text: t.name || "" }), el("td", { class: "muted", text: t.query || "" }), el("td", { text: t.year ? String(t.year) : "" }),
+        el("td", {}, [el("span", { class: "pill", style: "color:" + (t.kind === "series" ? "var(--s3)" : "var(--s4)"), text: t.kind === "series" ? "Series" : "Movie" })]),
+        el("td", { class: "actions" }, [set, again])
+      ]));
+    });
+    empty(body, 5, "Nothing here.");
+  }
+
+  // ---------- Loading
+  var loading = false;
   function load() {
+    if (loading) return Promise.resolve();
+    loading = true;
+    $("refresh").disabled = true;
     return call("info/").then(function (info) {
       if (!info.user || !info.user.admin) throw new Error("forbidden");
-      document.getElementById("subtitle").textContent = "Signed in as " + info.user.username + " · plugin v" + info.version;
-      document.getElementById("content").hidden = false;
+      text("subtitle", "Signed in as " + info.user.username + " · plugin v" + info.version + " · updated " + new Date().toLocaleTimeString());
+      $("content").hidden = false;
       return Promise.all([
         call("slots/").then(showSlots).catch(function () { showSlots({}); }),
         call("sessions/?all=1").then(function (data) { showSessions(data.sessions || []); }),
         call("admin/probes/").then(showProbes),
         call("admin/devices/").then(function (data) { showDevices(data.devices || []); }),
-        loadStats(statsDays)
+        call("admin/stats/?days=14").then(showOverviewDays).catch(function () { showOverviewDays({}); }),
+        loadStats(state.statsDays),
+        call("admin/tmdb/").then(showTmdb),
+        loadCategories()
       ]);
     }).catch(function (error) {
       if (error.message === "signed out" || error.message === "forbidden") {
-        document.getElementById("content").hidden = true;
-        document.getElementById("signin").hidden = false;
+        $("content").hidden = true;
+        $("signin").hidden = false;
       } else {
         say("Not loaded: " + error.message);
       }
-    });
+    }).then(function () { loading = false; $("refresh").disabled = false; });
   }
 
-  document.getElementById("refresh").addEventListener("click", function () { say(""); load(); });
-  document.getElementById("stats-7").addEventListener("click", function () { loadStats(7); });
-  document.getElementById("stats-30").addEventListener("click", function () { loadStats(30); });
-  document.getElementById("find").addEventListener("input", showCategories);
-  document.getElementById("probe-now").addEventListener("click", function () {
-    call("admin/probes/run/", { method: "POST", body: {} }).then(function () { say("Probes started"); })
-      .catch(function (error) { say("Not started: " + error.message); });
+  // ---------- Controls
+  $("refresh").addEventListener("click", function () { load(); });
+  var timer = null;
+  $("auto").addEventListener("change", function () {
+    clearInterval(timer);
+    timer = this.checked ? setInterval(function () { if (!document.hidden) load(); }, 30000) : null;
+    try { localStorage.setItem("tele-auto", this.checked ? "1" : ""); } catch (e) {}
   });
-  document.getElementById("reset-all").addEventListener("click", function () {
+  document.querySelectorAll("[data-days]").forEach(function (b) { b.addEventListener("click", function () { loadStats(+b.dataset.days); }); });
+  $("lang-audio").addEventListener("click", function () { state.lang = "audio"; showLanguages(); });
+  $("lang-subs").addEventListener("click", function () { state.lang = "subtitles"; showLanguages(); });
+
+  $("tmdb-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var input = $("tmdb-key"), key = input.value.trim();
+    if (!key) return;
+    post("admin/tmdb/", { key: key })
+      .then(function () { input.value = ""; say("TMDB key saved"); return call("admin/tmdb/").then(showTmdb); })
+      .catch(function () { say("TMDB refused this key"); });
+  });
+  $("tmdb-remove").addEventListener("click", function () {
+    if (!window.confirm("Remove the TMDB key?")) return;
+    post("admin/tmdb/", { key: null }).then(function () { say("TMDB key removed"); return call("admin/tmdb/").then(showTmdb); }).catch(fail("Not done"));
+  });
+  $("tmdb-find").addEventListener("input", function () { showTmdb(); });
+  $("tmdb-kind").addEventListener("change", function () { showTmdb(); });
+  $("tmdb-retry").addEventListener("click", function () {
+    post("admin/tmdb/item/", { retry: true })
+      .then(function (data) { say(data.forgotten + " titles searched again from the next run"); return call("admin/tmdb/").then(showTmdb); })
+      .catch(fail("Not done"));
+  });
+
+  $("find").addEventListener("input", showCategories);
+  ["filter-state", "filter-type", "filter-audio", "filter-subtitles", "filter-uncertain"].forEach(function (id) { $(id).addEventListener("change", showCategories); });
+  $("filter-clear").addEventListener("click", function () {
+    $("find").value = ""; $("filter-uncertain").checked = false;
+    ["filter-state", "filter-type", "filter-audio", "filter-subtitles"].forEach(function (id) { $(id).value = ""; });
+    showCategories();
+  });
+  $("retry-failed").addEventListener("click", function () {
+    post("admin/probes/retry/").then(function (data) { say(data.forgotten + " failed categories probed again from the next run"); return loadCategories(); })
+      .catch(fail("Not done"));
+  });
+  $("probe-now").addEventListener("click", function () {
+    post("admin/probes/run/").then(function () { say("Probes started: within 15 seconds"); }).catch(fail("Not started"));
+  });
+  $("reset-all").addEventListener("click", function () {
     if (!window.confirm("Forget every measured language? Every category will be probed again.")) return;
-    call("admin/probes/reset/", { method: "POST", body: {} }).then(function () { say("Measured languages forgotten"); load(); })
-      .catch(function (error) { say("Not done: " + error.message); });
+    post("admin/probes/reset/").then(function () { say("Measured languages forgotten"); load(); }).catch(fail("Not done"));
   });
-  document.getElementById("export").addEventListener("click", function () {
+  $("export").addEventListener("click", function () {
     call("admin/probes/export/", { raw: true }).then(function (blob) {
       var link = el("a", { href: URL.createObjectURL(blob), download: "vod-language-cases.json" });
       document.body.appendChild(link);
       link.click();
       setTimeout(function () { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
-    }).catch(function (error) { say("Not exported: " + error.message); });
+    }).catch(fail("Not exported"));
   });
+
+  $("session-user").addEventListener("change", function () { showSessions(); });
+  $("session-kind").addEventListener("change", function () { showSessions(); });
+  $("close-shown").addEventListener("click", function () {
+    var ids = shownSessions().map(function (s) { return s.id; });
+    if (!ids.length || !window.confirm("Close " + ids.length + " session(s)?")) return;
+    post("sessions/release/", { ids: ids.slice(0, 50) }).then(function (data) { say((data.released || []).length + " session(s) closed"); load(); })
+      .catch(fail("Not closed"));
+  });
+
+  try {
+    var tab = sessionStorage.getItem("tele-tab");
+    if (tab && document.querySelector("[data-tab='" + tab + "']")) showTab(tab);
+    if (localStorage.getItem("tele-auto")) { $("auto").checked = true; $("auto").dispatchEvent(new Event("change")); }
+  } catch (e) {}
   load();
 })();
 </script>
