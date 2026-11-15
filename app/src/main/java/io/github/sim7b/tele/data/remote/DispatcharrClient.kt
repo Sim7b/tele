@@ -16,6 +16,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -30,7 +32,7 @@ class DispatcharrClient(
     private val client = HttpClients.base.newBuilder()
         .addInterceptor { chain ->
             val config = currentConfig
-            val userAgent = config?.customUserAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT
+            val userAgent = DeviceUserAgent.forDispatcharr(config?.customUserAgent)
 
             val requestBuilder = chain.request().newBuilder()
                 .header("User-Agent", userAgent)
@@ -51,6 +53,8 @@ class DispatcharrClient(
     @Volatile private var groupsCache: Map<Int, String>? = null
     @Volatile private var epgDataCache: Map<Int, DispatcharrEpgData>? = null
     @Volatile private var accountsCache: Map<Int, Pair<String, Boolean>>? = null
+    // Features of the Télé API plugin of the server: null until probed, empty when not installed
+    @Volatile private var teleApiFeatures: Set<String>? = null
 
     fun setConfig(config: SourceConfig?) {
         if (config != currentConfig) clearCaches()
@@ -62,6 +66,52 @@ class DispatcharrClient(
         groupsCache = null
         epgDataCache = null
         accountsCache = null
+        teleApiFeatures = null
+    }
+
+    /**
+     * Features of the Télé API plugin (`/api/tele/v1/`), probed once per server and manual refresh: its
+     * endpoints work with a standard user key. Empty when the plugin is missing, disabled or incompatible
+     * (without it, the web interface of Dispatcharr answers the path with an HTML page).
+     */
+    private suspend fun teleApi(): Set<String> {
+        teleApiFeatures?.let { return it }
+        if (baseUrl.isBlank()) return emptySet()
+        val features = TeleApi.features(getPluginInfo()) ?: emptySet()
+        if (features.isNotEmpty()) Log.i(TAG, "Télé API plugin: $features")
+        return features.also { teleApiFeatures = it }
+    }
+
+    /** Answer of the plugin info endpoint; null, silently, when it is not a JSON object (plugin missing). */
+    private suspend fun getPluginInfo(): JSONObject? = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("$baseUrl${TeleApi.INFO_PATH}").get().build()
+        try {
+            client.newCall(request).executeCancellable { response ->
+                // Without the plugin, the web interface of Dispatcharr answers with its HTML page: not an error
+                if (!response.isSuccessful) null
+                else runCatching { JSONObject(HttpClients.jsonString(response.body)) }.getOrNull()
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        }
+    }
+
+    /** Channels of the plugin, read by pages; null when a page failed (the standard API takes over). */
+    private suspend fun channelsFromPlugin(): List<DispatcharrChannel>? {
+        val channels = mutableListOf<DispatcharrChannel>()
+        val seenUuids = HashSet<String>()
+        for (page in 1..TeleApi.MAX_CHANNEL_PAGES) {
+            var read = 0
+            val url = "$baseUrl${TeleApi.CHANNELS_PATH}?programs=0&page_size=${TeleApi.CHANNELS_PAGE_SIZE}&page=$page"
+            val fetched = fetchObjects(url) { item ->
+                read++
+                TeleApi.parseChannel(item, baseUrl)?.takeIf { seenUuids.add(it.uuid) }?.let { channels.add(it) }
+            }
+            if (!fetched) return null
+            if (read < TeleApi.CHANNELS_PAGE_SIZE) break
+        }
+        return channels.apply { sortBy { it.channelNumber ?: Int.MAX_VALUE } }
     }
 
     private val baseUrl: String
@@ -76,7 +126,7 @@ class DispatcharrClient(
             .url(testUrl)
             .get()
             .header("Accept", "application/json")
-            .header("User-Agent", config.customUserAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT)
+            .header("User-Agent", DeviceUserAgent.forDispatcharr(config.customUserAgent))
 
         ApiKeyAuth.of(config)?.let { requestBuilder.tag(ApiKeyAuth::class.java, it) }
 
@@ -170,6 +220,11 @@ class DispatcharrClient(
     suspend fun getChannels(): Result<List<DispatcharrChannel>> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext failure(R.string.error_dispatcharr_not_configured)
+        }
+
+        // One list with the group and guide key of each channel, in place of the three tables below
+        if ("channels" in teleApi()) {
+            channelsFromPlugin()?.let { return@withContext Result.success(it) }
         }
 
         try {
@@ -529,17 +584,52 @@ class DispatcharrClient(
 
     /**
      * Playback slots of the provider accounts (free / total), read live: never cached, since
-     * [StreamSlots.used] changes with every viewer. Null when unavailable (no admin rights, error)
-     * or when no account has a stream limit.
+     * [StreamSlots.used] changes with every viewer. Null when unavailable (no Télé API plugin and no admin
+     * rights, error) or when no account has a stream limit.
      */
     suspend fun getStreamSlots(): StreamSlots? = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) return@withContext null
+        // The plugin reads the counters the server checks itself, with a standard user key
+        if ("slots" in teleApi()) {
+            getObject("$baseUrl${TeleApi.SLOTS_PATH}")?.let { return@withContext TeleApi.parseSlots(it) }
+        }
         val accounts = mutableListOf<JSONObject>()
         if (!fetchObjects("$baseUrl/api/m3u/accounts/") { accounts.add(it) }) return@withContext null
         // Connections in use: only the live stats of the server are right (admin rights needed); the profiles
         // of the accounts keep a count the server does not update. Without them, no count rather than a wrong one
         val stats = getObject("$baseUrl/proxy/stats/") ?: return@withContext null
         StreamSlots.fromAccounts(accounts, stats)
+    }
+
+    /**
+     * Closes the Dispatcharr sessions this TV left open (the previous channel, the home preview), through the
+     * Télé API plugin: called when a stream finds no free provider connection. Only when the User-Agent carries
+     * the install id ([DeviceUserAgent]): with a custom one, another TV behind the same address would look the
+     * same. Returns the number of sessions closed (0 without the plugin or on error).
+     */
+    suspend fun releaseThisDevice(): Int = withContext(Dispatchers.IO) {
+        val config = currentConfig ?: return@withContext 0
+        if (baseUrl.isBlank() || !config.customUserAgent.isNullOrBlank() || DeviceUserAgent.installId == null) {
+            return@withContext 0
+        }
+        if ("sessions" !in teleApi()) return@withContext 0
+        val body = TeleApi.releaseThisDeviceBody().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl${TeleApi.RELEASE_PATH}").post(body).build()
+        val released = try {
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "HTTP ${response.code}: ${request.url.encodedPath}")
+                    return@executeCancellable 0
+                }
+                TeleApi.releasedCount(JSONObject(HttpClients.jsonString(response.body)))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            0
+        }
+        if (released > 0) Log.i(TAG, "Sessions of this TV closed: $released")
+        released
     }
 
     /**

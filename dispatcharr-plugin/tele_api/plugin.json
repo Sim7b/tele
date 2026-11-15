@@ -1,0 +1,31 @@
+{
+  "name": "Télé API",
+  "version": "0.1.0",
+  "description": "Endpoints for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, and the playback sessions of the caller.",
+  "author": "Télé",
+  "help_url": "https://github.com/Sim7b/tele",
+  "fields": [
+    {
+      "id": "info",
+      "label": "Endpoints",
+      "type": "info",
+      "description": "Served under /api/tele/v1/ with the API key of any standard user. Each user only sees their own channels and sessions."
+    },
+    {
+      "id": "allow_release",
+      "label": "Let players close their own sessions",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Télé closes the preview or the stream it left open before opening another one, so it does not hold two provider connections."
+    }
+  ],
+  "actions": [
+    {
+      "id": "status",
+      "label": "Status",
+      "description": "Checks that the /api/tele/ routes are installed in this worker.",
+      "button_label": "Check",
+      "button_variant": "outline"
+    }
+  ]
+}

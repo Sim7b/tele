@@ -204,6 +204,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
         playerManager = TvPlayerManager(this, castEnabled = Device.isTouch)
+        // Not while the corner channel plays: it is a session of this TV the user wants to keep
+        playerManager.onNoFreeConnection = { url -> if (!insetPlayer.active) viewModel.releaseSessionsOfThisTv(url) }
         val configRepository = viewModel.configRepository
         // Phone / tablet: drawn behind the system bars, the screens keep clear of them (safe area below)
         if (Device.isTouch) WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -390,7 +392,7 @@ class MainActivity : ComponentActivity() {
                     val url = viewModel.automaticStreamUrls(channel).firstOrNull() ?: channel.activeStreamUrl
                     // The stream choice can take a moment: a channel opened meanwhile must not be replaced
                     if (currentScreen !is CurrentScreen.Home && currentScreen !is CurrentScreen.Guide) return@launch
-                    playerManager.preview(url, configsById[channel.sourceId]?.customUserAgent, streamAuths)
+                    playerManager.preview(url, configsById[channel.sourceId]?.playerUserAgent, streamAuths)
                 }
             }
             // Settings and search: no preview behind them (the player takes it over, see playStream); the home and the
@@ -1019,7 +1021,7 @@ class MainActivity : ComponentActivity() {
                                 request = request,
                                 playerManager = playerManager,
                                 streamAuths = streamAuths,
-                                userAgent = configsById[request.sourceId]?.customUserAgent,
+                                userAgent = configsById[request.sourceId]?.playerUserAgent,
                                 onProgress = { played, position, duration ->
                                     if (isReplay) return@VodPlayerScreen
                                     lifecycleScope.launch(Dispatchers.IO) {
@@ -1083,7 +1085,7 @@ class MainActivity : ComponentActivity() {
                                 playerManager = playerManager,
                                 categoryOrder = categoryOrder,
                                 streamAuths = streamAuths,
-                                userAgent = channelConfig?.customUserAgent,
+                                userAgent = channelConfig?.playerUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
                                 resolveStreams = { ch -> viewModel.automaticStreamUrls(ch) },
                                 onSelectStream = { stream -> viewModel.selectStream(liveChannel, stream) },
@@ -1115,7 +1117,7 @@ class MainActivity : ComponentActivity() {
                             LaunchedEffect(insetChannel) {
                                 val inset = insetChannel ?: return@LaunchedEffect insetPlayer.stop()
                                 val url = viewModel.automaticStreamUrls(inset).firstOrNull() ?: inset.activeStreamUrl
-                                insetPlayer.play(url, configsById[inset.sourceId]?.customUserAgent, streamAuths)
+                                insetPlayer.play(url, configsById[inset.sourceId]?.playerUserAgent, streamAuths)
                             }
                             DisposableEffect(Unit) {
                                 onDispose {

@@ -149,6 +149,9 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     private var previewing = false
     // The current stream got "no free connection" (HTTP 503) once already: the next one goes to the next stream
     private var noFreeConnectionRetried = false
+    // Called with the stream URL on its first "no free connection": closes the sessions this TV left open on the
+    // server (the attempt after the pause can then take their connection)
+    var onNoFreeConnection: ((url: String) -> Unit)? = null
     // The current stream has played at least once: a drop gets more (and visible) reconnection attempts
     private var hasPlayed = false
     // HLS playlist served without the .m3u8 extension: detected when the progressive extractors reject it
@@ -550,6 +553,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
         val noFreeConnection = httpCode == HTTP_NO_FREE_CONNECTION && !hasPlayed
         if (noFreeConnection && !noFreeConnectionRetried && currentUrl != null) {
             noFreeConnectionRetried = true
+            currentUrl?.let { url -> onNoFreeConnection?.invoke(url) }
             _isLoading.value = true
             _error.value = null
             mainHandler.removeCallbacks(retryRunnable)

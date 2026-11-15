@@ -114,6 +114,10 @@ class InsetPlayer(private val context: Context) {
     }
 
     /** Stops it and frees its connection and decoder. */
+    /** A channel is set (playing, loading or failed): it holds a Dispatcharr session of this TV. */
+    val active: Boolean
+        get() = url != null
+
     fun stop() {
         paused = null
         release()
