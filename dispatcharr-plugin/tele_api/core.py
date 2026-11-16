@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.8"
+PLUGIN_VERSION = "0.3.9"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1475,3 +1475,46 @@ def catalog_item(values: Mapping[str, Any], group: Any, tmdb_id: Any, max_descri
         "created_at": created.isoformat() if hasattr(created, "isoformat") else to_text(created),
         "category": to_text(group),
     }
+
+
+SEGMENT_KINDS = ("intro", "recap", "credits", "preview")
+
+
+def parse_segments(answer: Any) -> Dict[str, List[Dict[str, Optional[int]]]]:
+    """Segments of a TheIntroDB answer (untrusted): {"intro": [{"start_ms", "end_ms"}], ...}; a null start is the
+    start of the file, a null end its end. Malformed or inverted segments are left out."""
+    found: Dict[str, List[Dict[str, Optional[int]]]] = {}
+    if not isinstance(answer, Mapping):
+        return found
+    for kind in SEGMENT_KINDS:
+        items = answer.get(kind)
+        kept = []
+        for item in items[:5] if isinstance(items, list) else []:
+            if not isinstance(item, Mapping):
+                continue
+            start, end = item.get("start_ms"), item.get("end_ms")
+            start = None if start is None else to_int(start)
+            end = None if end is None else to_int(end)
+            if (start is not None and start < 0) or (end is not None and end <= 0) or (start is not None and end is not None and end <= start):
+                continue
+            if start is None and end is None:
+                continue
+            kept.append({"start_ms": start, "end_ms": end})
+        if kept:
+            found[kind] = kept
+    return found
+
+
+def related_ids(details: Any, limit: int = 30) -> List[str]:
+    """TMDB ids of the recommendations, then of the similar titles, of a TMDB answer (untrusted), without repeats."""
+    found: List[str] = []
+    if not isinstance(details, Mapping):
+        return found
+    for part in ("recommendations", "similar"):
+        block = details.get(part)
+        results = block.get("results") if isinstance(block, Mapping) else None
+        for item in results[:20] if isinstance(results, list) else []:
+            tmdb_id = to_int(item.get("id")) if isinstance(item, Mapping) else None
+            if tmdb_id and tmdb_id > 0 and str(tmdb_id) not in found and str(tmdb_id) != str(details.get("id")):
+                found.append(str(tmdb_id))
+    return found[:limit]
