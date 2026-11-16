@@ -137,6 +137,12 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(first, {"intro": [{"start_ms": 1000, "end_ms": 60000}]})
         self.assertEqual(again, first)
         urlopen.assert_called_once()
+        # With a TheIntroDB key: sent as a bearer token
+        with mock.patch("tele_api.vault.introdb_key", return_value="secret"), \
+                mock.patch.object(extras.urllib.request, "urlopen", return_value=opened) as urlopen:
+            answer.seek(0)
+            extras.segments(42, None, None, None)
+        self.assertEqual(urlopen.call_args.args[0].get_header("Authorization"), "Bearer secret")
         missing = urllib.error.HTTPError("u", 404, "no", {}, None)
         with mock.patch.object(extras.urllib.request, "urlopen", side_effect=missing):
             self.assertEqual(extras.segments(5, None, None, None), {})

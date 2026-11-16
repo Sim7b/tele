@@ -760,6 +760,31 @@ class AdminSubtitlesView(AdminView):
         return Response({"api": core.API_VERSION, "key_set": True})
 
 
+class AdminIntroDbView(AdminView):
+    """TheIntroDB key of the plugin (optional): GET whether one is set (never the key); POST {"key"} sets it after
+    TheIntroDB accepted it, {"key": null} removes it."""
+
+    def get(self, request):
+        return Response({"api": core.API_VERSION, "key_set": vault.introdb_key() is not None})
+
+    def post(self, request):
+        from . import extras
+
+        body = request.data if isinstance(request.data, dict) else {}
+        key = body.get("key")
+        if key is None:
+            vault.set_introdb_key(None)
+            return Response({"api": core.API_VERSION, "key_set": False})
+        key = (core.to_text(key) or "").strip()
+        if not 8 <= len(key) <= 512 or any(c.isspace() for c in key):
+            return Response({"error": "invalid_key"}, status=status.HTTP_400_BAD_REQUEST)
+        if not extras.test_introdb_key(key):
+            return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
+        vault.set_introdb_key(key)
+        logger.info("Télé API: TheIntroDB key set by an admin")
+        return Response({"api": core.API_VERSION, "key_set": True})
+
+
 class AdminCategoriesView(AdminView):
     """Every enabled VOD category of the Xtream accounts with its probe state (filtered on the page)."""
 

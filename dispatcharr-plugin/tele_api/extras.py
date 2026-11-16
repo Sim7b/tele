@@ -67,10 +67,12 @@ def segments(tmdb_id: int, season: Optional[int], episode: Optional[int], durati
         params.update(season=season, episode=episode)
     if duration_ms:
         params["duration_ms"] = duration_ms
-    request = urllib.request.Request(
-        f"{INTRODB}?{urllib.parse.urlencode(params)}",
-        headers={"Accept": "application/json", "User-Agent": f"Tele API v{core.PLUGIN_VERSION}"},
-    )
+    headers = {"Accept": "application/json", "User-Agent": f"Tele API v{core.PLUGIN_VERSION}"}
+    key_value = vault.introdb_key()
+    if key_value:
+        # With a key: 100,000 requests a day instead of 5,000 for the address of the server
+        headers["Authorization"] = f"Bearer {key_value}"
+    request = urllib.request.Request(f"{INTRODB}?{urllib.parse.urlencode(params)}", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
             answer = json.loads(response.read(MAX_ANSWER))
@@ -83,6 +85,25 @@ def segments(tmdb_id: int, season: Optional[int], episode: Optional[int], durati
     found = core.parse_segments(answer)
     _keep(key, found, bool(found))
     return found
+
+
+def test_introdb_key(key: str) -> bool:
+    """Whether TheIntroDB accepts [key]: its /map dry run, which needs a valid key (401: refused) and stores
+    nothing. /media would answer an unknown key as if none was given."""
+    request = urllib.request.Request(
+        INTRODB.replace("/media", "/map"),
+        data=json.dumps({"tmdb_id": 1396, "type": "tv", "season": "1", "episode": "1"}).encode(),
+        headers={"Accept": "application/json", "Content-Type": "application/json",
+                 "User-Agent": f"Tele API v{core.PLUGIN_VERSION}", "Authorization": f"Bearer {key.strip()}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=8):
+            return True
+    except urllib.error.HTTPError as error:
+        return error.code not in (401, 403)
+    except OSError:
+        return False
 
 
 def related(kind: str, tmdb_id: int, language: str) -> Optional[List[str]]:

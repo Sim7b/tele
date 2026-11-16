@@ -379,9 +379,15 @@
       </section>
       <section class="card">
         <details class="key" id="introdb-box">
-          <summary><h2>TheIntroDB</h2><span class="state set">No key needed</span></summary>
+          <summary><h2>TheIntroDB</h2><span class="state set" id="introdb-state">No key (optional)</span></summary>
           <div>
-            <div class="muted small">Intros and end credits of the movies and episodes, from a public community base: asked by this server for the TVs and kept two weeks (two days when unknown). 5,000 requests a day without a key.</div>
+            <div class="muted small">Intros and end credits of the movies and episodes, from a public community base: asked by this server for the TVs and kept two weeks (two days when unknown). Without a key: 5,000 requests a day; with one: 100,000, and your own submissions count. Key: theintrodb.org → account.</div>
+            <form id="introdb-form" class="row" autocomplete="off">
+              <label for="introdb-key" class="muted small">API key</label>
+              <input id="introdb-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
+              <button class="primary" type="submit">Save</button>
+              <button class="danger" type="button" id="introdb-remove">Remove</button>
+            </form>
           </div>
         </details>
       </section>
@@ -1284,6 +1290,26 @@
     if (known === undefined || known !== !!set) $(boxId).open = !set;
     keySeen[boxId] = !!set;
   }
+  function showIntroDb(data) {
+    var state = $("introdb-state");
+    state.textContent = data.key_set ? "Key saved ✓" : "No key (optional)";
+    state.className = "state set";
+    // Optional: closed either way, opened by hand to add or change the key
+    $("introdb-remove").disabled = !data.key_set;
+  }
+  function loadIntroDb() { return call("admin/introdb/").then(showIntroDb).catch(function () {}); }
+  $("introdb-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var input = $("introdb-key"), key = input.value.trim();
+    if (!key) return;
+    post("admin/introdb/", { key: key }).then(function () {
+      input.value = ""; $("introdb-box").open = false; say("TheIntroDB key saved"); return loadIntroDb();
+    }).catch(function () { say("TheIntroDB refused this key"); });
+  });
+  $("introdb-remove").addEventListener("click", function () {
+    if (!window.confirm("Remove the TheIntroDB key? The server goes back to 5,000 requests a day.")) return;
+    post("admin/introdb/", { key: null }).then(function () { say("Key removed"); return loadIntroDb(); }).catch(fail("Not done"));
+  });
   function loadSubtitles() { return call("admin/subtitles/").then(showSubtitles).catch(function () {}); }
   $("os-key-form").addEventListener("submit", function (event) {
     event.preventDefault();
@@ -1374,6 +1400,7 @@
         loadStats(state.statsDays),
         call("admin/tmdb/").then(showTmdb),
         loadSubtitles(),
+        loadIntroDb(),
         loadCategories()
       ]);
     }).catch(function (error) {

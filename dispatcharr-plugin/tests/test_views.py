@@ -407,6 +407,17 @@ class VodLanguagesViewTest(ViewTest):
         with mock.patch("tele_api.extras.related", return_value=["9"]):
             self.assertEqual(self.call(views.VodRelatedView, path="/?kind=series&tmdb_id=5", who=user()).data["ids"], ["9"])
 
+    def test_introdb_key_for_admins(self):
+        self.assertEqual(self.call(views.AdminIntroDbView, who=user()).status_code, 403)
+        with mock.patch("tele_api.extras.test_introdb_key", return_value=False), mock.patch("tele_api.vault.set_introdb_key") as saved:
+            refused = self.call(views.AdminIntroDbView, "post", who=user(level=10), body={"key": "k" * 32})
+        self.assertEqual(refused.status_code, 400)
+        saved.assert_not_called()
+        with mock.patch("tele_api.extras.test_introdb_key", return_value=True), mock.patch("tele_api.vault.set_introdb_key") as saved:
+            accepted = self.call(views.AdminIntroDbView, "post", who=user(level=10), body={"key": "k" * 32})
+        self.assertTrue(accepted.data["key_set"])
+        saved.assert_called_once()
+
     def test_groups_served_to_the_tvs(self):
         served = {"mode": "selected", "groups": [{"name": "FR | FILMS", "type": "movie"}]}
         with mock.patch.object(views.probe, "served_groups", return_value=served):

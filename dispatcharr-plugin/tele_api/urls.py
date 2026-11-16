@@ -24,6 +24,7 @@ urlpatterns = [
     path("v1/subtitles/search/", views.SubtitleSearchView.as_view(), name="subtitles-search"),
     path("v1/subtitles/download/", views.SubtitleDownloadView.as_view(), name="subtitles-download"),
     path("v1/admin/subtitles/", views.AdminSubtitlesView.as_view(), name="admin-subtitles"),
+    path("v1/admin/introdb/", views.AdminIntroDbView.as_view(), name="admin-introdb"),
     path("v1/admin/tmdb/", views.AdminTmdbView.as_view(), name="admin-tmdb"),
     path("v1/admin/devices/", views.AdminDevicesView.as_view(), name="admin-devices"),
     path("v1/admin/devices/release/", views.AdminDeviceReleaseView.as_view(), name="admin-devices-release"),
