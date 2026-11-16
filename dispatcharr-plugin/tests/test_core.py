@@ -385,3 +385,16 @@ class ExtrasTest(unittest.TestCase):
                    "similar": {"results": [{"id": 5}, {"id": 7}]}}
         self.assertEqual(core.related_ids(details), ["5", "7"])
         self.assertEqual(core.related_ids(None), [])
+
+
+class UpdatesTest(unittest.TestCase):
+    def test_versions_and_latest_release(self):
+        self.assertEqual(core.version_tuple("v0.3.35"), (0, 3, 35))
+        self.assertIsNone(core.version_tuple("0.3.35-beta"))
+        self.assertTrue(core.is_behind("0.3.9", "0.3.35"))
+        self.assertFalse(core.is_behind("0.3.35", "0.3.35"))
+        self.assertFalse(core.is_behind(None, "0.3.35"))
+        answer = {"tag_name": "v0.3.35", "html_url": "https://github.com/Sim7b/tele/releases/tag/v0.3.35"}
+        self.assertEqual(core.latest_release(answer), {"version": "0.3.35", "url": answer["html_url"]})
+        self.assertIsNone(core.latest_release(dict(answer, prerelease=True)))
+        self.assertIsNone(core.latest_release(dict(answer, html_url="https://evil.example/")))
