@@ -4,14 +4,17 @@ IPTV player for **Android TV / Google TV**, designed for the remote: live TV, pr
 
 Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)** server, an **Xtream Codes** subscription or an **M3U playlist**.
 
-![Home](docs/screenshots/home.png)
+| Immersive home | Classic home |
+|---|---|
+| ![Immersive home](docs/screenshots/immersive.jpg) | ![Classic home](docs/screenshots/home.png) |
 
 ## Features
 
+- **Two styles**, chosen at the first launch and changed in **Settings → Appearance**: immersive (the program or title in focus over the whole screen) or classic, the light one for small devices.
 - **Home**: 8 favorite tiles with the artwork of the current program, categories and channel grid (program, times, progress).
 - **Channel preview** on the home screen: the selected channel plays without sound in its tile (or in place of the logo in the grid) after a chosen delay (immediate to 5 seconds, or off), and keeps playing when opened.
 - Reorderable **favorites** on the grid, hideable **channels** and **categories**; categories can be **renamed** and **moved** (hold OK on a category); sources can be reordered in the settings.
-- **Several sources at once**: the channels of every enabled source are shown together; categories with the same name are merged or kept apart per source (setting).
+- **Several sources at once**: the channels of every enabled source are shown together; categories with the same name are merged or kept apart per source (setting). When a channel of an Xtream or M3U source fails, the same channel of another one is played instead (Dispatcharr fails over by itself, on the server).
 - **Reference bouquet** (France: TNT with the 2025 Arcom numbering + Canal+; Belgium, Switzerland and Canada: national channels then the French ones): channels are recognized whatever the provider spelling ("FR | TF1 FHD", "TF1 ᴴᴰ"), get their proper name, usual number and Canal+-style category, and their HD / FHD / 4K versions become one channel whose versions are its streams. Provider categories are cleaned and grouped by meaning ("Sport", "FR | Sports", "France Sport"). **Settings** lists the channels the bouquet does not recognize.
 - **Search** by channel name, number or current program, typed with the TV keyboard or spoken (microphone button, or the remote's search key).
 - **Player** (Media3 / ExoPlayer, hardware decoding):
@@ -34,6 +37,12 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - **replay** (Xtream accounts with catch-up): the programs of the past day kept by the provider are marked REPLAY in the grid and the channel panel, and OK plays them again with the movie player (seek, pause).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → System**.
+- **Profiles** (**Settings → Profiles**): each member of the family has their own favorites, positions, my list and collections; a profile can ask a 4-digit code, and a kids profile always keeps the locks of the parental control. "Who is watching?" is asked at startup when the TV has several profiles.
+
+  ![Profiles](docs/screenshots/profiles.png)
+
+- **Buffer** (**Settings → Playback**): small to maximum, for a weak connection or a small device.
+- **Language of foreign movies and series** (**Settings → Movies and series**): dubbed in the language of the TV, or the original version with subtitles in it.
 - **Copy to another TV**: the whole configuration (sources, favorites, categories, settings) is sent over the local network, encrypted with an 8-digit code shown on the sending TV.
 - **Appearance**: 6 backgrounds including a light theme, 6 accent colors, 3 interface densities.
 - **Settings** by section (Sources, Channels, Playback, Appearance, System): a menu on the left, the section on the right.
@@ -158,6 +167,8 @@ Technical choices:
 - Tooling is pinned in `mise.toml` (JDK, Node for semantic-release, [prek](https://github.com/j178/prek)), with a 7-day minimum release age.
 - Install the git hooks once: `prek install --install-hooks` (YAML, GitHub Actions security with zizmor, conventional commit messages).
 - Tests and lint: `./gradlew testDebugUnitTest lintDebug`.
+- README screenshots, drawn on the JVM with demo data: `./gradlew testDebugUnitTest --tests '*ReadmeScreenshots*' -Ptele.screenshots=docs/screenshots` (also the **Screenshots** workflow).
+- Startup profile (Baseline Profile): generated on an emulator by the **Baseline profile** workflow, which opens a pull request with `app/src/main/generated/baselineProfiles`.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org): on each push to `main`, [semantic-release](https://semantic-release.gitbook.io) computes the version (`feat`, `fix` and `perf` bump the patch number, breaking changes the minor one), updates `CHANGELOG.md` and `gradle.properties`, builds the signed APK and publishes the GitHub release.
 
 ## Privacy
