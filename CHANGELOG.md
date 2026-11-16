@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.36](https://github.com/Sim7b/tele/compare/v0.3.35...v0.3.36) (2026-11-16)
+
+### Features
+
+* **dispatcharr-plugin:** daily budgets, safer posters and the TVs to update ([f531733](https://github.com/Sim7b/tele/commit/f531733f49a10ab68257e61a76b8a55d58c35216))
+* profiles with a code, provider failover, buffer and language settings ([498d4e9](https://github.com/Sim7b/tele/commit/498d4e9fb5254c22cbcc7ec44bd45dc637104ca4))
+
+### Performance Improvements
+
+* startup profile generated on an emulator ([3909b35](https://github.com/Sim7b/tele/commit/3909b3503ac6ff8e19e72daba2a43320b8a6caf9))
+
 ## [0.3.35](https://github.com/Sim7b/tele/compare/v0.3.34...v0.3.35) (2026-11-16)
 
 ### Features
