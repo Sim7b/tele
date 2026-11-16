@@ -88,7 +88,8 @@ object VodLibrary {
             backdropUrl = best.backdropUrl ?: group.firstNotNullOfOrNull { it.backdropUrl },
             plot = best.plot ?: group.firstNotNullOfOrNull { it.plot },
             genres = best.genres.ifEmpty { group.firstOrNull { it.genres.isNotEmpty() }?.genres.orEmpty() },
-            rating = group.firstNotNullOfOrNull { it.rating },
+            // TMDB ratings only, with their votes: the providers' ones (often 10.0) are left out
+            rating = null,
             tmdbId = group.firstNotNullOfOrNull { it.tmdbId?.takeIf { id -> id.isNotBlank() && id != "0" } },
             imdbId = group.firstNotNullOfOrNull { it.imdbId?.takeIf { id -> id.isNotBlank() } },
             addedAt = group.mapNotNull { it.addedAt }.maxOrNull(),

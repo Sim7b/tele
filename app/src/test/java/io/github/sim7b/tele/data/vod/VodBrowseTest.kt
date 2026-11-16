@@ -117,6 +117,31 @@ class VodBrowseTest {
     }
 
     @Test
+    fun `facts of the server are given to the titles of their TMDB ids and kept`() {
+        val file = folder.newFile("index.jsonl")
+        val index = VodIndex(file)
+        val dune = VodTitle("dune", VodKind.MOVIE, "Dune", 2021, null, null, null, emptyList(), null, "438631", null, null, emptyList())
+        val noId = VodTitle("x", VodKind.MOVIE, "X", 2021, null, null, null, emptyList(), null, null, null, null, emptyList())
+        val answer = org.json.JSONObject(
+            """{"facts": {"438631": {"v": 7.8, "n": 12000, "p": 81.2, "l": "en", "c": ["us"], "s": [["1", "Legendary"]]}, "x": {"v": 1}}, "until": 5.5}"""
+        )
+        val (server, until) = io.github.sim7b.tele.data.remote.TeleApi.vodFacts(answer)!!
+        assertEquals(5.5, until, 0.0)
+        assertEquals(setOf("438631"), server.keys)
+        val byKind = server.mapKeys { "movie:${it.key}" }
+        assertTrue(index.importServerFacts(listOf(dune, noId), byKind, now = 10))
+        assertEquals(12000, index.facts("dune")?.votes)
+        assertEquals(listOf("US"), index.facts("dune")?.countries)
+        assertNull(index.facts("x"))
+        // The same facts again: nothing written, no new version
+        assertTrue(!index.importServerFacts(listOf(dune), byKind, now = 20))
+        // Kept on the device
+        val again = VodIndex(file)
+        again.load()
+        assertEquals(7.8, again.facts("dune")!!.vote, 0.0)
+    }
+
+    @Test
     fun `display settings are kept, rows hidden and theater recordings recognized`() {
         val display = VodDisplay(
             hiddenRows = setOf(VodRow.Kind.TRENDING),

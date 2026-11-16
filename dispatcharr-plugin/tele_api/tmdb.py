@@ -261,6 +261,11 @@ def run(settings: Dict[str, Any], redis_client, should_stop) -> Dict[str, int]:
     if not redis_client.set(LOCK_KEY, "1", nx=True, ex=15 * 60):
         return {"matched": 0, "unmatched": 0}
     try:
-        return match_batch(settings, should_stop)
+        result = match_batch(settings, should_stop)
+        # Then the facts of the titles served to the TVs (votes, popularity, countries, studios)
+        from . import facts
+
+        result["facts"] = facts.run(settings, should_stop)
+        return result
     finally:
         redis_client.delete(LOCK_KEY)

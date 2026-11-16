@@ -109,6 +109,7 @@ import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.epg.EpgResolver
 import io.github.sim7b.tele.data.home.HomeFeed
 import io.github.sim7b.tele.data.home.HomeItem
+import io.github.sim7b.tele.data.model.StreamSlots
 import io.github.sim7b.tele.data.model.Categories
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.ChannelList
@@ -230,7 +231,9 @@ fun ImmersiveHomeScreen(
     watchlist: List<VodTitle> = emptyList(),
     onOpenTitle: (VodTitle) -> Unit = {},
     // Reminders and recordings of the programs (buttons of the featured item)
-    guideActions: GuideActions = GuideActions()
+    guideActions: GuideActions = GuideActions(),
+    // Free provider connections (Dispatcharr), next to the clock
+    streamSlots: StreamSlots? = null
 ) {
     val now = System.currentTimeMillis()
     val scope = rememberCoroutineScope()
@@ -421,7 +424,16 @@ fun ImmersiveHomeScreen(
                 .padding(top = 20.dp)
                 .graphicsLayer { alpha = headerAlpha }
         )
-        GlassClock(modifier = Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = screenMargin(36.dp)).graphicsLayer { alpha = headerAlpha })
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = screenMargin(36.dp)).graphicsLayer { alpha = headerAlpha }
+        ) {
+            streamSlots?.let { slots ->
+                StreamSlotsBadge(slots)
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+            GlassClock()
+        }
 
         // The featured item with its buttons, or the details of the focused card
         spotlight?.let { shown ->

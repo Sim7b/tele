@@ -1,6 +1,6 @@
 {
   "name": "Télé API",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Endpoints and a page for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, playback sessions, and the audio and subtitle languages of the VOD measured with ffprobe.",
   "author": "Télé",
   "help_url": "/api/tele/ui/",

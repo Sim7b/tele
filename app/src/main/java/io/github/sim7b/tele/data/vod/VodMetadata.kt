@@ -141,7 +141,7 @@ object VodMetadata {
             posterUrl = details.optStringOrNull("poster_path")?.let { "${TMDB_IMAGES}w500$it" },
             backdropUrl = details.optStringOrNull("backdrop_path")?.let { "${TMDB_IMAGES}w1280$it" },
             genres = objects(details.optJSONArray("genres")).mapNotNull { it.optStringOrNull("name") },
-            rating = details.optDouble("vote_average", 0.0).takeIf { it > 0 },
+            rating = VodRating.trusted(details.optDouble("vote_average", 0.0), details.optInt("vote_count", 0)),
             durationSecs = details.optInt("runtime", 0).takeIf { it > 0 }?.times(60),
             director = crew?.let { objects(it).firstOrNull { person -> person.optString("job") == "Director" }?.optStringOrNull("name") },
             cast = objects(details.optJSONObject("credits")?.optJSONArray("cast")).take(12).mapNotNull { it.optStringOrNull("name") },
@@ -243,7 +243,7 @@ object VodMetadata {
             plot = stripHtml(show.optStringOrNull("summary")),
             posterUrl = show.optJSONObject("image")?.let { it.optStringOrNull("original") ?: it.optStringOrNull("medium") },
             genres = show.optJSONArray("genres")?.let { array -> (0 until array.length()).mapNotNull { array.optString(it).takeIf { g -> g.isNotBlank() } } }.orEmpty(),
-            rating = show.optJSONObject("rating")?.optDouble("average", 0.0)?.takeIf { it > 0 },
+            // TVmaze ratings are not TMDB ones: left out
             imdbId = show.optJSONObject("externals")?.optStringOrNull("imdb"),
             episodes = episodes
         )

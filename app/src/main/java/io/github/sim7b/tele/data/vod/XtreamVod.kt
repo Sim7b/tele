@@ -127,7 +127,8 @@ object XtreamVod {
             title = parsed.title,
             year = item.optStringOrNull("year")?.toIntOrNull() ?: parsed.year,
             posterUrl = item.optStringOrNull("stream_icon")?.takeIf { it.startsWith("http") },
-            rating = VodLibrary.rating(item.optStringOrNull("rating")) ?: VodLibrary.rating(item.optStringOrNull("rating_5based"), fiveBased = true),
+            // The providers' ratings are left out: TMDB ones only (VodRating)
+            rating = null,
             tmdbId = (item.optStringOrNull("tmdb") ?: item.optStringOrNull("tmdb_id"))?.takeIf { it != "0" },
             addedAt = item.optStringOrNull("added")?.toLongOrNull()?.times(1000),
             category = item.optStringOrNull("category_id")?.let(categories::get),
@@ -153,7 +154,8 @@ object XtreamVod {
             backdropUrl = ProviderMedia.firstImage(item.opt("backdrop_path")),
             plot = VodLibrary.shortPlot(item.optStringOrNull("plot")),
             genres = VodLibrary.splitGenres(item.optStringOrNull("genre")),
-            rating = VodLibrary.rating(item.optStringOrNull("rating")) ?: VodLibrary.rating(item.optStringOrNull("rating_5based"), fiveBased = true),
+            // The providers' ratings are left out: TMDB ones only (VodRating)
+            rating = null,
             tmdbId = (item.optStringOrNull("tmdb") ?: item.optStringOrNull("tmdb_id"))?.takeIf { it != "0" },
             addedAt = item.optStringOrNull("last_modified")?.toLongOrNull()?.times(1000),
             category = item.optStringOrNull("category_id")?.let(categories::get),

@@ -87,6 +87,7 @@ import io.github.sim7b.tele.data.vod.VodShelf
 import io.github.sim7b.tele.data.vod.VodTitle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import io.github.sim7b.tele.ui.components.LocalLite
 import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.GlassClock
 import io.github.sim7b.tele.ui.components.GlassInk
@@ -204,7 +205,9 @@ fun VodHomeScreen(
     BackHandler(onBack = onBack)
     val screen = LocalScreen.current
     val compact = screen.compact
-    val immersive = nav != null && !compact
+    // Light mode: the classic layout, without the focused title over the whole screen
+    val lite = LocalLite.current
+    val immersive = nav != null && !compact && !lite
     var tab by rememberSaveable { mutableStateOf(if (section == VodKind.SERIES) VodTab.SERIES else VodTab.MOVIES) }
     LaunchedEffect(sectionToken) { tab = if (section == VodKind.SERIES) VodTab.SERIES else VodTab.MOVIES }
     // Long press on a title: its actions, then possibly the collection picker
@@ -428,7 +431,7 @@ fun VodHomeScreen(
             }
     ) {
         // Wide image of the focused title, fading into the background (immersive: over the whole screen)
-        if (kind != null && !gridView && hero != null) {
+        if (kind != null && !gridView && hero != null && !lite) {
             Box(
                 modifier = if (immersive) {
                     Modifier.fillMaxSize()
@@ -1240,7 +1243,7 @@ private fun Hero(title: VodTitle?, large: Boolean = false) {
                 title.genres.take(3).joinToString(", ").ifBlank { null }
             ).joinToString(" · ")
             Text(text = meta, fontSize = 13.sp, color = secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            title.rating?.let {
+            LocalRatingOf.current(title)?.let {
                 Spacer(modifier = Modifier.width(10.dp))
                 RatingText(rating = it, fontSize = 13, color = primary)
             }

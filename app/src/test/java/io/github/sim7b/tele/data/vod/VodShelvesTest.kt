@@ -13,15 +13,20 @@ class VodShelvesTest {
         VodTitle(key, VodKind.MOVIE, key, year, null, null, null, genres, rating, null, null, addedAt, emptyList())
 
     @Test
-    fun `the rating is the TMDB vote when known, else the provider's, out of 10`() {
-        assertEquals(8.1, VodBrowse.rating(title("a", 2020, rating = 6.0), TmdbFacts("1", vote = 8.1))!!, 0.0)
-        assertEquals(6.0, VodBrowse.rating(title("a", 2020, rating = 6.0), TmdbFacts("1", vote = 0.0))!!, 0.0)
+    fun `the rating is the TMDB vote with enough votes, out of 10`() {
+        assertEquals(8.1, VodBrowse.rating(title("a", 2020), TmdbFacts("1", vote = 8.1, votes = 1200))!!, 0.0)
+        // A 10.0 from a few votes, or from facts kept before the votes were: not shown
+        assertNull(VodBrowse.rating(title("a", 2020), TmdbFacts("1", vote = 10.0, votes = 3)))
+        assertNull(VodBrowse.rating(title("a", 2020), TmdbFacts("1", vote = 8.1)))
+        // The rating of the title comes from TMDB too (its sheet): used without facts
         assertEquals(6.0, VodBrowse.rating(title("a", 2020, rating = 6.0), null)!!, 0.0)
         // Unknown, zero, broken or out of scale
         assertNull(VodBrowse.rating(title("a", 2020), null))
         assertNull(VodBrowse.rating(title("a", 2020, rating = 0.0), null))
         assertNull(VodBrowse.rating(title("a", 2020, rating = Double.NaN), null))
         assertEquals(10.0, VodBrowse.rating(title("a", 2020, rating = 85.0), null)!!, 0.0)
+        assertEquals(7.0, VodRating.trusted(7.0, VodRating.MIN_VOTES)!!, 0.0)
+        assertNull(VodRating.trusted(7.0, VodRating.MIN_VOTES - 1))
     }
 
     @Test
@@ -39,7 +44,7 @@ class VodShelvesTest {
             title("mid", 2010, genres = listOf("Drama")),
             title("undated", null, rating = 8.0, genres = listOf("Comedy"))
         )
-        val shelves = VodBrowse.shelves(titles, facts = mapOf("mid" to TmdbFacts("9", vote = 7.5)))
+        val shelves = VodBrowse.shelves(titles, facts = mapOf("mid" to TmdbFacts("9", vote = 7.5, votes = 400)))
 
         assertEquals(listOf(VodShelf.Kind.LATEST, VodShelf.Kind.TOP_RATED, VodShelf.Kind.GENRE), shelves.map { it.kind })
         // Latest year first, the latest added first within a year; the undated ones left out

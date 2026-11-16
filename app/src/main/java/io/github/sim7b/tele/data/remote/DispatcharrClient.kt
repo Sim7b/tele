@@ -720,6 +720,17 @@ class DispatcharrClient(
      * TMDB ids the Télé API plugin found for the movies ("movie") or series ("series") Dispatcharr has none for,
      * by Dispatcharr id; empty without the plugin or a TMDB key on the server.
      */
+    /**
+     * TMDB facts of the [kind] ("movie" / "series") titles looked up by the server (Télé API plugin), by TMDB id,
+     * the changed ones only after [since]; null without the plugin or on error. Gzipped by the server.
+     */
+    suspend fun getVodFacts(kind: String, since: Double): Pair<Map<String, io.github.sim7b.tele.data.vod.TmdbFacts>, Double>? =
+        withContext(Dispatchers.IO) {
+            if (baseUrl.isBlank() || "vod_facts" !in teleApi()) return@withContext null
+            val since = if (since > 0) "&since=$since" else ""
+            TeleApi.vodFacts(getObject("$baseUrl${TeleApi.VOD_FACTS_PATH}?kind=$kind$since"))
+        }
+
     /** Whether the plugin searches and downloads subtitles with an OpenSubtitles key of the server. */
     suspend fun hasServerSubtitles(): Boolean = baseUrl.isNotBlank() && "subtitles" in teleApi()
 

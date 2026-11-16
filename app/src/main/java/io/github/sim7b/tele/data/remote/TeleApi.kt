@@ -26,6 +26,43 @@ object TeleApi {
     const val VOD_GROUPS_PATH = "/api/tele/v1/vod/groups/"
     const val VOD_POPULAR_PATH = "/api/tele/v1/vod/popular/"
     const val SUBTITLES_SEARCH_PATH = "/api/tele/v1/subtitles/search/"
+    const val VOD_FACTS_PATH = "/api/tele/v1/vod/facts/"
+    private const val MAX_FACTS = 200_000
+
+    /**
+     * TMDB facts looked up by the server, by TMDB id, and the time to ask the changes from ("until"); malformed
+     * entries are skipped.
+     */
+    fun vodFacts(answer: JSONObject?): Pair<Map<String, io.github.sim7b.tele.data.vod.TmdbFacts>, Double>? {
+        val facts = answer?.optJSONObject("facts") ?: return null
+        val result = HashMap<String, io.github.sim7b.tele.data.vod.TmdbFacts>()
+        val keys = facts.keys()
+        while (keys.hasNext() && result.size < MAX_FACTS) {
+            val id = keys.next()
+            val item = facts.optJSONObject(id) ?: continue
+            if (!DIGITS.matches(id)) continue
+            val countries = item.optJSONArray("c")?.let { array ->
+                (0 until minOf(array.length(), 10)).mapNotNull { array.optString(it).takeIf { c -> c.length == 2 }?.uppercase() }
+            }.orEmpty()
+            val studios = item.optJSONArray("s")?.let { array ->
+                (0 until minOf(array.length(), 6)).mapNotNull { index ->
+                    val pair = array.optJSONArray(index) ?: return@mapNotNull null
+                    val studioId = pair.optString(0).takeIf { DIGITS.matches(it) } ?: return@mapNotNull null
+                    io.github.sim7b.tele.data.vod.Studio(studioId, pair.optString(1).take(100))
+                }
+            }.orEmpty()
+            result[id] = io.github.sim7b.tele.data.vod.TmdbFacts(
+                tmdbId = id,
+                countries = countries,
+                studios = studios,
+                popularity = item.optDouble("p", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
+                vote = item.optDouble("v", 0.0).takeIf { it.isFinite() && it in 0.0..10.0 } ?: 0.0,
+                votes = item.optInt("n", 0).coerceAtLeast(0),
+                language = item.optStringOrNull("l")?.takeIf { LANGUAGE_CODE.matches(it) }
+            )
+        }
+        return result to answer.optDouble("until", 0.0).takeIf { it.isFinite() && it >= 0 }.let { it ?: 0.0 }
+    }
     const val SUBTITLES_DOWNLOAD_PATH = "/api/tele/v1/subtitles/download/"
     private const val MAX_POPULAR = 100
 

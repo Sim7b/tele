@@ -341,3 +341,16 @@ class SubtitlesTest(unittest.TestCase):
         self.assertEqual(results[0]["attributes"]["files"], [{"file_id": 7}])
         self.assertEqual(results[0]["attributes"]["download_count"], 12)
         self.assertNotIn("url", results[0]["attributes"])
+
+
+class TmdbFactsTest(unittest.TestCase):
+    def test_facts_of_a_tmdb_answer(self):
+        details = {
+            "vote_average": 8.43, "vote_count": "1532", "popularity": 81.234, "original_language": "en",
+            "production_countries": [{"iso_3166_1": "US"}, {"iso_3166_1": "<b>"}], "origin_country": ["us", "GB"],
+            "networks": [{"id": 213, "name": "Netflix"}], "production_companies": [{"id": 213, "name": "Netflix"}, {"id": 5, "name": "X"}],
+        }
+        facts = core.tmdb_facts(details)
+        self.assertEqual(facts, {"v": 8.4, "n": 1532, "p": 81.23, "l": "en", "c": ["US", "GB"], "s": [["213", "Netflix"], ["5", "X"]]})
+        self.assertEqual(core.tmdb_facts({"vote_average": 99, "vote_count": -3})["v"], 0)
+        self.assertIsNone(core.tmdb_facts("garbage"))

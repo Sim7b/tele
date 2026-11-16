@@ -64,6 +64,36 @@ class VodRepository(
     private var rankingsJob: Job? = null
 
     // Logos of the streaming services (TMDB), fetched with the rankings
+    // TMDB facts looked up by the Dispatcharr servers (Télé API plugin), by "movie:<id>" / "series:<id>", and the
+    // time of the last answer by source and kind (then only the changes are asked)
+    private val serverFacts = ConcurrentHashMap<String, TmdbFacts>()
+    private val factsUntil = ConcurrentHashMap<String, Double>()
+
+    private suspend fun refreshServerFacts(config: SourceConfig) {
+        var added = false
+        for (kind in listOf("movie", "series")) {
+            val key = "${config.id}|$kind"
+            val answer = try {
+                dispatcharr(config).getVodFacts(kind, factsUntil[key] ?: 0.0)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                null
+            } ?: continue
+            answer.first.forEach { (id, facts) -> serverFacts["$kind:$id"] = facts }
+            factsUntil[key] = answer.second
+            if (answer.first.isNotEmpty()) added = true
+        }
+        if (added) applyServerFacts()
+    }
+
+    /** The facts of the servers given to the library titles (the TMDB index of the TV, without TMDB requests). */
+    private suspend fun applyServerFacts() {
+        if (serverFacts.isEmpty()) return
+        val titles = _library.value.titles
+        if (titles.isEmpty()) return
+        withContext(Dispatchers.IO) { index.importServerFacts(titles, HashMap(serverFacts)) }
+    }
+
     // A Dispatcharr source whose plugin searches subtitles with the key of the server
     private val _serverSubtitles = MutableStateFlow(false)
     val serverSubtitles: StateFlow<Boolean> = _serverSubtitles.asStateFlow()
@@ -508,6 +538,7 @@ class VodRepository(
             if (e is CancellationException) throw e
             tmdbIds[config.id].orEmpty()
         }
+        refreshServerFacts(config)
         val subtitles = try {
             dispatcharr(config).hasServerSubtitles()
         } catch (e: Exception) {
@@ -603,6 +634,7 @@ class VodRepository(
             newCategories = newCategories
         )
         if (popularStale) updateServerPopular()
+        applyServerFacts()
     }
 
     // Dispatcharr sources: VOD languages measured by the Télé API plugin, by category (DispatcharrVod.measuredKey)
@@ -888,7 +920,8 @@ class VodRepository(
                     posterUrl = pick(title.posterUrl, enrichment.posterUrl),
                     backdropUrl = pick(title.backdropUrl, enrichment.backdropUrl),
                     genres = if (preferEnrichment) enrichment.genres.ifEmpty { title.genres } else title.genres.ifEmpty { enrichment.genres },
-                    rating = pick(title.rating, enrichment.rating),
+                    // TMDB only (the providers' ratings are not trusted)
+                    rating = enrichment.rating,
                     year = title.year ?: enrichment.year,
                     tmdbId = title.tmdbId ?: enrichment.tmdbId,
                     imdbId = title.imdbId ?: enrichment.imdbId

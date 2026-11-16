@@ -358,6 +358,19 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(bad.status_code, 400)
         saved.assert_not_called()
 
+    def test_facts_are_gzipped_and_cached(self):
+        import gzip
+        import json
+
+        served = {"facts": {"438631": {"v": 7.8, "n": 12000}}, "until": 5.0}
+        with mock.patch("tele_api.facts.served", return_value=served) as read:
+            response = self.call(views.VodFactsView, path="/?kind=movie&since=2", who=user(), HTTP_ACCEPT_ENCODING="gzip")
+            again = self.call(views.VodFactsView, path="/?kind=movie&since=2", who=user(), HTTP_IF_NONE_MATCH=response["ETag"])
+        self.assertEqual(json.loads(gzip.decompress(response.content))["facts"], served["facts"])
+        self.assertEqual(read.call_args.args, ("movie", 2.0))
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(self.call(views.VodFactsView, path="/?kind=x", who=user()).status_code, 400)
+
     def test_groups_served_to_the_tvs(self):
         served = {"mode": "selected", "groups": [{"name": "FR | FILMS", "type": "movie"}]}
         with mock.patch.object(views.probe, "served_groups", return_value=served):

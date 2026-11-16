@@ -82,8 +82,10 @@ fun FadeInImage(
     onError: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val request = remember(url) {
-        ImageRequest.Builder(context).data(url).crossfade(250).build()
+    val lite = LocalLite.current
+    val request = remember(url, lite) {
+        // Light mode: no fade, and 2 bytes a pixel instead of 4 for the opaque pictures
+        ImageRequest.Builder(context).data(url).crossfade(crossfadeMs(lite, 250)).allowRgb565(lite).build()
     }
     AsyncImage(
         model = request,
@@ -161,9 +163,10 @@ fun LogoPlate(
     var failed by remember(logoUrl) { mutableStateOf(false) }
     val knownTone = remember(logoUrl) { logoUrl?.let { LogoTones.get(context, it) } }
     var isLightLogo by remember(logoUrl) { mutableStateOf(knownTone ?: false) }
-    val request = remember(logoUrl) {
+    val lite = LocalLite.current
+    val request = remember(logoUrl, lite) {
         // Software bitmap only if the logo must be analyzed; otherwise hardware bitmap, faster to draw
-        ImageRequest.Builder(context).data(logoUrl).allowHardware(knownTone != null).crossfade(200).build()
+        ImageRequest.Builder(context).data(logoUrl).allowHardware(knownTone != null).crossfade(crossfadeMs(lite, 200)).build()
     }
 
     Box(
