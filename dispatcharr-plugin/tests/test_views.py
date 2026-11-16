@@ -395,6 +395,29 @@ class VodLanguagesViewTest(ViewTest):
             missing = views.PosterView.as_view()(self.factory.get("/"), logo_id=7)
         self.assertEqual((missing.status_code, missing["Location"]), (302, "/api/vod/vodlogos/7/cache/"))
 
+    def test_segments_and_related(self):
+        with mock.patch("tele_api.extras.segments", return_value={"intro": [{"start_ms": 0, "end_ms": 5000}]}) as found:
+            ok = self.call(views.VodSegmentsView, path="/?tmdb_id=1396&season=1&episode=2&duration_ms=99", who=user())
+        self.assertEqual(ok.data["segments"]["intro"][0]["end_ms"], 5000)
+        self.assertEqual(found.call_args.args, (1396, 1, 2, 99))
+        for bad in ("/?tmdb_id=x", "/?tmdb_id=1&season=1", "/?tmdb_id=1&season=1&episode=-2"):
+            self.assertEqual(self.call(views.VodSegmentsView, path=bad, who=user()).status_code, 400)
+        with mock.patch("tele_api.extras.related", return_value=None):
+            self.assertEqual(self.call(views.VodRelatedView, path="/?kind=movie&tmdb_id=5", who=user()).status_code, 404)
+        with mock.patch("tele_api.extras.related", return_value=["9"]):
+            self.assertEqual(self.call(views.VodRelatedView, path="/?kind=series&tmdb_id=5", who=user()).data["ids"], ["9"])
+
+    def test_introdb_key_for_admins(self):
+        self.assertEqual(self.call(views.AdminIntroDbView, who=user()).status_code, 403)
+        with mock.patch("tele_api.extras.test_introdb_key", return_value=False), mock.patch("tele_api.vault.set_introdb_key") as saved:
+            refused = self.call(views.AdminIntroDbView, "post", who=user(level=10), body={"key": "k" * 32})
+        self.assertEqual(refused.status_code, 400)
+        saved.assert_not_called()
+        with mock.patch("tele_api.extras.test_introdb_key", return_value=True), mock.patch("tele_api.vault.set_introdb_key") as saved:
+            accepted = self.call(views.AdminIntroDbView, "post", who=user(level=10), body={"key": "k" * 32})
+        self.assertTrue(accepted.data["key_set"])
+        saved.assert_called_once()
+
     def test_groups_served_to_the_tvs(self):
         served = {"mode": "selected", "groups": [{"name": "FR | FILMS", "type": "movie"}]}
         with mock.patch.object(views.probe, "served_groups", return_value=served):

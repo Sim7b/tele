@@ -81,6 +81,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.vod.VodSegments
 import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.remote.ApiKeyAuth
 import io.github.sim7b.tele.data.resolve
@@ -145,7 +146,9 @@ fun VodPlayerScreen(
     onPictureFormatChange: (PictureFormat) -> Unit = {},
     subtitles: VodSubtitles? = null,
     // Another file of the movie or episode chosen while it plays: played from the same position
-    onSwitchFile: (VodPlayRequest) -> Unit = {}
+    onSwitchFile: (VodPlayRequest) -> Unit = {},
+    // Intro and end credits from TheIntroDB, when known: they come before the learned ones
+    segments: VodSegments? = null
 ) {
     val isLoading by playerManager.isLoading.collectAsState()
     val error by playerManager.error.collectAsState()
@@ -240,7 +243,7 @@ fun VodPlayerScreen(
         if (leaving) return
         leaving = true
         // Started by hand in the credits, before they were known: their length, for the next episodes
-        if (request.episodeKey != null && !inCredits(player.currentPosition, durationMs, learnedCreditsMs)) {
+        if (request.episodeKey != null && segments?.creditsStartMs == null && !inCredits(player.currentPosition, durationMs, learnedCreditsMs)) {
             learnedCredits(player.currentPosition, durationMs)?.let { credits ->
                 learnedCreditsMs = credits
                 onCreditsLearned(credits)
@@ -310,10 +313,14 @@ fun VodPlayerScreen(
         }
     }
 
-    val upNext = next != null && !upNextDismissed && error == null && seekTarget == null && inCredits(positionMs, durationMs, learnedCreditsMs)
+    // End credits: from TheIntroDB when known, else the length learned on the previous episodes
+    val creditsMs = segments?.creditsLengthMs(durationMs) ?: learnedCreditsMs
+    val upNext = next != null && !upNextDismissed && error == null && seekTarget == null && inCredits(positionMs, durationMs, creditsMs)
     // Opening minutes of an episode: OK skips the intro
     val introTarget = if (request.episodeKey != null && !upNext && error == null && seekTarget == null && castDevice == null) {
-        introSkipTarget(positionMs, durationMs, learnedIntro)
+        val start = segments?.introStartMs
+        val end = segments?.introEndMs
+        if (start != null && end != null) introSegmentTarget(positionMs, durationMs, start, end) else introSkipTarget(positionMs, durationMs, learnedIntro)
     } else {
         null
     }
@@ -1075,8 +1082,34 @@ private fun UpNextCard(next: VodPlayRequest, countdown: Int, playFocus: FocusReq
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
             )
+            next.plot?.takeIf { it.isNotBlank() }?.let { plot ->
+                Text(
+                    text = plot,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            // Time left before the next episode starts by itself
+            Box(
+                modifier = Modifier
+                    .padding(bottom = 10.dp)
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.15f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(countdownFraction(countdown))
+                        .fillMaxHeight()
+                        .background(Color.White)
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Pill(text = stringResource(R.string.vod_player_play_now), onClick = onPlay, icon = true, modifier = Modifier.focusRequester(playFocus))
                 Pill(text = stringResource(R.string.common_cancel), onClick = onCancel)
@@ -1185,5 +1218,5 @@ private const val POLL_MS = 500L
 private const val PROGRESS_INTERVAL_MS = 10_000L
 private const val CONTROLS_TIMEOUT_MS = 5_000L
 private const val SEEK_BAR_TIMEOUT_MS = 2_500L
-private const val UP_NEXT_COUNTDOWN_S = 15
+internal const val UP_NEXT_COUNTDOWN_S = 15
 private const val SUBTITLES_ABOVE_CONTROLS = 0.3f

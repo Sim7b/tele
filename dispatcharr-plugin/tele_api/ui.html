@@ -104,6 +104,14 @@
   .chip.est { background: transparent; border: 1px dashed var(--line); color: var(--muted); }
   .chip.sub::before { content: "ST "; color: var(--muted); font-size: 10px; }
   tr.off td { opacity: 0.55; }
+  details.key > summary { list-style: none; display: flex; align-items: center; gap: 12px; cursor: pointer; color: var(--text); }
+  details.key > summary::-webkit-details-marker { display: none; }
+  details.key > summary h2 { flex: 1; }
+  details.key > summary::after { content: "▾"; color: var(--muted); transition: transform 0.2s; }
+  details.key[open] > summary::after { transform: rotate(180deg); }
+  details.key > div { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+  .state { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 12px; background: var(--field); }
+  .state.set { color: var(--ok); } .state.unset { color: var(--warn); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -131,6 +139,7 @@
       <button role="tab" type="button" data-tab="vod" aria-selected="false">VOD</button>
       <button role="tab" type="button" data-tab="sessions" aria-selected="false">Sessions &amp; TVs <span class="badge" id="badge-sessions">0</span></button>
       <button role="tab" type="button" data-tab="stats" aria-selected="false">Statistics</button>
+      <button role="tab" type="button" data-tab="settings" aria-selected="false">Settings</button>
     </nav>
 
     <!-- Overview -->
@@ -238,13 +247,7 @@
           <div class="bar" id="tmdb-bar" style="margin-top:6px"></div>
         </div>
         <div class="muted small" id="tmdb-facts"></div>
-        <form id="tmdb-form" class="row" autocomplete="off">
-          <label for="tmdb-key" class="muted small">API key or read token</label>
-          <input id="tmdb-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
-          <button class="primary" type="submit">Save</button>
-          <button class="danger" type="button" id="tmdb-remove">Remove</button>
-          <span class="muted small">Kept in the Dispatcharr data folder, readable by the server only, never shown again.</span>
-        </form>
+        <div class="muted small" id="tmdb-key-hint" hidden>No TMDB key: set one in <button type="button" class="ghost" data-goto="settings" style="height:auto;padding:0 4px">Settings</button>.</div>
         <details>
           <summary>Titles without a sure match <span id="tmdb-unmatched-count"></span></summary>
           <div class="filters" style="margin:10px 0">
@@ -262,23 +265,6 @@
         </details>
       </section>
 
-      <section class="card" aria-labelledby="os-title">
-        <div class="spread"><h2 id="os-title">OpenSubtitles</h2><span class="muted small" id="os-state">–</span></div>
-        <div class="muted small">With a key here, every Télé TV searches and downloads subtitles through this server: nothing to set on the TVs (a key set on a TV is used first). Free key: opensubtitles.com → API consumers.</div>
-        <form id="os-key-form" class="row" autocomplete="off">
-          <label for="os-key" class="muted small">API key</label>
-          <input id="os-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
-          <button class="primary" type="submit">Save</button>
-          <button class="danger" type="button" id="os-key-remove">Remove</button>
-        </form>
-        <form id="os-account-form" class="row" autocomplete="off">
-          <label for="os-user" class="muted small">Account (optional, more downloads a day)</label>
-          <input id="os-user" type="text" autocomplete="off" spellcheck="false" placeholder="Username" style="width:180px">
-          <input id="os-password" type="password" autocomplete="new-password" placeholder="Password" style="width:180px" aria-label="Password">
-          <button type="submit">Save</button>
-          <button class="danger" type="button" id="os-account-remove">Remove</button>
-        </form>
-      </section>
       <section class="card" aria-labelledby="categories-title">
         <div class="spread"><h2 id="categories-title">VOD categories</h2><span class="muted small" id="categories-count"></span></div>
         <div class="filters">
@@ -350,6 +336,60 @@
             <tbody id="devices"></tbody>
           </table>
         </div>
+      </section>
+    </div>
+
+    <!-- Settings: the keys of the services, kept on the server -->
+    <div role="tabpanel" data-panel="settings" hidden style="display:flex;flex-direction:column;gap:16px">
+      <div class="muted small">Keys are kept in the Dispatcharr data folder, readable by the server only, and never shown again: a section closes once its key is saved.</div>
+      <section class="card">
+        <details class="key" id="tmdb-key-box" open>
+          <summary><h2>TMDB</h2><span class="state unset" id="tmdb-key-state">No key</span></summary>
+          <div>
+            <div class="muted small">Finds the missing TMDB ids, the votes and popularity of the titles, and the titles that may also please, once for every TV. Free key: themoviedb.org → Settings → API.</div>
+            <form id="tmdb-form" class="row" autocomplete="off">
+              <label for="tmdb-key" class="muted small">API key or read token</label>
+              <input id="tmdb-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
+              <button class="primary" type="submit">Save</button>
+              <button class="danger" type="button" id="tmdb-remove">Remove</button>
+            </form>
+          </div>
+        </details>
+      </section>
+      <section class="card">
+        <details class="key" id="os-key-box" open>
+          <summary><h2>OpenSubtitles</h2><span class="state unset" id="os-state">No key</span></summary>
+          <div>
+            <div class="muted small">With a key here, every Télé TV searches and downloads subtitles through this server: nothing to set on the TVs (a key set on a TV is used first). Free key: opensubtitles.com → API consumers.</div>
+            <form id="os-key-form" class="row" autocomplete="off">
+              <label for="os-key" class="muted small">API key</label>
+              <input id="os-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
+              <button class="primary" type="submit">Save</button>
+              <button class="danger" type="button" id="os-key-remove">Remove</button>
+            </form>
+            <form id="os-account-form" class="row" autocomplete="off">
+              <label for="os-user" class="muted small">Account (optional, more downloads a day)</label>
+              <input id="os-user" type="text" autocomplete="off" spellcheck="false" placeholder="Username" style="width:180px">
+              <input id="os-password" type="password" autocomplete="new-password" placeholder="Password" style="width:180px" aria-label="Password">
+              <button type="submit">Save</button>
+              <button class="danger" type="button" id="os-account-remove">Remove</button>
+            </form>
+          </div>
+        </details>
+      </section>
+      <section class="card">
+        <details class="key" id="introdb-box">
+          <summary><h2>TheIntroDB</h2><span class="state set" id="introdb-state">No key (optional)</span></summary>
+          <div>
+            <div class="muted small">Intros and end credits of the movies and episodes, from a public community base: asked by this server for the TVs and kept two weeks (two days when unknown). Without a key: 5,000 requests a day; with one: 100,000, and your own submissions count. Key: theintrodb.org → account.</div>
+            <form id="introdb-form" class="row" autocomplete="off">
+              <label for="introdb-key" class="muted small">API key</label>
+              <input id="introdb-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
+              <button class="primary" type="submit">Save</button>
+              <button class="danger" type="button" id="introdb-remove">Remove</button>
+            </form>
+          </div>
+        </details>
       </section>
     </div>
 
@@ -1003,9 +1043,11 @@
       stacked($("tmdb-bar"), document.createElement("div"), [
         { label: "Matched", value: matched, color: "var(--ok)" }, { label: "Without a sure match", value: missed, color: "var(--warn)" }]);
       text("kpi-tmdb", data.key_set ? p + " %" : "Off");
-      text("kpi-tmdb-sub", data.key_set ? fmt(matched) + " titles · " + fmt(missed) + " unsure" : "Set a key in VOD");
+      text("kpi-tmdb-sub", data.key_set ? fmt(matched) + " titles · " + fmt(missed) + " unsure" : "Set a key in Settings");
       clear($("kpi-tmdb-ring")).appendChild(ring(data.key_set ? p : 0, "var(--accent-2)"));
       $("tmdb-remove").disabled = !data.key_set;
+      keyState("tmdb-key-box", "tmdb-key-state", data.key_set, data.key_set ? "Key saved ✓" : "No key");
+      $("tmdb-key-hint").hidden = !!data.key_set;
       if (data.min_confidence) text("tmdb-threshold", String(data.min_confidence));
       var f = data.facts || {};
       text("tmdb-facts", data.key_set ? "Votes, popularity, countries and studios looked up for " + fmt(f.movie || 0) + " movies and " +
@@ -1233,10 +1275,41 @@
 
   // ---------- OpenSubtitles
   function showSubtitles(data) {
-    text("os-state", data.key_set ? "Key set" + (data.account ? " · account " + data.account : " · no account") : "No key: each TV needs its own");
+    keyState("os-key-box", "os-state", data.key_set,
+      data.key_set ? "Key saved ✓" + (data.account ? " · account " + data.account : "") : "No key");
     $("os-key-remove").disabled = !data.key_set;
     $("os-account-remove").disabled = !data.account;
   }
+  // A key section: closed with its state once the key is saved, open while there is none (first time it is shown)
+  var keySeen = {};
+  function keyState(boxId, stateId, set, label) {
+    var state = $(stateId);
+    state.textContent = label;
+    state.className = "state " + (set ? "set" : "unset");
+    var known = keySeen[boxId];
+    if (known === undefined || known !== !!set) $(boxId).open = !set;
+    keySeen[boxId] = !!set;
+  }
+  function showIntroDb(data) {
+    var state = $("introdb-state");
+    state.textContent = data.key_set ? "Key saved ✓" : "No key (optional)";
+    state.className = "state set";
+    // Optional: closed either way, opened by hand to add or change the key
+    $("introdb-remove").disabled = !data.key_set;
+  }
+  function loadIntroDb() { return call("admin/introdb/").then(showIntroDb).catch(function () {}); }
+  $("introdb-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var input = $("introdb-key"), key = input.value.trim();
+    if (!key) return;
+    post("admin/introdb/", { key: key }).then(function () {
+      input.value = ""; $("introdb-box").open = false; say("TheIntroDB key saved"); return loadIntroDb();
+    }).catch(function () { say("TheIntroDB refused this key"); });
+  });
+  $("introdb-remove").addEventListener("click", function () {
+    if (!window.confirm("Remove the TheIntroDB key? The server goes back to 5,000 requests a day.")) return;
+    post("admin/introdb/", { key: null }).then(function () { say("Key removed"); return loadIntroDb(); }).catch(fail("Not done"));
+  });
   function loadSubtitles() { return call("admin/subtitles/").then(showSubtitles).catch(function () {}); }
   $("os-key-form").addEventListener("submit", function (event) {
     event.preventDefault();
@@ -1304,6 +1377,10 @@
     }).catch(function (error) { text("backup-state", ""); say("Not restored: " + error.message); });
   });
 
+  document.querySelectorAll("[data-goto]").forEach(function (button) {
+    button.addEventListener("click", function () { showTab(button.dataset.goto); });
+  });
+
   // ---------- Loading
   var loading = false;
   function load() {
@@ -1323,6 +1400,7 @@
         loadStats(state.statsDays),
         call("admin/tmdb/").then(showTmdb),
         loadSubtitles(),
+        loadIntroDb(),
         loadCategories()
       ]);
     }).catch(function (error) {

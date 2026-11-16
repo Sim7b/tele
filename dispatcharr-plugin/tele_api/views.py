@@ -26,7 +26,7 @@ logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog", "vod_segments")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -157,7 +157,8 @@ class InfoView(TeleView):
                 "version": core.PLUGIN_VERSION,
                 "api": core.API_VERSION,
                 "features": list(FEATURES) + (["subtitles"] if vault.opensubtitles_key() else [])
-                + (["vod_posters"] if _posters_available() else []),
+                + (["vod_posters"] if _posters_available() else [])
+                + (["vod_related"] if vault.tmdb_key() else []),
                 "server_time": data.server_time(),
                 "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
@@ -571,6 +572,41 @@ class PosterView(APIView):
         return response
 
 
+class VodSegmentsView(TeleView):
+    """Intro and end credits of a movie or an episode (?tmdb_id, ?season and ?episode for an episode, ?duration_ms),
+    from TheIntroDB through the cache of the server: {"segments": {"intro": [{"start_ms", "end_ms"}], ...}}."""
+
+    def get(self, request):
+        from . import extras
+
+        tmdb_id = core.to_int(request.query_params.get("tmdb_id"))
+        season = core.to_int(request.query_params.get("season"))
+        episode = core.to_int(request.query_params.get("episode"))
+        duration = core.to_int(request.query_params.get("duration_ms"))
+        if not tmdb_id or tmdb_id <= 0 or (season is None) != (episode is None) or (season is not None and not 0 <= season <= 500) \
+                or (episode is not None and not 0 <= episode <= 10000):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        duration = duration if duration and 0 < duration < 24 * 3600 * 1000 else None
+        return Response({"api": core.API_VERSION, "segments": extras.segments(tmdb_id, season, episode, duration)})
+
+
+class VodRelatedView(TeleView):
+    """TMDB ids of the titles that may also please (?kind=movie|series, ?tmdb_id): {"ids": [...]}, from TMDB with the
+    key of the plugin, kept two weeks; 404 without key."""
+
+    def get(self, request):
+        from . import extras
+
+        kind = request.query_params.get("kind")
+        tmdb_id = core.to_int(request.query_params.get("tmdb_id"))
+        if kind not in ("movie", "series") or not tmdb_id or tmdb_id <= 0:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        found = extras.related(kind, tmdb_id, core.to_text(self.setting("tmdb_language", "fr-FR")) or "fr-FR")
+        if found is None:
+            return Response({"error": "no_tmdb_key"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"api": core.API_VERSION, "ids": found})
+
+
 class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         user = request.user
@@ -721,6 +757,31 @@ class AdminSubtitlesView(AdminView):
             return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
         vault.set_opensubtitles_key(key)
         logger.info("Télé API: OpenSubtitles key set by an admin")
+        return Response({"api": core.API_VERSION, "key_set": True})
+
+
+class AdminIntroDbView(AdminView):
+    """TheIntroDB key of the plugin (optional): GET whether one is set (never the key); POST {"key"} sets it after
+    TheIntroDB accepted it, {"key": null} removes it."""
+
+    def get(self, request):
+        return Response({"api": core.API_VERSION, "key_set": vault.introdb_key() is not None})
+
+    def post(self, request):
+        from . import extras
+
+        body = request.data if isinstance(request.data, dict) else {}
+        key = body.get("key")
+        if key is None:
+            vault.set_introdb_key(None)
+            return Response({"api": core.API_VERSION, "key_set": False})
+        key = (core.to_text(key) or "").strip()
+        if not 8 <= len(key) <= 512 or any(c.isspace() for c in key):
+            return Response({"error": "invalid_key"}, status=status.HTTP_400_BAD_REQUEST)
+        if not extras.test_introdb_key(key):
+            return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
+        vault.set_introdb_key(key)
+        logger.info("Télé API: TheIntroDB key set by an admin")
         return Response({"api": core.API_VERSION, "key_set": True})
 
 

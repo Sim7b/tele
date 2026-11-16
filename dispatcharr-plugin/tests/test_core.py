@@ -370,3 +370,18 @@ class CatalogItemTest(unittest.TestCase):
         self.assertEqual(len(item["description"]), 400)
         self.assertTrue(item["created_at"].startswith("2026-11-01T00:00:00"))
         self.assertIsNone(core.catalog_item({"id": 1, "name": "x"}, None, None)["tmdb_id"])
+
+
+class ExtrasTest(unittest.TestCase):
+    def test_segments_of_theintrodb(self):
+        answer = {"tvdb_id": 81189, "type": "tv", "intro": [{"start_ms": 228665, "end_ms": 246498}, {"start_ms": 9, "end_ms": 3}],
+                  "credits": [{"start_ms": 3432884, "end_ms": None}], "recap": [{"start_ms": None, "end_ms": None}], "preview": "x"}
+        self.assertEqual(core.parse_segments(answer), {
+            "intro": [{"start_ms": 228665, "end_ms": 246498}], "credits": [{"start_ms": 3432884, "end_ms": None}]})
+        self.assertEqual(core.parse_segments("garbage"), {})
+
+    def test_recommendations_then_similar(self):
+        details = {"id": 1, "recommendations": {"results": [{"id": 5}, {"id": 1}, {"id": "x"}]},
+                   "similar": {"results": [{"id": 5}, {"id": 7}]}}
+        self.assertEqual(core.related_ids(details), ["5", "7"])
+        self.assertEqual(core.related_ids(None), [])

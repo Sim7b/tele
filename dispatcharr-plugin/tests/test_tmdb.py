@@ -121,6 +121,42 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(facts.served("movie", served["until"])["facts"], {})
         self.assertEqual(facts.counts(), {"movie": 1})
 
+    def test_extras_are_kept(self):
+        import io
+        import json
+        import urllib.error
+
+        from tele_api import extras
+
+        answer = io.BytesIO(json.dumps({"intro": [{"start_ms": 1000, "end_ms": 60000}]}).encode())
+        opened = mock.MagicMock()
+        opened.__enter__.return_value = answer
+        with mock.patch.object(extras.urllib.request, "urlopen", return_value=opened) as urlopen:
+            first = extras.segments(1396, 1, 1, 3500000)
+            again = extras.segments(1396, 1, 1, None)
+        self.assertEqual(first, {"intro": [{"start_ms": 1000, "end_ms": 60000}]})
+        self.assertEqual(again, first)
+        urlopen.assert_called_once()
+        # With a TheIntroDB key: sent as a bearer token
+        with mock.patch("tele_api.vault.introdb_key", return_value="secret"), \
+                mock.patch.object(extras.urllib.request, "urlopen", return_value=opened) as urlopen:
+            answer.seek(0)
+            extras.segments(42, None, None, None)
+        self.assertEqual(urlopen.call_args.args[0].get_header("Authorization"), "Bearer secret")
+        missing = urllib.error.HTTPError("u", 404, "no", {}, None)
+        with mock.patch.object(extras.urllib.request, "urlopen", side_effect=missing):
+            self.assertEqual(extras.segments(5, None, None, None), {})
+        with mock.patch.object(extras.urllib.request, "urlopen") as urlopen:
+            self.assertEqual(extras.segments(5, None, None, None), {})
+        urlopen.assert_not_called()
+        with mock.patch("tele_api.vault.tmdb_key", return_value=None):
+            self.assertIsNone(extras.related("movie", 5, "fr-FR"))
+        with mock.patch("tele_api.vault.tmdb_key", return_value="k" * 32), \
+                mock.patch.object(tmdb, "_get", return_value={"recommendations": {"results": [{"id": 9}]}}) as get:
+            self.assertEqual(extras.related("movie", 5, "fr-FR"), ["9"])
+            self.assertEqual(extras.related("movie", 5, "fr-FR"), ["9"])
+        get.assert_called_once()
+
     def test_no_key_no_request(self):
         with mock.patch.object(tmdb, "_get") as get:
             self.assertEqual(tmdb.match_batch({}, lambda: False), {"matched": 0, "unmatched": 0})

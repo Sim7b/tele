@@ -1020,7 +1020,18 @@ class MainActivity : ComponentActivity() {
                                 val ordered = remember(details, vodDisplay.versionOrder) {
                                     details?.let { VodVersionOrder.apply(it, vodDisplay.versionOrder, java.util.Locale.getDefault().language) }
                                 }
+                                // Titles of the library that may also please, under the sheet
+                                val related by produceState(emptyList<VodTitle>(), title.key, title.tmdbId) {
+                                    value = try {
+                                        viewModel.vod.related(title)
+                                    } catch (e: Exception) {
+                                        if (e is CancellationException) throw e
+                                        emptyList()
+                                    }
+                                }
                                 VodDetailScreen(
+                                    related = related,
+                                    onOpenTitle = { other -> currentScreen = CurrentScreen.VodDetail(other.key, returnTo = screen.returnTo) },
                                     title = title,
                                     details = ordered,
                                     languagesMeasured = viewModel.vod.languagesMeasured(title),
@@ -1056,7 +1067,12 @@ class MainActivity : ComponentActivity() {
                             val next = remember(request) {
                                 nextPlayRequest(request, viewModel.vod.cachedDetails(request.titleKey), configRepository.vodStore.progress.value)
                             }
+                            // Intro and credits from TheIntroDB (through the plugin of the source when it has it)
+                            val segments by produceState<io.github.sim7b.tele.data.vod.VodSegments?>(null, request) {
+                                value = viewModel.vod.segments(request.sourceId, request.tmdbId, request.season, request.episode)
+                            }
                             VodPlayerScreen(
+                                segments = segments,
                                 request = request,
                                 playerManager = playerManager,
                                 streamAuths = streamAuths,

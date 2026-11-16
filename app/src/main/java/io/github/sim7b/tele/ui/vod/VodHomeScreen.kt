@@ -1048,7 +1048,7 @@ fun VodHomeScreen(
 
 /** A labelled row of posters; [ranked] shows the position of each title (TMDB trends). */
 @Composable
-private fun PosterRow(
+internal fun PosterRow(
     label: String?,
     titles: List<VodTitle>,
     progress: Map<String, Float>,
