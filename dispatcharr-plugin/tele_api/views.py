@@ -26,7 +26,7 @@ logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -140,6 +140,12 @@ class TeleView(APIView):
         return plugin_state.get()[1].get(name, default)
 
 
+def _posters_available() -> bool:
+    from . import posters
+
+    return posters.available()
+
+
 class InfoView(TeleView):
     """Plugin presence, protocol version and rights of the caller: the first call of Télé."""
 
@@ -150,7 +156,8 @@ class InfoView(TeleView):
                 "plugin": PLUGIN_KEY,
                 "version": core.PLUGIN_VERSION,
                 "api": core.API_VERSION,
-                "features": list(FEATURES) + (["subtitles"] if vault.opensubtitles_key() else []),
+                "features": list(FEATURES) + (["subtitles"] if vault.opensubtitles_key() else [])
+                + (["vod_posters"] if _posters_available() else []),
                 "server_time": data.server_time(),
                 "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
@@ -506,6 +513,61 @@ class VodFactsView(TeleView):
             response.content = body
         response["ETag"] = tag
         response["Vary"] = "Accept-Encoding"
+        return response
+
+
+class VodCatalogView(TeleView):
+    """The movies or series of the groups served (?kind=movie|series, ?since=<X-Tele-Until of a previous answer>
+    for the changes only): {"results": [items of the Dispatcharr VOD API with their "category"]}, gzipped, with the
+    time to ask the changes from in X-Tele-Until and an ETag."""
+
+    def get(self, request):
+        import gzip
+        import hashlib
+
+        from django.http import HttpResponse
+
+        from . import catalog
+
+        kind = request.query_params.get("kind")
+        if kind not in ("movie", "series"):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        since = core.to_float(request.query_params.get("since"))
+        body, until, count = catalog.answer(kind, hides_adult(request.user), since if since and since > 0 else None)
+        tag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+        headers = {"ETag": tag, "X-Tele-Until": f"{until:.3f}", "X-Tele-Count": str(count), "Vary": "Accept-Encoding"}
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers=headers)
+        if "gzip" in (request.headers.get("Accept-Encoding") or ""):
+            response = HttpResponse(body, content_type="application/json")
+            response["Content-Encoding"] = "gzip"
+        else:
+            response = HttpResponse(gzip.decompress(body), content_type="application/json")
+        for name, value in headers.items():
+            response[name] = value
+        return response
+
+
+class PosterView(APIView):
+    """A light poster (JPEG, ?w= width of the card) of a VOD logo of Dispatcharr, by id: served without a key like the
+    images of Dispatcharr (a card loads dozens of them), never from an address of the request. When it cannot be made,
+    a redirect to the image of Dispatcharr."""
+
+    authentication_classes = []
+    permission_classes = [PluginEnabled]
+
+    def get(self, request, logo_id):
+        from django.http import HttpResponse, HttpResponseRedirect
+
+        from . import posters
+
+        width = posters.width_of(request.query_params.get("w"))
+        content = posters.poster(int(logo_id), width) if posters.available() else None
+        if content is None:
+            return HttpResponseRedirect(f"/api/vod/vodlogos/{int(logo_id)}/cache/")
+        response = HttpResponse(content, content_type="image/jpeg")
+        response["Cache-Control"] = "public, max-age=604800"
+        response["X-Content-Type-Options"] = "nosniff"
         return response
 
 

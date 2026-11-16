@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.7"
+PLUGIN_VERSION = "0.3.8"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1455,4 +1455,23 @@ def tmdb_facts(details: Any) -> Optional[Dict[str, Any]]:
         "l": language if re.match(r"^[a-z]{2,3}$", language) else None,
         "c": countries[:10],
         "s": studios[:6],
+    }
+
+
+def catalog_item(values: Mapping[str, Any], group: Any, tmdb_id: Any, max_description: int = 400) -> Dict[str, Any]:
+    """A movie or series of the catalog of the TVs, in the format of the Dispatcharr VOD API (what Télé reads)."""
+    created = values.get("created_at")
+    description = (to_text(values.get("description")) or "").strip()
+    return {
+        "id": values.get("id"),
+        "uuid": to_text(values.get("uuid")),
+        "name": to_text(values.get("name")),
+        "year": to_int(values.get("year")),
+        "logo": to_int(values.get("logo_id")),
+        "description": description[:max_description] or None,
+        "genre": (to_text(values.get("genre")) or "")[:255] or None,
+        "tmdb_id": to_text(tmdb_id) or None,
+        "imdb_id": to_text(values.get("imdb_id")) or None,
+        "created_at": created.isoformat() if hasattr(created, "isoformat") else to_text(created),
+        "category": to_text(group),
     }

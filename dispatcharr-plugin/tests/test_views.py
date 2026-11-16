@@ -371,6 +371,30 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(again.status_code, 304)
         self.assertEqual(self.call(views.VodFactsView, path="/?kind=x", who=user()).status_code, 400)
 
+    def test_catalog_is_gzipped_with_the_time_of_its_changes(self):
+        import gzip
+        import json
+
+        body = gzip.compress(json.dumps({"api": 1, "results": [{"id": 5, "name": "Dune", "category": "FR | FILMS"}]}).encode())
+        with mock.patch("tele_api.catalog.answer", return_value=(body, 12.5, 1)) as built:
+            zipped = self.call(views.VodCatalogView, path="/?kind=movie", who=user(), HTTP_ACCEPT_ENCODING="gzip")
+            plain = self.call(views.VodCatalogView, path="/?kind=series&since=3", who=user())
+            again = self.call(views.VodCatalogView, path="/?kind=movie", who=user(), HTTP_IF_NONE_MATCH=zipped["ETag"])
+        self.assertEqual(zipped["Content-Encoding"], "gzip")
+        self.assertEqual(zipped["X-Tele-Until"], "12.500")
+        self.assertEqual(json.loads(plain.content)["results"][0]["id"], 5)
+        self.assertEqual(built.call_args_list[1].args, ("series", False, 3.0))
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(self.call(views.VodCatalogView, path="/?kind=live", who=user()).status_code, 400)
+
+    def test_poster_without_key_or_a_redirect_to_dispatcharr(self):
+        with mock.patch("tele_api.posters.poster", return_value=b"jpeg"), mock.patch("tele_api.posters.available", return_value=True):
+            served = views.PosterView.as_view()(self.factory.get("/?w=240"), logo_id=7)
+        self.assertEqual((served.status_code, served["Content-Type"]), (200, "image/jpeg"))
+        with mock.patch("tele_api.posters.poster", return_value=None), mock.patch("tele_api.posters.available", return_value=True):
+            missing = views.PosterView.as_view()(self.factory.get("/"), logo_id=7)
+        self.assertEqual((missing.status_code, missing["Location"]), (302, "/api/vod/vodlogos/7/cache/"))
+
     def test_groups_served_to_the_tvs(self):
         served = {"mode": "selected", "groups": [{"name": "FR | FILMS", "type": "movie"}]}
         with mock.patch.object(views.probe, "served_groups", return_value=served):

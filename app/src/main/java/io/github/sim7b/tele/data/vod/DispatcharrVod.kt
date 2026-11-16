@@ -156,6 +156,34 @@ object DispatcharrVod {
         return VodSelection(all = false, keys = keys, known = selection.known)
     }
 
+    /**
+     * The catalog of the Télé API plugin: the titles of the groups served, each with its group and TMDB id, one
+     * answer per kind instead of hundreds of pages (the changes after [since] only when > 0), limited to the
+     * categories of [selection]. Null when the plugin does not serve it (or failed): the standard API is used.
+     */
+    suspend fun loadServerCatalog(
+        config: SourceConfig,
+        client: DispatcharrClient,
+        selection: VodSelection,
+        since: Double = 0.0
+    ): Pair<List<VodEntry>, Double>? {
+        val entries = ArrayList<VodEntry>()
+        val seen = HashSet<String>()
+        var until = Double.MAX_VALUE
+        for (kind in listOf(VodKind.MOVIE, VodKind.SERIES)) {
+            val type = typeOf(kind)
+            val read = client.forEachCatalogItem(type, since) { item ->
+                val category = item.optStringOrNull("category")
+                if (!selection.all && (category == null || VodCategory(kind, "$category|$type", category).key !in selection.keys)) return@forEachCatalogItem
+                val entry = entry(config, client, kind, item)?.copy(category = category) ?: return@forEachCatalogItem
+                if (seen.add(groupKey(entry))) entries.add(entry)
+            } ?: return null
+            until = minOf(until, read)
+        }
+        Log.i(TAG, "${entries.size} titles from the catalog of the plugin" + if (since > 0) " (changes)" else "")
+        return entries to until.takeIf { it != Double.MAX_VALUE }.let { it ?: 0.0 }
+    }
+
     /** A short mark of [allowed]: the catalog is loaded again when it changes. */
     fun groupsStamp(allowed: Set<String>?): String = allowed?.sorted()?.joinToString("\n")?.hashCode()?.toString() ?: "all"
 
@@ -352,7 +380,7 @@ object DispatcharrVod {
             title = parsed.title,
             year = item.optInt("year", 0).takeIf { it > 0 } ?: parsed.year,
             // Poster: the cached VOD logo; wide image: the image endpoint of the title (served without the key)
-            posterUrl = logoId(item)?.let { client.vodImageUrl("vodlogos/$it/cache/") },
+            posterUrl = logoId(item)?.let { client.posterUrl(it) },
             backdropUrl = client.vodImageUrl("$list/$id/image/?kind=backdrop"),
             plot = VodLibrary.shortPlot(item.optStringOrNull("description")),
             genres = VodLibrary.splitGenres(item.optStringOrNull("genre")),

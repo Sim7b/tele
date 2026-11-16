@@ -62,6 +62,10 @@ def _loop(token: object) -> None:
             from . import tmdb
 
             tmdb.run(settings, client, lambda: getattr(sys, _HOLDER, None) is not token)
+            if settings.get("prefetch_episodes", True):
+                from . import prefetch
+
+                prefetch.run(client, lambda: getattr(sys, _HOLDER, None) is not token)
         except Exception:
             logger.exception("Télé API: probe runner error")
         finally:
