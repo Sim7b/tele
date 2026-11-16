@@ -356,7 +356,8 @@ object DispatcharrVod {
             backdropUrl = client.vodImageUrl("$list/$id/image/?kind=backdrop"),
             plot = VodLibrary.shortPlot(item.optStringOrNull("description")),
             genres = VodLibrary.splitGenres(item.optStringOrNull("genre")),
-            rating = VodLibrary.rating(item.optStringOrNull("rating")),
+            // The providers' ratings are left out: TMDB ones only (VodRating)
+            rating = null,
             tmdbId = item.optStringOrNull("tmdb_id")?.takeIf { it.isNotBlank() && it != "0" },
             imdbId = item.optStringOrNull("imdb_id")?.takeIf { it.isNotBlank() },
             addedAt = item.optStringOrNull("created_at")?.let { date ->

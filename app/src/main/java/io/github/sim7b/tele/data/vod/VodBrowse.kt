@@ -62,9 +62,12 @@ object VodBrowse {
         return sort(kept, filter.sort, facts, locale)
     }
 
-    /** Rating shown for a title, out of 10: the TMDB vote when known, else the provider's; null when unknown. */
+    /**
+     * Rating shown for a title, out of 10: the TMDB vote with enough votes to mean something ([VodRating]), else
+     * the one of the title (from TMDB too); null when unknown. The providers' ratings are never used.
+     */
     fun rating(title: VodTitle, facts: TmdbFacts?): Double? =
-        (facts?.vote?.takeIf { it > 0 } ?: title.rating?.takeIf { it > 0 })?.takeIf { it.isFinite() }?.coerceAtMost(MAX_RATING)
+        (facts?.let { VodRating.trusted(it.vote, it.votes) } ?: title.rating?.takeIf { it > 0 })?.takeIf { it.isFinite() }?.coerceAtMost(MAX_RATING)
 
     /**
      * Rows of the Movies or Series tab, from its titles (already filtered): the latest releases, the best
