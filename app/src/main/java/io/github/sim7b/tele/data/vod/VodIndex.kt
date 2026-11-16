@@ -33,6 +33,8 @@ data class TmdbFacts(
     val studios: List<Studio> = emptyList(),
     val popularity: Double = 0.0,
     val vote: Double = 0.0,
+    // Number of TMDB votes (-1: unknown, facts kept before it was): the vote counts only with enough of them
+    val votes: Int = -1,
     val language: String? = null,
     val resolvedAt: Long = 0L,
     val found: Boolean = tmdbId != null
@@ -63,6 +65,35 @@ class VodIndex(private val file: File) {
 
     /** Snapshot for the background computations. */
     fun all(): Map<String, TmdbFacts> = HashMap(facts)
+
+    /**
+     * Facts looked up by a Dispatcharr server for every TV (Télé API plugin), by "movie:<TMDB id>" /
+     * "series:<TMDB id>": given to the [titles] of those ids and kept, so they are not looked up on TMDB from here.
+     * True when facts changed.
+     */
+    fun importServerFacts(titles: List<VodTitle>, server: Map<String, TmdbFacts>, now: Long = System.currentTimeMillis()): Boolean {
+        if (server.isEmpty()) return false
+        load()
+        var changed = 0
+        synchronized(lock) {
+            file.parentFile?.mkdirs()
+            java.io.FileWriter(file, true).buffered().use { out ->
+                titles.forEach { title ->
+                    val id = title.tmdbId?.takeIf { it.isNotBlank() } ?: return@forEach
+                    val found = server[(if (title.kind == VodKind.MOVIE) "movie:" else "series:") + id] ?: return@forEach
+                    val known = facts[title.key]
+                    if (known != null && known.copy(resolvedAt = 0) == found.copy(tmdbId = id, resolvedAt = 0)) return@forEach
+                    val value = found.copy(tmdbId = id, resolvedAt = now)
+                    facts[title.key] = value
+                    out.write(toJson(title.key, value).toString())
+                    out.newLine()
+                    changed++
+                }
+            }
+        }
+        if (changed > 0) _version.value++
+        return changed > 0
+    }
 
     /** Reads the file once (off the main thread); later lines replace earlier ones. */
     fun load() {
@@ -99,7 +130,8 @@ class VodIndex(private val file: File) {
             load()
             val pending = titles.filter { title ->
                 val known = facts[title.key]
-                known == null || (!known.found && now - known.resolvedAt > RETRY_MS)
+                // Found before the number of votes was kept: looked up again for it
+                known == null || (!known.found && now - known.resolvedAt > RETRY_MS) || (known.found && known.votes < 0)
             }
             val total = titles.size
             var indexed = total - pending.size
@@ -173,6 +205,7 @@ class VodIndex(private val file: File) {
                 studios = studios,
                 popularity = details.optDouble("popularity", 0.0),
                 vote = details.optDouble("vote_average", 0.0),
+                votes = details.optInt("vote_count", 0),
                 language = details.optStringOrNull("original_language"),
                 resolvedAt = now
             )
@@ -212,6 +245,7 @@ class VodIndex(private val file: File) {
         if (value.studios.isNotEmpty()) put("s", JSONArray().apply { value.studios.forEach { put(JSONArray().put(it.id).put(it.name)) } })
         if (value.popularity > 0) put("p", value.popularity)
         if (value.vote > 0) put("v", value.vote)
+        if (value.votes >= 0) put("n", value.votes)
         put("l", value.language)
         put("at", value.resolvedAt)
     }
@@ -229,6 +263,7 @@ class VodIndex(private val file: File) {
             studios = studios,
             popularity = obj.optDouble("p", 0.0),
             vote = obj.optDouble("v", 0.0),
+            votes = obj.optInt("n", -1),
             language = obj.optStringOrNull("l"),
             resolvedAt = obj.optLong("at"),
             found = obj.optBoolean("f", obj.optStringOrNull("id") != null)
