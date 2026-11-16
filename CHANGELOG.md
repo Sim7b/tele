@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.34](https://github.com/Sim7b/tele/compare/v0.3.33...v0.3.34) (2026-11-16)
+
+### Performance Improvements
+
+* **dispatcharr-plugin:** ready catalog, light posters and episodes loaded in advance ([dddaac7](https://github.com/Sim7b/tele/commit/dddaac77fcb47ea8779abdb4fb8680a6f3994ff4))
+* **vod:** the catalog and the light posters of the Télé API plugin ([5659b42](https://github.com/Sim7b/tele/commit/5659b42f8abd454492246a795df6e2fd552b7fcd))
+
 ## [0.3.33](https://github.com/Sim7b/tele/compare/v0.3.32...v0.3.33) (2026-11-16)
 
 ### Features
