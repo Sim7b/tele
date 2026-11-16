@@ -451,6 +451,8 @@ class VodRepository(
         if (config.type == SourceType.DISPATCHARR) refreshMeasuredLanguages(config)
         if (fresh && !force) return
         try {
+            // Dispatcharr with the Télé API plugin: its catalog, ready (one answer per kind, then only the changes)
+            if (config.type == SourceType.DISPATCHARR && loadFromServerCatalog(config, force, selection, cached, groupsStamp)) return
             // Dispatcharr, loaded fully less than a week ago: only the titles added since (a page per list);
             // a full load now and then drops the titles removed from the server
             val now = System.currentTimeMillis()
@@ -517,6 +519,37 @@ class VodRepository(
             Log.w(TAG, "Catalog of a ${config.type} source unavailable: ${e.javaClass.simpleName}")
             errors[config.id] = UiText.Res(R.string.error_with_source, config.name, e.toUiText())
         }
+    }
+
+    /**
+     * Loads the catalog of [config] from its Télé API plugin: whole when [force]d, when the device has none or
+     * every week (titles removed from the server), else only the titles changed since the last answer. False
+     * when the plugin does not serve it: the standard API is used.
+     */
+    private suspend fun loadFromServerCatalog(
+        config: SourceConfig,
+        force: Boolean,
+        selection: VodSelection,
+        cached: CachedVodCatalog?,
+        groupsStamp: String?
+    ): Boolean {
+        val now = System.currentTimeMillis()
+        val until = withContext(Dispatchers.IO) { settings.getVodCatalogUntil(config.id) }
+        val base = cached?.takeIf { !force && until > 0 && now - it.fullAt in 0..FULL_LOAD_MAX_AGE_MS }
+        val (found, next) = DispatcharrVod.loadServerCatalog(config, dispatcharr(config), selection, if (base != null) until else 0.0)
+            ?: return false
+        val entries = if (base != null) DispatcharrVod.merge(base.entries, found) else found
+        val fullAt = base?.fullAt ?: now
+        catalogs[config.id] = entries
+        catalogStamps[config.id] = now to fullAt
+        errors.remove(config.id)
+        if (base == null || found.isNotEmpty()) publish(loading = true)
+        withContext(Dispatchers.IO) {
+            groupsStamp?.let { settings.setVodGroupsStamp(config.id, it) }
+            if (next > 0) settings.setVodCatalogUntil(config.id, next)
+            settings.saveVodCatalog(config.id, now, entries, fullAt = fullAt)
+        }
+        return true
     }
 
     /** The languages of [title] come from a measure on the server (Télé API plugin) for one of its files. */

@@ -27,6 +27,10 @@ object TeleApi {
     const val VOD_POPULAR_PATH = "/api/tele/v1/vod/popular/"
     const val SUBTITLES_SEARCH_PATH = "/api/tele/v1/subtitles/search/"
     const val VOD_FACTS_PATH = "/api/tele/v1/vod/facts/"
+    const val VOD_CATALOG_PATH = "/api/tele/v1/vod/catalog/"
+    const val VOD_POSTER_PATH = "/api/tele/v1/vod/poster/"
+    // Width of the light posters: a card of the TV, with room for the large poster size
+    const val POSTER_WIDTH = 342
     private const val MAX_FACTS = 200_000
 
     /**

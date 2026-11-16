@@ -454,6 +454,14 @@ class SettingsRepository(context: Context) {
     }
 
     /** Categories of movies and series to load from source [configId]. */
+    /** Time (server clock) to ask the changes of the catalog of the Télé API plugin from; 0 when unknown. */
+    fun getVodCatalogUntil(configId: String): Double =
+        prefs.getString(KEY_VOD_CATALOG_UNTIL_PREFIX + configId, null)?.toDoubleOrNull() ?: 0.0
+
+    fun setVodCatalogUntil(configId: String, until: Double) {
+        prefs.edit().putString(KEY_VOD_CATALOG_UNTIL_PREFIX + configId, until.toString()).apply()
+    }
+
     /** Mark of the VOD groups the Dispatcharr server of [configId] served when its catalog was loaded. */
     fun getVodGroupsStamp(configId: String): String = prefs.getString(KEY_VOD_GROUPS_PREFIX + configId, null) ?: "all"
 
@@ -960,7 +968,8 @@ class SettingsRepository(context: Context) {
      * and selected streams of its channels (ids prefixed by the source; Dispatcharr ones are UUIDs).
      */
     private fun forgetSourceData(configId: String) {
-        prefs.edit().remove(KEY_USER_NAME_PREFIX + configId).remove(KEY_VOD_GROUPS_PREFIX + configId).apply()
+        prefs.edit().remove(KEY_USER_NAME_PREFIX + configId).remove(KEY_VOD_GROUPS_PREFIX + configId)
+            .remove(KEY_VOD_CATALOG_UNTIL_PREFIX + configId).apply()
         if (configId in _vodSelections.value) {
             val kept = _vodSelections.value - configId
             prefs.edit().putString(KEY_VOD_SELECTIONS, VodCategories.toJson(kept)).apply()
@@ -1013,6 +1022,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_VOD_DISPLAY = "vod_display"
         private const val KEY_VOD_SELECTIONS = "vod_selections"
         private const val KEY_VOD_GROUPS_PREFIX = "vod_groups_"
+        private const val KEY_VOD_CATALOG_UNTIL_PREFIX = "vod_catalog_until_"
         private const val VOD_STATE_FILE = "vod_state.json"
         private const val VOD_INDEX_FILE = "vod_tmdb_index.jsonl"
         private const val KEY_TMDB_KEY = "vod_tmdb_key"

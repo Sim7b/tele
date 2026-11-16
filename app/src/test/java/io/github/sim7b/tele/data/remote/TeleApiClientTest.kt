@@ -318,6 +318,45 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `the catalog of the plugin is read in one answer per kind`() = runBlocking {
+        val since = mutableListOf<String?>()
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"plugin": "tele_api", "api": 1, "features": ["vod_catalog", "vod_posters"]}""")
+                TeleApi.VOD_CATALOG_PATH -> {
+                    since.add(request.url.queryParameter("since"))
+                    val movies = request.url.queryParameter("kind") == "movie"
+                    MockResponse.Builder().addHeader("Content-Type", "application/json").addHeader("X-Tele-Until", if (movies) "20.5" else "19.0")
+                        .body(
+                            if (movies) {
+                                """{"api": 1, "results": [
+                                    {"id": 5, "uuid": "u5", "name": "FR - Dune (2021)", "tmdb_id": "438631", "logo": 9, "category": "FR | FILMS"},
+                                    {"id": 6, "name": "Other", "category": "EN | MOVIES"}]}"""
+                            } else {
+                                """{"api": 1, "results": [{"id": 7, "name": "The Bear", "category": "FR | SERIES"}]}"""
+                            }
+                        ).build()
+                }
+                else -> null
+            }
+        }
+        val config = SourceConfig(name = "D", serverUrl = server.url("/").toString(), apiKey = "k")
+        val client = DispatcharrClient(config)
+        val (all, until) = io.github.sim7b.tele.data.vod.DispatcharrVod.loadServerCatalog(config, client, io.github.sim7b.tele.data.vod.VodSelection.ALL)!!
+        assertEquals(listOf("5", "6", "7"), all.map { it.providerId })
+        assertEquals("FR | FILMS", all.first().category)
+        assertEquals("438631", all.first().tmdbId)
+        // Light posters of the plugin
+        assertTrue(all.first().posterUrl!!.endsWith("/api/tele/v1/vod/poster/9/?w=342"))
+        assertEquals(19.0, until, 0.0)
+        // The categories chosen on the TV only, and the changes since a time
+        val chosen = io.github.sim7b.tele.data.vod.VodSelection(all = false, keys = setOf("MOVIE:FR | FILMS|movie"))
+        val (some, _) = io.github.sim7b.tele.data.vod.DispatcharrVod.loadServerCatalog(config, client, chosen, since = 19.0)!!
+        assertEquals(listOf("5"), some.map { it.providerId })
+        assertEquals(listOf(null, null, "19.0", "19.0"), since)
+    }
+
+    @Test
     fun `parses the plugin answers defensively`() {
         assertNull(TeleApi.features(JSONObject("""{"api": 2, "features": ["channels"]}""")))
         assertNull(TeleApi.features(JSONObject("""{"api": 1}""")))

@@ -622,6 +622,14 @@ class DispatcharrClient(
         }
     }
 
+    /**
+     * Poster of a VOD logo: made light by the Télé API plugin (a JPEG the width of a card, kept on the server) when
+     * it does, else the cached image of Dispatcharr. Both are served without authentication.
+     */
+    fun posterUrl(logoId: String): String =
+        if (teleApiFeatures?.contains("vod_posters") == true) "$baseUrl${TeleApi.VOD_POSTER_PATH}$logoId/?w=${TeleApi.POSTER_WIDTH}"
+        else vodImageUrl("vodlogos/$logoId/cache/")
+
     /** Artwork of a VOD object ("movies/12/image/"), served without authentication. */
     fun vodImageUrl(path: String): String = "$baseUrl/api/vod/$path"
 
@@ -730,6 +738,35 @@ class DispatcharrClient(
             val since = if (since > 0) "&since=$since" else ""
             TeleApi.vodFacts(getObject("$baseUrl${TeleApi.VOD_FACTS_PATH}?kind=$kind$since"))
         }
+
+    /** Whether the plugin serves the VOD catalog ready for Télé ([forEachCatalogItem]). */
+    suspend fun hasVodCatalog(): Boolean = baseUrl.isNotBlank() && "vod_catalog" in teleApi()
+
+    /**
+     * The [kind] ("movie" / "series") titles of the catalog of the plugin, the ones changed after [since] only
+     * when given (> 0), streamed one at a time to [action] (items of the VOD API with their "category"): the
+     * time to ask the next changes from, null when unavailable (then nothing was given to [action]).
+     */
+    suspend fun forEachCatalogItem(kind: String, since: Double, action: (JSONObject) -> Unit): Double? = withContext(Dispatchers.IO) {
+        if (!hasVodCatalog()) return@withContext null
+        val url = "$baseUrl${TeleApi.VOD_CATALOG_PATH}?kind=$kind" + if (since > 0) "&since=$since" else ""
+        val request = Request.Builder().url(url).get().build()
+        try {
+            client.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "HTTP ${response.code}: ${request.url.encodedPath}")
+                    return@executeCancellable null
+                }
+                val until = response.header("X-Tele-Until")?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: 0.0
+                JsonStreams.forEachObject(response.body.byteStream(), action = action)
+                until
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            null
+        }
+    }
 
     /** Whether the plugin searches and downloads subtitles with an OpenSubtitles key of the server. */
     suspend fun hasServerSubtitles(): Boolean = baseUrl.isNotBlank() && "subtitles" in teleApi()
