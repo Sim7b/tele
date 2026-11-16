@@ -354,3 +354,19 @@ class TmdbFactsTest(unittest.TestCase):
         self.assertEqual(facts, {"v": 8.4, "n": 1532, "p": 81.23, "l": "en", "c": ["US", "GB"], "s": [["213", "Netflix"], ["5", "X"]]})
         self.assertEqual(core.tmdb_facts({"vote_average": 99, "vote_count": -3})["v"], 0)
         self.assertIsNone(core.tmdb_facts("garbage"))
+
+
+class CatalogItemTest(unittest.TestCase):
+    def test_item_in_the_format_of_the_vod_api(self):
+        from datetime import datetime, timezone
+
+        values = {"id": 5, "uuid": "0a1b2c3d-0000-4000-8000-000000000001", "name": "FR - Dune (2021)", "year": 2021,
+                  "logo_id": 9, "description": "x" * 900, "genre": "Science-Fiction", "tmdb_id": "", "imdb_id": "tt1160419",
+                  "created_at": datetime(2026, 11, 1, tzinfo=timezone.utc)}
+        item = core.catalog_item(values, "FR | FILMS", "438631")
+        self.assertEqual(item["tmdb_id"], "438631")
+        self.assertEqual(item["category"], "FR | FILMS")
+        self.assertEqual(item["logo"], 9)
+        self.assertEqual(len(item["description"]), 400)
+        self.assertTrue(item["created_at"].startswith("2026-11-01T00:00:00"))
+        self.assertIsNone(core.catalog_item({"id": 1, "name": "x"}, None, None)["tmdb_id"])

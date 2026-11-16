@@ -1,6 +1,6 @@
 {
   "name": "Télé API",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Endpoints and a page for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, playback sessions, and the audio and subtitle languages of the VOD measured with ffprobe.",
   "author": "Télé",
   "help_url": "/api/tele/ui/",
@@ -52,6 +52,13 @@
       "label": "VOD languages",
       "type": "info",
       "description": "ffprobe reads the audio and subtitle tracks of one file per category. A probe uses a real provider connection: it only starts when one is free, one at a time, and stops at once when a viewer needs the connection."
+    },
+    {
+      "id": "prefetch_episodes",
+      "label": "Load the episodes of the series being watched in advance",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Every 10 minutes, the episodes of up to 12 series watched lately or popular on the server are loaded from the provider (once a day per series), so their sheet opens at once on the TVs. Uses no stream connection."
     },
     {
       "id": "probe_enabled",
