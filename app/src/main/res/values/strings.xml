@@ -764,6 +764,7 @@
     <string name="vod_row_trending">Trending this week</string>
     <!-- Titles most watched on the Dispatcharr server (Télé API plugin) -->
     <string name="vod_row_server_popular">Popular on the server</string>
+    <string name="vod_related">You may also like</string>
     <string name="style_choice_title">Choose your style</string>
     <string name="style_choice_subtitle">How Télé looks on this TV. You can change it at any time in the settings.</string>
     <string name="style_choice_immersive">Immersive</string>

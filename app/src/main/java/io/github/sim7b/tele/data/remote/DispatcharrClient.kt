@@ -739,6 +739,28 @@ class DispatcharrClient(
             TeleApi.vodFacts(getObject("$baseUrl${TeleApi.VOD_FACTS_PATH}?kind=$kind$since"))
         }
 
+    /** Whether the plugin knows the intro and credits of the titles ([getVodSegments]). */
+    suspend fun hasVodSegments(): Boolean = baseUrl.isNotBlank() && "vod_segments" in teleApi()
+
+    /** Intro and credits of a movie (no [season]) or an episode, from TheIntroDB through the plugin; null on error. */
+    suspend fun getVodSegments(tmdbId: String, season: Int?, episode: Int?): io.github.sim7b.tele.data.vod.VodSegments? =
+        withContext(Dispatchers.IO) {
+            if (!hasVodSegments()) return@withContext null
+            val url = "$baseUrl${TeleApi.VOD_SEGMENTS_PATH}".toHttpUrlOrNull()?.newBuilder() ?: return@withContext null
+            url.addQueryParameter("tmdb_id", tmdbId)
+            if (season != null && episode != null) {
+                url.addQueryParameter("season", season.toString())
+                url.addQueryParameter("episode", episode.toString())
+            }
+            getObject(url.build().toString())?.let { io.github.sim7b.tele.data.vod.VodSegments.parse(it.optJSONObject("segments")) }
+        }
+
+    /** TMDB ids of the titles that may also please, looked up by the plugin with its TMDB key; null without it. */
+    suspend fun getVodRelated(kind: String, tmdbId: String): List<String>? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_related" !in teleApi()) return@withContext null
+        getObject("$baseUrl${TeleApi.VOD_RELATED_PATH}?kind=$kind&tmdb_id=$tmdbId")?.let { TeleApi.relatedIds(it) }
+    }
+
     /** Whether the plugin serves the VOD catalog ready for Télé ([forEachCatalogItem]). */
     suspend fun hasVodCatalog(): Boolean = baseUrl.isNotBlank() && "vod_catalog" in teleApi()
 

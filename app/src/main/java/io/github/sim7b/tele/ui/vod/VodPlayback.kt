@@ -180,6 +180,16 @@ internal const val UP_NEXT_LEAD_MS = 30_000L
  * learned for its series ([learnedEndMs]), offered until a little before it. Null when not offered: nothing
  * learned yet (no guess, which would land anywhere), or a short clip.
  */
+/** Part of the countdown of the next episode still to go (1 at its start, 0 when it starts). */
+internal fun countdownFraction(secondsLeft: Int): Float =
+    (secondsLeft.toFloat() / UP_NEXT_COUNTDOWN_S).coerceIn(0f, 1f)
+
+/** Where to skip the intro to when TheIntroDB knows it ([startMs] to [endMs]): offered only during it. */
+internal fun introSegmentTarget(positionMs: Long, durationMs: Long, startMs: Long, endMs: Long): Long? {
+    if (durationMs in 1 until INTRO_MIN_DURATION_MS || endMs <= startMs) return null
+    return io.github.sim7b.tele.data.vod.segmentSkipTarget(positionMs, startMs, endMs, INTRO_SHOW_FROM_MS, INTRO_MARGIN_MS)
+}
+
 internal fun introSkipTarget(positionMs: Long, durationMs: Long, learnedEndMs: Long?): Long? {
     if (learnedEndMs == null || durationMs < INTRO_MIN_DURATION_MS || positionMs < INTRO_SHOW_FROM_MS) return null
     return learnedEndMs.takeIf { positionMs < it - INTRO_MARGIN_MS }

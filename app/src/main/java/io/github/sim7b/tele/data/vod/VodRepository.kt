@@ -99,6 +99,69 @@ class VodRepository(
     val serverSubtitles: StateFlow<Boolean> = _serverSubtitles.asStateFlow()
     private val subtitleSources = ConcurrentHashMap.newKeySet<String>()
 
+    // Titles that may also please and segments of the files, by TMDB id (asked once a session)
+    private val relatedCache = ConcurrentHashMap<String, List<String>>()
+    private val segmentsCache = ConcurrentHashMap<String, VodSegments>()
+
+    /**
+     * Titles of the library that may also please, for the sheet of [title]: TMDB recommendations then similar
+     * titles, looked up by a Dispatcharr server (Télé API plugin) or with the TMDB key of the TV.
+     */
+    suspend fun related(title: VodTitle, limit: Int = 20): List<VodTitle> {
+        val tmdbId = title.tmdbId?.takeIf { it.isNotBlank() } ?: return emptyList()
+        val kind = if (title.kind == VodKind.MOVIE) "movie" else "series"
+        val ids = relatedCache.getOrPut("$kind:$tmdbId") {
+            val fromServer = loadedFor.filter { it.type == SourceType.DISPATCHARR }.firstNotNullOfOrNull { config ->
+                try {
+                    dispatcharr(config).getVodRelated(kind, tmdbId)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    null
+                }
+            }
+            fromServer ?: settings.tmdbKey.value.takeIf { it.isNotBlank() }?.let { key ->
+                try {
+                    VodMetadata.related(if (title.kind == VodKind.MOVIE) "movie" else "tv", tmdbId, key, java.util.Locale.getDefault().toLanguageTag())
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    emptyList()
+                }
+            }.orEmpty()
+        }
+        if (ids.isEmpty()) return emptyList()
+        return withContext(Dispatchers.Default) { VodLibrary.byTmdbIds(_library.value.titles, title.kind, ids, exclude = title.key).take(limit) }
+    }
+
+    /**
+     * Intro and end credits of a movie (no [season]) or an episode played from [sourceId], from TheIntroDB: through
+     * the Télé API plugin of a Dispatcharr server first (that source, then any other; kept on the server), else asked
+     * from the TV directly. Null when unknown.
+     */
+    suspend fun segments(sourceId: String, tmdbId: String?, season: Int?, episode: Int?): VodSegments? {
+        val id = tmdbId?.takeIf { it.isNotBlank() && it.all(Char::isDigit) } ?: return null
+        val key = "$id:$season:$episode"
+        segmentsCache[key]?.let { return it.takeIf { found -> !found.isEmpty } }
+        // Dispatcharr first (the source of the file, then any other with the plugin): kept there for every TV;
+        // asked locally when no server has the plugin or none answered
+        val servers = loadedFor.filter { it.type == SourceType.DISPATCHARR }.sortedBy { if (it.id == sourceId) 0 else 1 }
+        val fromServer = servers.firstNotNullOfOrNull { config ->
+            try {
+                dispatcharr(config).getVodSegments(id, season, episode)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                null
+            }
+        }
+        val found = fromServer ?: try {
+            VodSegments.fetch(id, season, episode)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        } ?: return null
+        segmentsCache[key] = found
+        return found.takeIf { !it.isEmpty }
+    }
+
     /** The client of a Dispatcharr source whose plugin searches subtitles (null: none). */
     fun subtitleServer(): DispatcharrClient? =
         loadedFor.firstOrNull { it.type == SourceType.DISPATCHARR && it.id in subtitleSources }?.let { dispatcharr(it) }

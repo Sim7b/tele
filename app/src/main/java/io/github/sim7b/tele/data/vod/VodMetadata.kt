@@ -174,6 +174,16 @@ object VodMetadata {
      * A TMDB request; asked again ([TMDB_RETRIES] times) when TMDB is busy (too many requests at once, server
      * error) or the network fails, after the pause TMDB asks for, else a growing one. Null when it fails for good.
      */
+    /** TMDB ids of the recommendations, then of the similar titles, of a movie or series ([kind] "movie" / "tv"). */
+    suspend fun related(kind: String, tmdbId: String, key: String, language: String): List<String> {
+        val details = tmdbGet("$kind/$tmdbId", key, language) { addQueryParameter("append_to_response", "recommendations,similar") }
+            ?: return emptyList()
+        return listOf("recommendations", "similar").flatMap { part ->
+            val results = details.optJSONObject(part)?.optJSONArray("results") ?: return@flatMap emptyList()
+            (0 until minOf(results.length(), 20)).mapNotNull { results.optJSONObject(it)?.optLong("id", 0)?.takeIf { id -> id > 0 }?.toString() }
+        }.filter { it != tmdbId }.distinct()
+    }
+
     internal suspend fun tmdbGet(path: String, key: String, language: String, query: HttpUrl.Builder.() -> Unit): JSONObject? {
         val url = (TMDB_API + path).toHttpUrl().newBuilder()
             .addQueryParameter("api_key", key)

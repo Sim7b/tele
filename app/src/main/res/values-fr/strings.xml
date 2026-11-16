@@ -773,6 +773,7 @@
     <string name="api_key_page_get">Obtenir une clé sur %1$s</string>
     <string name="vod_row_trending">Tendances de la semaine</string>
     <string name="vod_row_server_popular">Populaires sur le serveur</string>
+    <string name="vod_related">Vous aimerez aussi</string>
     <string name="style_choice_title">Choisissez votre style</string>
     <string name="style_choice_subtitle">L\'apparence de Télé sur cette TV. Vous pourrez la changer à tout moment dans les réglages.</string>
     <string name="style_choice_immersive">Immersif</string>

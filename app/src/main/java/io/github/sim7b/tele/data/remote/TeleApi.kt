@@ -29,6 +29,14 @@ object TeleApi {
     const val VOD_FACTS_PATH = "/api/tele/v1/vod/facts/"
     const val VOD_CATALOG_PATH = "/api/tele/v1/vod/catalog/"
     const val VOD_POSTER_PATH = "/api/tele/v1/vod/poster/"
+    const val VOD_SEGMENTS_PATH = "/api/tele/v1/vod/segments/"
+    const val VOD_RELATED_PATH = "/api/tele/v1/vod/related/"
+
+    /** TMDB ids of an answer of [VOD_RELATED_PATH] (or a TMDB list), in their order; others are skipped. */
+    fun relatedIds(answer: JSONObject?): List<String> {
+        val ids = answer?.optJSONArray("ids") ?: return emptyList()
+        return (0 until minOf(ids.length(), 60)).mapNotNull { ids.optString(it).takeIf { id -> DIGITS.matches(id) } }.distinct()
+    }
     // Width of the light posters: a card of the TV, with room for the large poster size
     const val POSTER_WIDTH = 342
     private const val MAX_FACTS = 200_000

@@ -119,7 +119,10 @@ fun VodDetailScreen(
     // Trailer (its YouTube id) opened in the YouTube app
     onPlayTrailer: (String) -> Unit = {},
     // The languages of the title were measured on the server (Télé API plugin), not estimated from the names
-    languagesMeasured: Boolean = false
+    languagesMeasured: Boolean = false,
+    // Titles of the library that may also please (TMDB recommendations, then similar titles), and opening one
+    related: List<VodTitle> = emptyList(),
+    onOpenTitle: (VodTitle) -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
     val compact = LocalScreen.current.compact
@@ -364,6 +367,17 @@ fun VodDetailScreen(
                         SectionLabel(text = stringResource(R.string.vod_cast))
                         Text(text = cast.joinToString(" · "), fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(top = 6.dp))
                     }
+                }
+            }
+            if (related.isNotEmpty()) {
+                item(key = "related") {
+                    PosterRow(
+                        label = stringResource(R.string.vod_related),
+                        titles = related,
+                        progress = emptyMap(),
+                        onOpenTitle = onOpenTitle,
+                        findPoster = null
+                    )
                 }
             }
         }

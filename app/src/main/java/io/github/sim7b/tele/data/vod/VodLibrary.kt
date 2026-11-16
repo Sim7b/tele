@@ -144,6 +144,16 @@ object VodLibrary {
             ?.distinct()
             .orEmpty()
 
+    /** Titles of [kind] whose TMDB id is in [ids], in the order of [ids], [exclude] (a title key) left out. */
+    fun byTmdbIds(titles: List<VodTitle>, kind: VodKind, ids: List<String>, exclude: String? = null): List<VodTitle> {
+        val rank = ids.withIndex().associate { it.value to it.index }
+        return titles.asSequence()
+            .filter { it.kind == kind && it.key != exclude && it.tmdbId != null && it.tmdbId in rank }
+            .sortedBy { rank.getValue(it.tmdbId!!) }
+            .distinctBy { it.tmdbId }
+            .toList()
+    }
+
     /** Rating on 10 from a provider value ("7.4", "74%", "3.7" on 5 when [fiveBased]). */
     fun rating(value: String?, fiveBased: Boolean = false): Double? {
         val number = value?.trim()?.removeSuffix("%")?.replace(',', '.')?.toDoubleOrNull() ?: return null
