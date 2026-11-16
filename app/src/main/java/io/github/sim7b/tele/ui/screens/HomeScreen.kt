@@ -861,7 +861,7 @@ internal fun HeaderClock() {
  * taken, followed by the number of free slots.
  */
 @Composable
-private fun StreamSlotsBadge(slots: StreamSlots) {
+internal fun StreamSlotsBadge(slots: StreamSlots) {
     val description = stringResource(R.string.home_stream_slots, slots.free, slots.total)
     Row(
         verticalAlignment = Alignment.CenterVertically,

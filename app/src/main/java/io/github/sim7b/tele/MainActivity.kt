@@ -83,6 +83,8 @@ import io.github.sim7b.tele.ui.screens.GuideScreen
 import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.PlayerScreen
 import io.github.sim7b.tele.ui.screens.QuickGuide
+import io.github.sim7b.tele.ui.components.LocalLite
+import io.github.sim7b.tele.ui.screens.StyleChoice
 import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.screens.SettingsScreen
 import io.github.sim7b.tele.ui.screens.WelcomeScreen
@@ -338,8 +340,10 @@ class MainActivity : ComponentActivity() {
             // Quick start guide: by itself after the first welcome, then from the settings
             val guideSeen by configRepository.guideSeen.collectAsState()
             var showGuide by rememberSaveable { mutableStateOf(false) }
-            LaunchedEffect(showWelcome, guideSeen) {
-                if (!showWelcome && !guideSeen) showGuide = true
+            // First launch: the style of the app (immersive, or classic for small devices) before the guide
+            val styleChosen by configRepository.styleChosen.collectAsState()
+            LaunchedEffect(showWelcome, guideSeen, styleChosen) {
+                if (!showWelcome && !guideSeen && styleChosen) showGuide = true
             }
 
             // The welcome stays until the guide and the favorites' artwork are loaded (time-bounded)
@@ -599,7 +603,11 @@ class MainActivity : ComponentActivity() {
                 uiDensity = uiDensity
             ) {
                 // Rating on the posters: TMDB vote when known, else the provider one
-                CompositionLocalProvider(LocalRatingOf provides remember { { title: VodTitle -> VodBrowse.rating(title, viewModel.vod.index.facts(title.key)) } }) {
+                CompositionLocalProvider(
+                    LocalRatingOf provides remember { { title: VodTitle -> VodBrowse.rating(title, viewModel.vod.index.facts(title.key)) } },
+                    // Classic style: the light mode, for small devices
+                    LocalLite provides (homeLayout.style == HomeStyle.CLASSIC)
+                ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -652,6 +660,7 @@ class MainActivity : ComponentActivity() {
                             if (immersive) saveableStateHolder.SaveableStateProvider("home-immersive") {
                                 val homeActions = guideActions(returnTo = CurrentScreen.Home)
                                 ImmersiveHomeScreen(
+                                    streamSlots = streamSlots,
                                     channels = visibleChannels,
                                     favorites = allFavorites,
                                     rows = homeLayout.rows,
@@ -1310,6 +1319,10 @@ class MainActivity : ComponentActivity() {
                             },
                             onDismiss = { updatePromptClosed = true }
                         )
+                    }
+
+                    if (!showWelcome && !styleChosen) {
+                        StyleChoice(onChoose = { style -> configRepository.chooseStyle(style) })
                     }
 
                     if (showGuide) {

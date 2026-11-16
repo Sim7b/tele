@@ -9,6 +9,7 @@ import androidx.annotation.VisibleForTesting
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.remote.CachedGuide
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
+import io.github.sim7b.tele.data.model.HomeStyle
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.AudioLeveling
 import io.github.sim7b.tele.playback.PictureFormat
@@ -221,6 +222,10 @@ class SettingsRepository(context: Context) {
     val subtitleLanguages: StateFlow<List<String>> = _subtitleLanguages.asStateFlow()
 
     // Quick start guide already shown (or skipped): it only opens by itself on the first launch
+    // The style of the app (immersive or classic) was chosen at the first launch
+    private val _styleChosen = MutableStateFlow(true)
+    val styleChosen: StateFlow<Boolean> = _styleChosen.asStateFlow()
+
     private val _guideSeen = MutableStateFlow(false)
     val guideSeen: StateFlow<Boolean> = _guideSeen.asStateFlow()
 
@@ -270,6 +275,8 @@ class SettingsRepository(context: Context) {
 
     private fun loadPreferences() {
         _guideSeen.value = prefs.getBoolean(KEY_GUIDE_SEEN, false)
+        // Installs from before this choice keep their style without being asked
+        _styleChosen.value = prefs.getBoolean(KEY_STYLE_CHOSEN, prefs.contains(KEY_HOME_LAYOUT) || _guideSeen.value)
         _vodEnabled.value = prefs.getBoolean(KEY_VOD_ENABLED, false)
         _matchFrameRate.value = prefs.getBoolean(KEY_MATCH_FRAME_RATE, true)
         _audioLeveling.value = AudioLeveling.entries.firstOrNull { it.name == prefs.getString(KEY_AUDIO_LEVELING, null) } ?: AudioLeveling.OFF
@@ -483,6 +490,17 @@ class SettingsRepository(context: Context) {
     fun setTimeshift(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_TIMESHIFT, enabled) }
         _timeshift.value = enabled
+    }
+
+    /**
+     * The style chosen at the first launch: immersive, or classic, the light one for small devices (no channel
+     * preview while browsing).
+     */
+    fun chooseStyle(style: HomeStyle) {
+        setHomeLayout(_homeLayout.value.copy(style = style))
+        if (style == HomeStyle.CLASSIC) setPreviewDelay(PreviewDelay.OFF)
+        prefs.edit { putBoolean(KEY_STYLE_CHOSEN, true) }
+        _styleChosen.value = true
     }
 
     fun setHomeLayout(layout: HomeLayout) {
@@ -988,6 +1006,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_TIMESHIFT = "timeshift"
         private const val KEY_AUDIO_PASSTHROUGH = "audio_passthrough"
         private const val KEY_HOME_LAYOUT = "home_layout"
+        private const val KEY_STYLE_CHOSEN = "style_chosen"
         private const val KEY_FOLLOWED_SPORT = "followed_sport"
         private const val KEY_TRAKT_APP = "trakt_app"
         private const val KEY_TRAKT_SESSION = "trakt_session"

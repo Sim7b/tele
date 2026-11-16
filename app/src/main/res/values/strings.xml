@@ -764,6 +764,14 @@
     <string name="vod_row_trending">Trending this week</string>
     <!-- Titles most watched on the Dispatcharr server (Télé API plugin) -->
     <string name="vod_row_server_popular">Popular on the server</string>
+    <string name="style_choice_title">Choose your style</string>
+    <string name="style_choice_subtitle">How Télé looks on this TV. You can change it at any time in the settings.</string>
+    <string name="style_choice_immersive">Immersive</string>
+    <string name="style_choice_immersive_description">The program or the movie in focus over the whole screen, with its image and a preview of the channel. For recent TVs and boxes.</string>
+    <string name="style_choice_classic">Classic</string>
+    <string name="style_choice_classic_description">A light, fast app: plain lists, no full-screen images or fades, no preview while browsing. For small devices and sticks.</string>
+    <string name="style_choice_advised">Advised for this device</string>
+    <string name="style_choice_later">Settings → Home to change it later</string>
     <string name="settings_vod_version_order_title">File played first</string>
     <string name="settings_vod_version_order_description">When a movie or an episode has several files and none is chosen</string>
     <string name="settings_vod_version_order_language">Language of the TV, then quality</string>
