@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import coil.imageLoader
@@ -84,6 +85,7 @@ import io.github.sim7b.tele.ui.screens.HomeScreen
 import io.github.sim7b.tele.ui.screens.PlayerScreen
 import io.github.sim7b.tele.ui.screens.QuickGuide
 import io.github.sim7b.tele.ui.components.LocalLite
+import io.github.sim7b.tele.ui.screens.ProfilePicker
 import io.github.sim7b.tele.ui.screens.StyleChoice
 import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.screens.SettingsScreen
@@ -257,6 +259,8 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(artworkTmdbKey) { ProgramPosterRepository.tmdbKey = artworkTmdbKey.takeIf { it.isNotBlank() } }
             val audioPassthrough by configRepository.audioPassthrough.collectAsState()
             LaunchedEffect(audioPassthrough) { playerManager.audioPassthrough = audioPassthrough }
+            val bufferSize by configRepository.bufferSize.collectAsState()
+            LaunchedEffect(bufferSize) { playerManager.bufferSize = bufferSize }
             val timeshiftOn by configRepository.timeshift.collectAsState()
             LaunchedEffect(timeshiftOn) { playerManager.timeshiftEnabled = timeshiftOn }
 
@@ -1017,8 +1021,13 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 // The file played when none is chosen: in the order chosen in the settings
-                                val ordered = remember(details, vodDisplay.versionOrder) {
-                                    details?.let { VodVersionOrder.apply(it, vodDisplay.versionOrder, java.util.Locale.getDefault().language) }
+                                val ordered = remember(details, vodDisplay.versionOrder, vodDisplay.audioPreference) {
+                                    details?.let {
+                                        VodVersionOrder.apply(
+                                            it, vodDisplay.versionOrder, java.util.Locale.getDefault().language,
+                                            vodDisplay.audioPreference, viewModel.vod.index.facts(title.key)?.language
+                                        )
+                                    }
                                 }
                                 // Titles of the library that may also please, under the sheet
                                 val related by produceState(emptyList<VodTitle>(), title.key, title.tmdbId) {
@@ -1113,6 +1122,11 @@ class MainActivity : ComponentActivity() {
                                 onPlayNext = { upcoming -> currentScreen = CurrentScreen.VodPlayer(upcoming, screen.returnTo) },
                                 onSwitchFile = { other -> currentScreen = CurrentScreen.VodPlayer(other, screen.returnTo) },
                                 trackPrefs = if (isReplay) null else vodTrackPrefs[request.titleKey],
+                                // Without a choice made for the title: the language setting (dubbed, or original subtitled)
+                                defaultTracks = VodVersionOrder.defaultTracks(
+                                    vodDisplay.audioPreference, LocalConfiguration.current.locales[0].language,
+                                    viewModel.vod.index.facts(request.titleKey)?.language
+                                ),
                                 onTrackPrefsChange = { prefs -> if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, prefs.copy(introEndMs = trackPrefs.value[request.titleKey]?.introEndMs, creditsMs = trackPrefs.value[request.titleKey]?.creditsMs)) } },
                                 onIntroLearned = { end ->
                                     if (!isReplay) vodStore { saveTrackPrefs(request.titleKey, (trackPrefs.value[request.titleKey] ?: VodTrackPrefs()).copy(introEndMs = end)) }
@@ -1339,6 +1353,27 @@ class MainActivity : ComponentActivity() {
 
                     if (!showWelcome && !styleChosen) {
                         StyleChoice(onChoose = { style -> configRepository.chooseStyle(style) })
+                    }
+
+                    // "Who is watching?" once per start, when the TV has several profiles
+                    val profileStore = configRepository.profiles
+                    val profiles by profileStore.profiles.collectAsState()
+                    val currentProfile by profileStore.current.collectAsState()
+                    var profileChosen by rememberSaveable { mutableStateOf(false) }
+                    val parentalPin by configRepository.parental.hasPin.collectAsState()
+                    if (!showWelcome && styleChosen && !profileChosen && profiles.size > 1) {
+                        ProfilePicker(
+                            profiles = profiles,
+                            current = currentProfile,
+                            checkPin = profileStore::checkPin,
+                            waitMs = profileStore::waitMs,
+                            onSelect = { profile ->
+                                profileChosen = true
+                                if (profile.id != currentProfile.id) viewModel.switchProfile(profile)
+                            },
+                            onDismiss = { profileChosen = true },
+                            checkParental = if (parentalPin) configRepository.parental::unlock else null
+                        )
                     }
 
                     if (showGuide) {

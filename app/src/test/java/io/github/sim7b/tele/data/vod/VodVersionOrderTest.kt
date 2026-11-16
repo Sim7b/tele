@@ -59,4 +59,21 @@ class VodVersionOrderTest {
         assertEquals(VersionOrder.QUALITY_FIRST, VodDisplay.fromJson(display.toJson()).versionOrder)
         assertEquals(VersionOrder.LANGUAGE_FIRST, VodDisplay.fromJson(JSONObject("""{"versionOrder": "x"}""")).versionOrder)
     }
+
+    @Test
+    fun `a title from another country in its original version with subtitles`() {
+        val files = listOf(vf1080, vostfr4k, vo4k)
+        // A US series on a French TV, original version wanted: VOSTFR first, then the VO, the VF last
+        val original = VodVersionOrder.sort(files, VersionOrder.LANGUAGE_FIRST, "fr", AudioPreference.ORIGINAL, "en")
+        assertEquals(listOf("vostfr-4k", "vo-4k", "vf-1080"), original.map { it.url })
+        // Dubbed wanted, or a French title: the French audio first
+        assertEquals("vf-1080", VodVersionOrder.sort(files, VersionOrder.LANGUAGE_FIRST, "fr", AudioPreference.DUBBED, "en").first().url)
+        assertEquals("vf-1080", VodVersionOrder.sort(files, VersionOrder.LANGUAGE_FIRST, "fr", AudioPreference.ORIGINAL, "fr").first().url)
+        // Starting tracks
+        assertEquals(DefaultTracks("en", "fr"), VodVersionOrder.defaultTracks(AudioPreference.ORIGINAL, "fr", "en"))
+        assertEquals(DefaultTracks("fr", null), VodVersionOrder.defaultTracks(AudioPreference.ORIGINAL, "fr", null))
+        assertEquals(DefaultTracks("fr", null), VodVersionOrder.defaultTracks(AudioPreference.DUBBED, "fr", "ko"))
+        val display = VodDisplay(audioPreference = AudioPreference.ORIGINAL)
+        assertEquals(AudioPreference.ORIGINAL, VodDisplay.fromJson(display.toJson()).audioPreference)
+    }
 }

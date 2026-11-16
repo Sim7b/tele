@@ -148,7 +148,9 @@ fun VodPlayerScreen(
     // Another file of the movie or episode chosen while it plays: played from the same position
     onSwitchFile: (VodPlayRequest) -> Unit = {},
     // Intro and end credits from TheIntroDB, when known: they come before the learned ones
-    segments: VodSegments? = null
+    segments: VodSegments? = null,
+    // Tracks to start with when none was chosen for the title (dubbed, or original with subtitles)
+    defaultTracks: io.github.sim7b.tele.data.vod.DefaultTracks? = null
 ) {
     val isLoading by playerManager.isLoading.collectAsState()
     val error by playerManager.error.collectAsState()
@@ -285,7 +287,12 @@ fun VodPlayerScreen(
             request.url, request.startMs, userAgent, streamAuths, request.fallbacks, downloaded,
             info = CastInfo(title = request.title, subtitle = request.episodeTitle, artworkUrl = request.posterUrl ?: request.imageUrl)
         )
-        trackPrefs?.let { playerManager.applyTrackPreferences(it.audio, it.subtitlesOn, it.subtitles) }
+        val chosen = trackPrefs?.takeIf { it.audio != null || it.subtitlesOn }
+        when {
+            chosen != null -> playerManager.applyTrackPreferences(chosen.audio, chosen.subtitlesOn, chosen.subtitles)
+            defaultTracks?.subtitles != null -> playerManager.applyTrackPreferences(defaultTracks.audio, true, defaultTracks.subtitles)
+            defaultTracks?.audio != null -> playerManager.preferAudioLanguage(defaultTracks.audio)
+        }
     }
     LaunchedEffect(request) {
         var sinceReport = 0L

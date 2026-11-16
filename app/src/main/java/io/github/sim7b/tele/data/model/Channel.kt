@@ -57,7 +57,9 @@ data class Channel(
     val catchupZone: String? = null,
     // M3U replay: how the replay URL is made ("default", "append", "shift", "flussonic", "xc") and its template
     val catchupMode: String? = null,
-    val catchupSource: String? = null
+    val catchupSource: String? = null,
+    // The same channel in the other enabled Xtream / M3U sources (categories per source): played when this one fails
+    val failoverUrls: List<String> = emptyList()
 ) {
     /** Ids of every version of the channel (favorites, hidden channels may refer to any of them). */
     val allIds: List<String>

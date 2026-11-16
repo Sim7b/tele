@@ -23,6 +23,8 @@ import io.github.sim7b.tele.data.model.PreviewDelay
 import io.github.sim7b.tele.data.model.HomeRow
 import io.github.sim7b.tele.data.model.HomeStyle
 import io.github.sim7b.tele.data.vod.VersionOrder
+import io.github.sim7b.tele.data.vod.AudioPreference
+import io.github.sim7b.tele.data.model.BufferSize
 import io.github.sim7b.tele.data.vod.PosterSize
 import io.github.sim7b.tele.data.vod.VodFilter
 import io.github.sim7b.tele.data.vod.VodKind
@@ -91,6 +93,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import io.github.sim7b.tele.data.storage.Profile
+import io.github.sim7b.tele.data.storage.ProfileStore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
@@ -128,6 +133,7 @@ import io.github.sim7b.tele.update.UpdateState
 import io.github.sim7b.tele.playback.AudioLeveling
 import io.github.sim7b.tele.update.release as offeredRelease
 import io.github.sim7b.tele.data.update.AppRelease
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -139,6 +145,7 @@ private enum class SettingsPage(@param:StringRes val labelRes: Int, @param:Strin
     APPEARANCE(R.string.settings_nav_appearance, R.string.settings_nav_appearance_hint, Icons.Filled.Create),
     VOD(R.string.settings_nav_vod, R.string.settings_nav_vod_hint, Icons.Filled.AccountBox),
     PARENTAL(R.string.settings_nav_parental, R.string.settings_nav_parental_hint, Icons.Filled.Lock),
+    PROFILES(R.string.settings_nav_profiles, R.string.settings_nav_profiles_hint, Icons.Filled.Person),
     SYSTEM(R.string.settings_nav_system, R.string.settings_nav_system_hint, Icons.Filled.Info)
 }
 
@@ -180,6 +187,7 @@ fun SettingsScreen(
     val followedSport by repository.followedSport.collectAsState()
     val matchFrameRate by repository.matchFrameRate.collectAsState()
     val audioPassthrough by repository.audioPassthrough.collectAsState()
+    val bufferSize by repository.bufferSize.collectAsState()
     val audioLeveling by repository.audioLeveling.collectAsState()
     val timeshift by repository.timeshift.collectAsState()
     val vodEnabled by repository.vodEnabled.collectAsState()
@@ -194,6 +202,18 @@ fun SettingsScreen(
     val lockedGroups by parental.lockedGroups.collectAsState()
     val vodLocked by parental.vodLocked.collectAsState()
     var pinStep by remember { mutableStateOf<PinStep?>(null) }
+    // Profiles: the one in use, a profile being opened (its code asked), named or given a code
+    val profileStore = repository.profiles
+    val profiles by profileStore.profiles.collectAsState()
+    val currentProfile by profileStore.current.collectAsState()
+    val parentalForced by parental.forced.collectAsState()
+    var openingProfile by remember { mutableStateOf<Profile?>(null) }
+    var profileNaming by remember { mutableStateOf<ProfileNaming?>(null) }
+    var profilePinStep by remember { mutableStateOf<PinStep?>(null) }
+    val profileScope = rememberCoroutineScope()
+    fun useProfile(profile: Profile) {
+        profileScope.launch(Dispatchers.IO) { repository.switchProfile(profile) }
+    }
     var firstPin by remember { mutableStateOf<String?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     // The rows of the section change with the code: the focus goes back to its first one
@@ -588,6 +608,24 @@ fun SettingsScreen(
                                 }
                                 item {
                                     SettingRow(
+                                        label = stringResource(R.string.settings_buffer),
+                                        description = stringResource(
+                                            R.string.settings_buffer_description,
+                                            bufferSize.minMs / 1000, bufferSize.maxMs / 1000, bufferSize.startMs / 1000f
+                                        ),
+                                        value = stringResource(
+                                            when (bufferSize) {
+                                                BufferSize.SMALL -> R.string.settings_buffer_small
+                                                BufferSize.NORMAL -> R.string.settings_buffer_normal
+                                                BufferSize.LARGE -> R.string.settings_buffer_large
+                                                BufferSize.MAXIMUM -> R.string.settings_buffer_maximum
+                                            }
+                                        ),
+                                        onClick = { repository.setBufferSize(bufferSize.next()) }
+                                    )
+                                }
+                                item {
+                                    SettingRow(
                                         label = stringResource(R.string.settings_timeshift),
                                         description = stringResource(R.string.settings_timeshift_description),
                                         toggle = timeshift,
@@ -752,6 +790,20 @@ fun SettingsScreen(
                                             }
                                         )
                                     }
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.settings_vod_audio_preference_title),
+                                            description = stringResource(R.string.settings_vod_audio_preference_description),
+                                            value = stringResource(
+                                                if (vodDisplay.audioPreference == AudioPreference.ORIGINAL) R.string.settings_vod_audio_preference_original
+                                                else R.string.settings_vod_audio_preference_dubbed
+                                            ),
+                                            onClick = {
+                                                val next = if (vodDisplay.audioPreference == AudioPreference.ORIGINAL) AudioPreference.DUBBED else AudioPreference.ORIGINAL
+                                                repository.setVodDisplay(vodDisplay.copy(audioPreference = next))
+                                            }
+                                        )
+                                    }
                                     // Filters the Movies and Series tabs open with
                                     item {
                                         SettingGroup(
@@ -843,6 +895,120 @@ fun SettingsScreen(
                                                 }
                                             )
                                         }
+                                    }
+                                }
+                            }
+
+                            SettingsPage.PROFILES -> {
+                                items(profiles, key = { "profile_${it.id}" }) { profile ->
+                                    val inUse = profile.id == currentProfile.id
+                                    SettingRow(
+                                        label = profileName(profile),
+                                        value = if (inUse) stringResource(R.string.profile_in_use) else null,
+                                        description = listOfNotNull(
+                                            if (profile.kids) stringResource(R.string.profile_kids) else null,
+                                            if (profile.hasPin) stringResource(R.string.profile_with_pin) else null
+                                        ).joinToString(" · ").ifEmpty { null },
+                                        icon = Icons.Filled.Person,
+                                        chevron = !inUse,
+                                        onClick = {
+                                            when {
+                                                inUse -> Unit
+                                                profile.hasPin -> openingProfile = profile
+                                                // Out of a kids profile: the parental code first
+                                                currentProfile.kids && parentalHasPin && !parentalUnlocked -> pinStep = PinStep.UNLOCK
+                                                else -> useProfile(profile)
+                                            }
+                                        },
+                                        modifier = if (profile.id == profiles.first().id) Modifier.focusRequester(contentStart) else Modifier
+                                    )
+                                }
+                                // A kids profile is changed (or left for good) with the parental code only
+                                if (currentProfile.kids && parentalHasPin && !parentalUnlocked) {
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.parental_unlock),
+                                            description = stringResource(R.string.profile_kids_locked),
+                                            icon = Icons.Filled.Lock,
+                                            onClick = { pinStep = PinStep.UNLOCK }
+                                        )
+                                    }
+                                } else {
+                                    if (profiles.size < ProfileStore.MAX_PROFILES) {
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.profile_add),
+                                                description = stringResource(R.string.profile_add_description),
+                                                icon = Icons.Filled.Add,
+                                                onClick = { profileNaming = ProfileNaming.NEW }
+                                            )
+                                        }
+                                    }
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.profile_rename),
+                                            icon = Icons.Filled.Edit,
+                                            onClick = { profileNaming = ProfileNaming.RENAME }
+                                        )
+                                    }
+                                    if (!currentProfile.isMain) {
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.profile_kids_toggle),
+                                                description = stringResource(R.string.profile_kids_description),
+                                                toggle = currentProfile.kids,
+                                                onClick = {
+                                                    val kids = !currentProfile.kids
+                                                    profileStore.update(currentProfile.id, kids = kids)
+                                                    parental.setForced(kids)
+                                                }
+                                            )
+                                        }
+                                    }
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(if (currentProfile.hasPin) R.string.profile_change_pin else R.string.profile_set_pin),
+                                            description = stringResource(R.string.profile_pin_description),
+                                            icon = Icons.Filled.Lock,
+                                            onClick = { profilePinStep = PinStep.NEW }
+                                        )
+                                    }
+                                    if (currentProfile.hasPin) {
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.profile_remove_pin),
+                                                icon = Icons.Filled.Close,
+                                                chevron = false,
+                                                onClick = { profileStore.update(currentProfile.id, pin = "") }
+                                            )
+                                        }
+                                    }
+                                    if (!currentProfile.isMain) {
+                                        item {
+                                            SettingRow(
+                                                label = stringResource(R.string.profile_delete),
+                                                description = stringResource(R.string.profile_delete_description),
+                                                icon = Icons.Filled.Delete,
+                                                chevron = false,
+                                                destructive = true,
+                                                onClick = {
+                                                    val removed = currentProfile
+                                                    profileScope.launch(Dispatchers.IO) { repository.removeProfile(removed) }
+                                                    parentalRefocus++
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                if (parentalForced && lockedGroups.isEmpty() && !vodLocked) {
+                                    item {
+                                        SettingRow(
+                                            label = stringResource(R.string.profile_kids_nothing_locked),
+                                            description = stringResource(R.string.profile_kids_nothing_locked_description),
+                                            icon = Icons.Filled.Info,
+                                            chevron = false,
+                                            onClick = { page = SettingsPage.PARENTAL }
+                                        )
                                     }
                                 }
                             }
@@ -1207,6 +1373,68 @@ fun SettingsScreen(
                 onDismiss = ::close
             )
         }
+        openingProfile?.let { profile ->
+            val wrongPin = stringResource(R.string.parental_wrong_pin)
+            var error by remember(profile.id) { mutableStateOf<String?>(null) }
+            PinDialog(
+                title = stringResource(R.string.profile_enter_pin, profileName(profile)),
+                error = error,
+                onSubmit = { pin ->
+                    if (profileStore.checkPin(profile, pin)) {
+                        openingProfile = null
+                        useProfile(profile)
+                    } else {
+                        val wait = profileStore.waitMs()
+                        error = if (wait > 0) resources.getString(R.string.parental_wait, (wait + 999) / 1000) else wrongPin
+                    }
+                },
+                onDismiss = { openingProfile = null }
+            )
+        }
+        profileNaming?.let { naming ->
+            NameDialog(
+                title = stringResource(if (naming == ProfileNaming.NEW) R.string.profile_add else R.string.profile_rename),
+                initial = if (naming == ProfileNaming.NEW) "" else currentProfile.name,
+                confirm = stringResource(if (naming == ProfileNaming.NEW) R.string.profile_create else R.string.profile_rename),
+                hint = stringResource(R.string.profile_name_hint),
+                maxLength = 24,
+                onConfirm = { name ->
+                    if (naming == ProfileNaming.NEW) profileStore.add(name, kids = false, pin = null)
+                    else profileStore.update(currentProfile.id, name = name)
+                    profileNaming = null
+                },
+                onDismiss = { profileNaming = null }
+            )
+        }
+        profilePinStep?.let { step ->
+            val mismatch = stringResource(R.string.parental_pin_mismatch)
+            PinDialog(
+                title = stringResource(if (step == PinStep.CONFIRM) R.string.parental_confirm_pin else R.string.parental_new_pin),
+                subtitle = profileName(currentProfile),
+                error = pinError,
+                onSubmit = { pin ->
+                    if (step != PinStep.CONFIRM) {
+                        firstPin = pin
+                        pinError = null
+                        profilePinStep = PinStep.CONFIRM
+                    } else if (pin == firstPin) {
+                        profileStore.update(currentProfile.id, pin = pin)
+                        firstPin = null
+                        pinError = null
+                        profilePinStep = null
+                    } else {
+                        firstPin = null
+                        pinError = mismatch
+                        profilePinStep = PinStep.NEW
+                    }
+                },
+                onDismiss = {
+                    profilePinStep = null
+                    firstPin = null
+                    pinError = null
+                }
+            )
+        }
         renamingList?.let { list ->
             NameDialog(
                 title = stringResource(R.string.settings_channel_list_rename),
@@ -1294,6 +1522,8 @@ private enum class DefaultField { COUNTRY, AUDIO, SUBTITLES, SORT }
 
 /** Entry of the parental code: to unlock, or a new one then its confirmation. */
 private enum class PinStep { UNLOCK, NEW, CONFIRM }
+
+private enum class ProfileNaming { NEW, RENAME }
 
 private const val UNMATCHED_ROW = "unmatched"
 

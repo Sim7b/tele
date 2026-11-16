@@ -11,7 +11,8 @@ import io.github.sim7b.tele.data.remote.StreamNames
  * - the other categories are cleaned and grouped by meaning ("Sport", "FR | Sports", "France Sport"),
  *   or join a bouquet category ("FR | Documentaires" -> Discovery);
  * - the versions of a same channel ("TF1 FHD", "TF1 HD", "TF1 HEVC", from one or several sources) become
- *   one channel, whose versions are its streams. Across sources only when [mergeAcrossSources].
+ *   one channel, whose versions are its streams. Across sources only when [mergeAcrossSources];
+ * - else, a channel also found in another Xtream / M3U source ([Failover]) gets its stream there as a failover.
  *
  * A merged channel keeps the id of its favorite version, else of its first one: favorites, hidden channels
  * and chosen streams keep working; [Channel.memberIds] lists the ids of all its versions.
@@ -23,35 +24,85 @@ class ChannelGrouping(private val bouquet: Bouquet?, private val names: ChannelN
         mergeAcrossSources: Boolean,
         favoriteIds: Set<String>,
         sourceNames: Map<String, String>,
-        categoryLabel: (BouquetCategory) -> String
+        categoryLabel: (BouquetCategory) -> String,
+        failover: Failover? = null
     ): List<Channel> {
         if (channels.isEmpty()) return channels
         val matches = channels.map { bouquet?.match(it.name) }
         val categories = categoryNames(channels, categoryLabel)
 
         // Versions of a same channel, in the order of their first appearance
+        val identities = arrayOfNulls<String>(channels.size)
         val groups = LinkedHashMap<String, MutableList<Int>>()
         channels.forEachIndexed { index, channel ->
             val identity = matches[index]?.let { "b:${it.name}" }
                 ?: names.channelKey(channel.name).takeIf { it.isNotEmpty() }?.let { "n:$it" }
                 ?: "id:${channel.id}"
+            identities[index] = identity
             val key = if (mergeAcrossSources) identity else "${channel.sourceId}/$identity"
             groups.getOrPut(key) { ArrayList(1) }.add(index)
         }
+        // Merged across sources, the versions of the other sources are already the streams of the channel
+        val failovers = if (mergeAcrossSources || failover == null) null else failoverUrls(channels, identities, failover)
 
         return groups.values.map { indexes ->
-            val match = matches[indexes.first()]
-            val group = match?.let { categoryLabel(it.category) } ?: categories[indexes.first()]
-            if (indexes.size == 1) {
-                val channel = channels[indexes.first()]
-                if (match == null) {
-                    if (group == channel.group) channel else channel.copy(group = group)
-                } else {
-                    channel.copy(name = match.name, number = match.number ?: channel.number, group = group)
-                }
-            } else {
-                merge(indexes.map { channels[it] }, match, group, favoriteIds, sourceNames)
+            displayed(channels, indexes, matches, categories, favoriteIds, sourceNames, categoryLabel).let { channel ->
+                val urls = failovers?.get(identities[indexes.first()])
+                    ?.filter { (sourceId, _) -> sourceId != channel.sourceId && failover?.compatible(channel.sourceId, sourceId) == true }
+                    ?.distinctBy { it.first }
+                    ?.take(MAX_FAILOVERS)
+                    ?.map { it.second }
+                if (urls.isNullOrEmpty()) channel else channel.copy(failoverUrls = urls)
             }
+        }
+    }
+
+    /**
+     * Sources a channel may fail over to: the enabled Xtream / M3U ones ([sources]), with the player user agent of
+     * every source ([userAgents]), as a provider may refuse another one.
+     */
+    class Failover(val sources: Set<String>, val userAgents: Map<String, String?>) {
+        fun compatible(from: String, to: String): Boolean = to in sources && userAgents[from] == userAgents[to]
+    }
+
+    /** Streams of the failover sources by identity of channel: (source, URL), first ones first. */
+    private fun failoverUrls(channels: List<Channel>, identities: Array<String?>, failover: Failover): Map<String, List<Pair<String, String>>> {
+        if (failover.sources.isEmpty()) return emptyMap()
+        // Only the channels found in several sources matter (tens of thousands of channels: the others are skipped)
+        val firstSource = HashMap<String, String>(channels.size * 2)
+        val shared = HashSet<String>()
+        channels.forEachIndexed { index, channel ->
+            val identity = identities[index]?.takeUnless { it.startsWith("id:") } ?: return@forEachIndexed
+            val first = firstSource.putIfAbsent(identity, channel.sourceId)
+            if (first != null && first != channel.sourceId) shared.add(identity)
+        }
+        val found = HashMap<String, MutableList<Pair<String, String>>>(shared.size * 2)
+        channels.forEachIndexed { index, channel ->
+            if (channel.sourceId !in failover.sources) return@forEachIndexed
+            val identity = identities[index]?.takeIf { it in shared } ?: return@forEachIndexed
+            found.getOrPut(identity) { ArrayList(2) }.add(channel.sourceId to channel.streamUrl)
+        }
+        return found
+    }
+
+    /** The displayed channel of a group of versions: alone, renamed by the bouquet, or merged. */
+    private fun displayed(
+        channels: List<Channel>,
+        indexes: List<Int>,
+        matches: List<BouquetChannel?>,
+        categories: List<String>,
+        favoriteIds: Set<String>,
+        sourceNames: Map<String, String>,
+        categoryLabel: (BouquetCategory) -> String
+    ): Channel {
+        val match = matches[indexes.first()]
+        val group = match?.let { categoryLabel(it.category) } ?: categories[indexes.first()]
+        if (indexes.size > 1) return merge(indexes.map { channels[it] }, match, group, favoriteIds, sourceNames)
+        val channel = channels[indexes.first()]
+        return when {
+            match != null -> channel.copy(name = match.name, number = match.number ?: channel.number, group = group)
+            group == channel.group -> channel
+            else -> channel.copy(group = group)
         }
     }
 
@@ -124,6 +175,7 @@ class ChannelGrouping(private val bouquet: Bouquet?, private val names: ChannelN
 
     companion object {
         const val MERGED_PREFIX = "merged:"
+        private const val MAX_FAILOVERS = 3
         private const val SUB_STREAM_SEPARATOR = "#stream:"
 
         /** Id of the channel behind a version of a grouped channel (not an Xtream variant, nor one of its streams). */

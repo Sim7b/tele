@@ -765,6 +765,16 @@
     <!-- Titles most watched on the Dispatcharr server (Télé API plugin) -->
     <string name="vod_row_server_popular">Popular on the server</string>
     <string name="vod_related">You may also like</string>
+    <string name="settings_vod_audio_preference_title">Movies and series from another country</string>
+    <string name="settings_vod_audio_preference_description">Played dubbed in the language of the TV, or in their original language with subtitles in the language of the TV (original language from TMDB). The tracks chosen for a title stay its own.</string>
+    <string name="settings_vod_audio_preference_dubbed">Dubbed</string>
+    <string name="settings_vod_audio_preference_original">Original, subtitled</string>
+    <string name="settings_buffer">Buffer</string>
+    <string name="settings_buffer_description">%1$d s kept ahead, %2$d s at most, starts after %3$.1f s. Larger: steadier on a weak connection, a little slower to start; smaller: lighter for small devices. Applied once the current playback stops.</string>
+    <string name="settings_buffer_small">Small</string>
+    <string name="settings_buffer_normal">Normal</string>
+    <string name="settings_buffer_large">Large</string>
+    <string name="settings_buffer_maximum">Maximum</string>
     <string name="style_choice_title">Choose your style</string>
     <string name="style_choice_subtitle">How Télé looks on this TV. You can change it at any time in the settings.</string>
     <string name="style_choice_immersive">Immersive</string>
@@ -912,4 +922,28 @@
     <string name="guide_touch_player_4">Hold the picture: choose another stream.</string>
     <string name="guide_touch_hint_next">Tap: next · Back: skip</string>
     <string name="guide_touch_hint_last">Tap: start</string>
+    <string name="settings_nav_profiles">Profiles</string>
+    <string name="settings_nav_profiles_hint">Who watches, kids, codes</string>
+    <string name="profile_main">Main profile</string>
+    <string name="profile_picker_title">Who is watching?</string>
+    <string name="profile_enter_pin">Code of %1$s</string>
+    <string name="profile_kids">Kids</string>
+    <string name="profile_in_use">In use</string>
+    <string name="profile_with_pin">With a code</string>
+    <string name="profile_kids_locked">The kids profile is changed or left with the parental code</string>
+    <string name="profile_add">Add a profile</string>
+    <string name="profile_add_description">Its own favorites, positions, my list and collections</string>
+    <string name="profile_rename">Rename this profile</string>
+    <string name="profile_create">Create</string>
+    <string name="profile_name_hint">Name of the profile</string>
+    <string name="profile_kids_toggle">Kids profile</string>
+    <string name="profile_kids_description">The locks of the parental control always apply, even after its code is entered</string>
+    <string name="profile_set_pin">Code for this profile</string>
+    <string name="profile_change_pin">Change the code of this profile</string>
+    <string name="profile_pin_description">Asked to open this profile</string>
+    <string name="profile_remove_pin">Remove the code of this profile</string>
+    <string name="profile_delete">Delete this profile</string>
+    <string name="profile_delete_description">Its favorites, positions, my list and collections are deleted</string>
+    <string name="profile_kids_nothing_locked">Nothing is locked yet</string>
+    <string name="profile_kids_nothing_locked_description">Choose what the parental control locks: categories, movies and series</string>
 </resources>

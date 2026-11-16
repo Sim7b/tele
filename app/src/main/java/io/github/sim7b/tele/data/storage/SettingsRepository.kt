@@ -9,6 +9,7 @@ import androidx.annotation.VisibleForTesting
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.remote.CachedGuide
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
+import io.github.sim7b.tele.data.model.BufferSize
 import io.github.sim7b.tele.data.model.HomeStyle
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.AudioLeveling
@@ -100,8 +101,15 @@ class SettingsRepository(context: Context) {
     private fun vodCatalogCache(configId: String) =
         VodCatalogCache(File(cacheDir, "vod_catalog_${configId.filter { it.isLetterOrDigit() || it == '-' }}.jsonl"), secrets)
 
+    /** Profiles of the TV: each has its own favorites, positions, my list and collections. */
+    val profiles = ProfileStore(prefs)
+
+    /** Movies and series state of a profile: the main one keeps the file of the versions without profiles. */
+    private fun vodStateFile(profile: Profile): File =
+        if (profile.isMain) File(cacheDir, VOD_STATE_FILE) else File(cacheDir, "vod_state_${profile.id}.json")
+
     /** Playback positions and "my list" of the movies and series module (load it off the main thread). */
-    val vodStore = VodStore(File(cacheDir, VOD_STATE_FILE))
+    val vodStore = VodStore(vodStateFile(profiles.current.value))
 
     /** TMDB facts of the movies and series (countries, studios), indexed in the background. */
     val vodIndex = VodIndex(File(cacheDir, VOD_INDEX_FILE))
@@ -159,7 +167,7 @@ class SettingsRepository(context: Context) {
     private val _hiddenGroups = MutableStateFlow<Set<String>>(emptySet())
 
     /** Code, locked categories and movies and series of the parental control. */
-    val parental = ParentalControl(prefs)
+    val parental = ParentalControl(prefs).also { it.setForced(profiles.current.value.kids) }
     val hiddenGroups: StateFlow<Set<String>> = _hiddenGroups.asStateFlow()
 
     // Favorites migrated from the legacy storage (unordered set): to be sorted once by channel order.
@@ -194,6 +202,9 @@ class SettingsRepository(context: Context) {
     private val _timeshift = MutableStateFlow(true)
     val timeshift: StateFlow<Boolean> = _timeshift.asStateFlow()
     // Multichannel sound (Dolby, Atmos) sent as it is to the amplifier, or decoded by the device
+    private val _bufferSize = MutableStateFlow(BufferSize.NORMAL)
+    val bufferSize: StateFlow<BufferSize> = _bufferSize.asStateFlow()
+
     private val _audioPassthrough = MutableStateFlow(true)
     val audioPassthrough: StateFlow<Boolean> = _audioPassthrough.asStateFlow()
     // Look of the live TV home (the usual one by default) and the rows of the immersive one
@@ -282,6 +293,7 @@ class SettingsRepository(context: Context) {
         _audioLeveling.value = AudioLeveling.entries.firstOrNull { it.name == prefs.getString(KEY_AUDIO_LEVELING, null) } ?: AudioLeveling.OFF
         _timeshift.value = prefs.getBoolean(KEY_TIMESHIFT, true)
         _audioPassthrough.value = prefs.getBoolean(KEY_AUDIO_PASSTHROUGH, true)
+        _bufferSize.value = BufferSize.of(prefs.getString(KEY_BUFFER_SIZE, null))
         _homeLayout.value = prefs.getString(KEY_HOME_LAYOUT, null)?.let { saved ->
             try {
                 HomeLayout.fromJson(JSONObject(saved))
@@ -490,6 +502,11 @@ class SettingsRepository(context: Context) {
         _audioLeveling.value = leveling
     }
 
+    fun setBufferSize(size: BufferSize) {
+        prefs.edit { putString(KEY_BUFFER_SIZE, size.name) }
+        _bufferSize.value = size
+    }
+
     fun setAudioPassthrough(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_AUDIO_PASSTHROUGH, enabled) }
         _audioPassthrough.value = enabled
@@ -598,8 +615,9 @@ class SettingsRepository(context: Context) {
 
     /** Favorites order; migrates the legacy unordered storage when it does not exist yet. */
     private fun loadFavoriteOrder(): List<String> {
-        val raw = prefs.getString(KEY_FAVORITE_ORDER, null)
+        val raw = prefs.getString(favoriteKey(), null)
         if (raw == null) {
+            if (!profiles.current.value.isMain) return emptyList()
             val legacy = prefs.getStringSet(KEY_FAVORITES, emptySet())?.toList() ?: emptyList()
             legacyFavoritesUnordered = legacy.isNotEmpty()
             return legacy
@@ -614,10 +632,36 @@ class SettingsRepository(context: Context) {
 
     private fun persistFavorites(order: List<String>) {
         prefs.edit()
-            .putString(KEY_FAVORITE_ORDER, JSONArray(order).toString())
+            .putString(favoriteKey(), JSONArray(order).toString())
             .remove(KEY_FAVORITES)
             .apply()
         _favoriteIds.value = order
+    }
+
+    /** Favorites of the profile in use: the main one keeps the key of the versions without profiles. */
+    private fun favoriteKey(profile: Profile = profiles.current.value): String =
+        if (profile.isMain) KEY_FAVORITE_ORDER else "${KEY_FAVORITE_ORDER}_${profile.id}"
+
+    /**
+     * Uses [profile] (its code already checked): its favorites and movies and series state, the parental locks
+     * forced for a kids profile. To call off the main thread (the state file is read).
+     */
+    fun switchProfile(profile: Profile) {
+        val selected = profiles.select(profile.id)
+        parental.lock()
+        parental.setForced(selected.kids)
+        legacyFavoritesUnordered = false
+        _favoriteIds.value = loadFavoriteOrder()
+        vodStore.switchTo(vodStateFile(selected))
+    }
+
+    /** Removes a profile and its favorites and movies and series state; the main one is never removed. */
+    fun removeProfile(profile: Profile) {
+        val wasCurrent = profiles.current.value.id == profile.id
+        if (!profiles.remove(profile.id)) return
+        prefs.edit().remove(favoriteKey(profile)).apply()
+        if (wasCurrent) switchProfile(profiles.current.value)
+        vodStore.delete(vodStateFile(profile))
     }
 
     /** Sorts the migrated favorites once in channel order (as they were displayed before). */
@@ -876,6 +920,7 @@ class SettingsRepository(context: Context) {
         put("audioLeveling", _audioLeveling.value.name)
         put("timeshift", _timeshift.value)
         put("audioPassthrough", _audioPassthrough.value)
+        put("bufferSize", _bufferSize.value.name)
         put("homeLayout", _homeLayout.value.toJson())
         put("followedSport", JSONArray(_followedSport.value))
         // The Trakt application, not the access to the account: linked again on the other TV
@@ -943,6 +988,7 @@ class SettingsRepository(context: Context) {
         AudioLeveling.entries.firstOrNull { it.name == json.optString("audioLeveling") }?.let { setAudioLeveling(it) }
         if (json.has("timeshift")) setTimeshift(json.optBoolean("timeshift", true))
         if (json.has("audioPassthrough")) setAudioPassthrough(json.optBoolean("audioPassthrough", true))
+        if (json.has("bufferSize")) setBufferSize(BufferSize.of(json.optString("bufferSize")))
         json.optJSONObject("homeLayout")?.let { setHomeLayout(HomeLayout.fromJson(it)) }
         strings("followedSport")?.let { setFollowedSport(it.joinToString("\n")) }
         json.optJSONObject("traktApp")?.let { setTraktApp(it.optString("id"), it.optString("secret")) }
@@ -1015,6 +1061,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_TIMESHIFT = "timeshift"
         private const val KEY_AUDIO_PASSTHROUGH = "audio_passthrough"
         private const val KEY_HOME_LAYOUT = "home_layout"
+        private const val KEY_BUFFER_SIZE = "buffer_size"
         private const val KEY_STYLE_CHOSEN = "style_chosen"
         private const val KEY_FOLLOWED_SPORT = "followed_sport"
         private const val KEY_TRAKT_APP = "trakt_app"

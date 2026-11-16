@@ -51,7 +51,11 @@ data class VodCollection(val id: String, val name: String, val titleKeys: List<S
  * Playback positions, "my list" and the collections of the movies and series module, kept in a small file of the device
  * (a few hundred titles at most: the oldest positions are dropped).
  */
-class VodStore(private val file: File) {
+class VodStore(file: File) {
+
+    // The file of the profile in use ([switchTo])
+    @Volatile
+    private var file: File = file
 
     private val _progress = MutableStateFlow<Map<String, VodProgress>>(emptyMap())
     val progress: StateFlow<Map<String, VodProgress>> = _progress.asStateFlow()
@@ -76,6 +80,27 @@ class VodStore(private val file: File) {
         } catch (e: Exception) {
             Log.w(TAG, "Unable to read the movies and series state: ${e.javaClass.simpleName}")
         }
+    }
+
+    /**
+     * Uses the state of another profile: [newFile] read (off the main thread), the state of the previous one left
+     * in its own file.
+     */
+    fun switchTo(newFile: File) {
+        synchronized(lock) {
+            if (newFile == file) return
+            file = newFile
+            _progress.value = emptyMap()
+            _myList.value = emptyList()
+            _collections.value = emptyList()
+            _trackPrefs.value = emptyMap()
+        }
+        load()
+    }
+
+    /** Removes the file of a profile no longer kept (never the one in use). */
+    fun delete(other: File) {
+        if (other != file) other.delete()
     }
 
     /** Whole state (positions, my list, collections, languages), for a backup or another TV. */
