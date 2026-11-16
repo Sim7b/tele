@@ -1,0 +1,61 @@
+---
+name: Baseline profile
+
+# The startup profile of the app (code compiled ahead of time on the TVs), generated on an emulator managed by
+# Gradle, then proposed in a pull request when it changed.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  generate:
+    name: Generate the startup profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # pushes the automation branch
+      pull-requests: write # opens its pull request
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Java
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          install_args: java
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Generate the profile
+        run: >-
+          ./gradlew :app:generateBaselineProfile
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true
+
+      - name: Propose the profile
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          scripts/propose-changes.sh "baseline-profile" "perf: update the startup profile" app/src/main/generated
+
+      - name: Upload the reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: baseline-profile-reports
+          path: baselineprofile/build/outputs
+          retention-days: 7

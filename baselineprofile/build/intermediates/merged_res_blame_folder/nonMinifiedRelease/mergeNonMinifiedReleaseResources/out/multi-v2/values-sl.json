@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "io.github.sim7b.tele.baselineprofile-mergeNonMinifiedReleaseResources-1:/values-sl/values-sl.xml",
+            "map": [
+                {
+                    "source": "/root/.gradle/caches/9.9.0/transforms/02c0d099a526c04c5cf3597e0e1f6ab5/transformed/core-1.9.0/res/values-sl/values-sl.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "100",
+                        "endOffsets": "151"
+                    }
+                }
+            ]
+        }
+    ]
+}

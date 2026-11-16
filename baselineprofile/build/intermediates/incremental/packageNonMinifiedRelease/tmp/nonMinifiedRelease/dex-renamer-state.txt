@@ -1,0 +1,13 @@
+#Mon Nov 16 12:37:25 UTC 2026
+base.0=/home/user/tele/baselineprofile/build/intermediates/dex/nonMinifiedRelease/mergeExtDexNonMinifiedRelease/classes.dex
+base.1=/home/user/tele/baselineprofile/build/intermediates/dex/nonMinifiedRelease/mergeProjectDexNonMinifiedRelease/0/classes.dex
+base.2=/home/user/tele/baselineprofile/build/intermediates/dex/nonMinifiedRelease/mergeProjectDexNonMinifiedRelease/8/classes.dex
+base.3=/home/user/tele/baselineprofile/build/intermediates/global_synthetics_dex/nonMinifiedRelease/generateNonMinifiedReleaseGlobalSynthetics/classes.dex
+path.0=classes.dex
+path.1=0/classes.dex
+path.2=8/classes.dex
+path.3=classes.dex
+renamed.0=classes.dex
+renamed.1=classes2.dex
+renamed.2=classes3.dex
+renamed.3=classes4.dex

@@ -1,0 +1,8 @@
+io.github.sim7b.tele.baselineprofile-pngs-0 /home/user/tele/baselineprofile/build/generated/res/pngs/nonMinifiedRelease
+io.github.sim7b.tele.baselineprofile-updated_navigation_xml-1 /home/user/tele/baselineprofile/build/generated/updated_navigation_xml/nonMinifiedRelease
+io.github.sim7b.tele.baselineprofile-packageNonMinifiedReleaseResources-2 /home/user/tele/baselineprofile/build/intermediates/incremental/nonMinifiedRelease/packageNonMinifiedReleaseResources/merged.dir
+io.github.sim7b.tele.baselineprofile-packageNonMinifiedReleaseResources-3 /home/user/tele/baselineprofile/build/intermediates/incremental/nonMinifiedRelease/packageNonMinifiedReleaseResources/stripped.dir
+io.github.sim7b.tele.baselineprofile-nonMinifiedRelease-4 /home/user/tele/baselineprofile/build/intermediates/merged_res/nonMinifiedRelease/mergeNonMinifiedReleaseResources
+io.github.sim7b.tele.baselineprofile-main-5 /home/user/tele/baselineprofile/src/main/res
+io.github.sim7b.tele.baselineprofile-nonMinifiedRelease-6 /home/user/tele/baselineprofile/src/nonMinifiedRelease/res
+gradleHome-0 /root/.gradle
