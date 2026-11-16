@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.33](https://github.com/Sim7b/tele/compare/v0.3.32...v0.3.33) (2026-11-16)
+
+### Features
+
+* choose the immersive or the light classic style at the first launch ([3608935](https://github.com/Sim7b/tele/commit/3608935b86e3c821437c8cb88d02df731bbc7220))
+* **dispatcharr-plugin:** TMDB facts looked up once on the server for every TV ([e48bfdb](https://github.com/Sim7b/tele/commit/e48bfdb9637508b6fc6d07f78e703d586f897028))
+
+### Bug Fixes
+
+* **vod:** TMDB ratings only, and only from 50 votes ([eca822e](https://github.com/Sim7b/tele/commit/eca822e53ec808e76db8ef53305317c1e4a19945))
+
+### Performance Improvements
+
+* **vod:** TMDB facts from the Dispatcharr server instead of a TMDB lookup per title on each TV ([2461997](https://github.com/Sim7b/tele/commit/24619973bb44d2b5f474a543bdecb8e395cb9c23))
+
 ## [0.3.32](https://github.com/Sim7b/tele/compare/v0.3.31...v0.3.32) (2026-11-15)
 
 ### Features
