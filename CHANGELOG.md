@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.35](https://github.com/Sim7b/tele/compare/v0.3.34...v0.3.35) (2026-11-16)
+
+### Features
+
+* **dispatcharr-plugin:** an optional TheIntroDB key in the Settings tab ([e3ac321](https://github.com/Sim7b/tele/commit/e3ac321992f878d602d7e5341f9ffccdb1ec63b6))
+* **dispatcharr-plugin:** related titles, TheIntroDB segments and a Settings tab for the keys ([76e4af5](https://github.com/Sim7b/tele/commit/76e4af597e5a9e78502150144407431c637a4cd8))
+* **vod:** you may also like, TheIntroDB intro and credits, a richer next episode card ([66c4b3f](https://github.com/Sim7b/tele/commit/66c4b3f9bec8f59f57166e7d3d0b1f6dbc5cb6b9))
+
 ## [0.3.34](https://github.com/Sim7b/tele/compare/v0.3.33...v0.3.34) (2026-11-16)
 
 ### Performance Improvements
