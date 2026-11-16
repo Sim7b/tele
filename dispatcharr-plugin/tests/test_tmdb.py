@@ -108,6 +108,19 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(rows, [{"kind": "movie", "item": 5, "tmdb": 438631, "name": "Dune", "manual": True},
                                 {"kind": "series", "item": 7, "tmdb": 1399, "name": "GoT", "manual": False}])
 
+    def test_facts_are_kept_and_served_since_a_time(self):
+        from tele_api import facts
+
+        with mock.patch.object(facts, "served_tmdb_ids", return_value={1, 2}), \
+                mock.patch("tele_api.vault.tmdb_key", return_value="k" * 32), \
+                mock.patch.object(tmdb, "_get", side_effect=[{"vote_average": 7.0, "vote_count": 80}, None, None, None]), \
+                mock.patch.object(facts.time, "sleep"):
+            self.assertEqual(facts.run({}, lambda: False), 1)
+        served = facts.served("movie")
+        self.assertEqual(list(served["facts"].values())[0]["n"], 80)
+        self.assertEqual(facts.served("movie", served["until"])["facts"], {})
+        self.assertEqual(facts.counts(), {"movie": 1})
+
     def test_no_key_no_request(self):
         with mock.patch.object(tmdb, "_get") as get:
             self.assertEqual(tmdb.match_batch({}, lambda: False), {"matched": 0, "unmatched": 0})

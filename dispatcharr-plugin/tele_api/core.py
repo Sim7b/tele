@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.6"
+PLUGIN_VERSION = "0.3.7"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1425,3 +1425,34 @@ def subtitle_results(data: Any, limit: int = 100) -> List[Dict[str, Any]]:
             "files": [{"file_id": file_id}],
         }})
     return results
+
+
+def tmdb_facts(details: Any) -> Optional[Dict[str, Any]]:
+    """What the TVs need of a TMDB movie or series answer (untrusted): vote and its number of votes, popularity,
+    original language, countries and studios (series: networks first)."""
+    if not isinstance(details, Mapping):
+        return None
+
+    def objects(value):
+        return [item for item in value[:30] if isinstance(item, Mapping)] if isinstance(value, list) else []
+
+    countries = [to_text(c.get("iso_3166_1")) for c in objects(details.get("production_countries"))]
+    if isinstance(details.get("origin_country"), list):
+        countries += [to_text(c) for c in details.get("origin_country")[:10]]
+    countries = list(dict.fromkeys(c.upper() for c in countries if c and re.match(r"^[A-Za-z]{2}$", c)))
+    studios, seen = [], set()
+    for company in objects(details.get("networks")) + objects(details.get("production_companies")):
+        company_id, name = to_int(company.get("id")), (to_text(company.get("name")) or "").strip()[:100]
+        if company_id and name and company_id not in seen:
+            seen.add(company_id)
+            studios.append([str(company_id), name])
+    vote = to_float(details.get("vote_average"), 0.0) or 0.0
+    language = (to_text(details.get("original_language")) or "").lower()
+    return {
+        "v": round(vote, 1) if 0 < vote <= 10 else 0,
+        "n": max(0, to_int(details.get("vote_count"), 0) or 0),
+        "p": round(max(0.0, to_float(details.get("popularity"), 0.0) or 0.0), 2),
+        "l": language if re.match(r"^[a-z]{2,3}$", language) else None,
+        "c": countries[:10],
+        "s": studios[:6],
+    }

@@ -7,6 +7,7 @@ their own sessions. Admins can also list and close the sessions of every user.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -25,7 +26,7 @@ logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -475,6 +476,39 @@ class SubtitleDownloadView(TeleView):
         return response
 
 
+class VodFactsView(TeleView):
+    """TMDB facts of the titles served (?kind=movie|series, ?since=<until of a previous answer> for the changes only):
+    {"facts": {"<TMDB id>": {"v", "n", "p", "l", "c", "s"}}, "until"}, gzipped when the TV accepts it, with an ETag."""
+
+    def get(self, request):
+        import gzip
+
+        from django.http import HttpResponse
+
+        from . import facts
+
+        kind = request.query_params.get("kind")
+        if kind not in ("movie", "series"):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        since = core.to_float(request.query_params.get("since"))
+        answer = {"api": core.API_VERSION, **facts.served(kind, since if since and since > 0 else None)}
+        body = json.dumps(answer, ensure_ascii=False, separators=(",", ":")).encode()
+        import hashlib
+
+        tag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        response = HttpResponse(content_type="application/json")
+        if "gzip" in (request.headers.get("Accept-Encoding") or ""):
+            response.content = gzip.compress(body, compresslevel=6)
+            response["Content-Encoding"] = "gzip"
+        else:
+            response.content = body
+        response["ETag"] = tag
+        response["Vary"] = "Accept-Encoding"
+        return response
+
+
 class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         user = request.user
@@ -558,7 +592,7 @@ class AdminTmdbView(AdminView):
     TMDB accepted it, {"key": null} removes it."""
 
     def get(self, request):
-        from . import tmdb, vault
+        from . import facts, tmdb, vault
 
         return Response({
             "api": core.API_VERSION,
@@ -567,6 +601,7 @@ class AdminTmdbView(AdminView):
             "language": self.setting("tmdb_language", "fr-FR"),
             "min_confidence": core.tmdb_min_confidence(self.setting("tmdb_min_confidence", core.TMDB_MIN_CONFIDENCE)),
             "unmatched_titles": tmdb.unmatched(200),
+            "facts": facts.counts(),
             **tmdb.counts(),
         })
 

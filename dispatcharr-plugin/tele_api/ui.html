@@ -237,6 +237,7 @@
           <div class="spread small"><span class="muted">Titles matched to a TMDB id (the same movie from several categories is grouped in Télé)</span><strong id="tmdb-percent">–</strong></div>
           <div class="bar" id="tmdb-bar" style="margin-top:6px"></div>
         </div>
+        <div class="muted small" id="tmdb-facts"></div>
         <form id="tmdb-form" class="row" autocomplete="off">
           <label for="tmdb-key" class="muted small">API key or read token</label>
           <input id="tmdb-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
@@ -1006,6 +1007,9 @@
       clear($("kpi-tmdb-ring")).appendChild(ring(data.key_set ? p : 0, "var(--accent-2)"));
       $("tmdb-remove").disabled = !data.key_set;
       if (data.min_confidence) text("tmdb-threshold", String(data.min_confidence));
+      var f = data.facts || {};
+      text("tmdb-facts", data.key_set ? "Votes, popularity, countries and studios looked up for " + fmt(f.movie || 0) + " movies and " +
+        fmt(f.series || 0) + " series: the TVs read them from here instead of asking TMDB title by title." : "");
       text("tmdb-unmatched-count", missed ? "(" + fmt(missed) + ", latest " + state.unmatched.length + " listed)" : "");
     }
     var find = $("tmdb-find").value.trim().toLowerCase(), kind = $("tmdb-kind").value;

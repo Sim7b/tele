@@ -16,6 +16,7 @@ urlpatterns = [
     path("v1/vod/tmdb-ids/", views.TmdbIdsView.as_view(), name="vod-tmdb-ids"),
     path("v1/vod/groups/", views.VodGroupsView.as_view(), name="vod-groups"),
     path("v1/vod/popular/", views.VodPopularView.as_view(), name="vod-popular"),
+    path("v1/vod/facts/", views.VodFactsView.as_view(), name="vod-facts"),
     path("v1/subtitles/search/", views.SubtitleSearchView.as_view(), name="subtitles-search"),
     path("v1/subtitles/download/", views.SubtitleDownloadView.as_view(), name="subtitles-download"),
     path("v1/admin/subtitles/", views.AdminSubtitlesView.as_view(), name="admin-subtitles"),

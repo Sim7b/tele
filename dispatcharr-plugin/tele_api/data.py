@@ -277,9 +277,12 @@ def vod_session(client, session: str) -> Optional[core.Session]:
 
 
 def vod_content(client, session: str):
-    """(content type, content uuid) of a VOD session ("movie" / "episode"); (None, None) when Dispatcharr keeps none."""
+    """(content kind, content uuid) of a VOD session ("movie" / "episode"); (None, None) when Dispatcharr keeps none.
+
+    The kind is in content_obj_type: content_type is the MIME type of the stream ("video/mp4").
+    """
     try:
-        kind, uuid = client.hmget(f"vod_persistent_connection:{session}", "content_type", "content_uuid")
+        kind, uuid = client.hmget(f"vod_persistent_connection:{session}", "content_obj_type", "content_uuid")
     except Exception:
         return None, None
     return core.to_text(kind), core.valid_uuid(core.to_text(uuid))
