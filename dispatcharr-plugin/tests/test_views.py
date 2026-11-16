@@ -418,6 +418,15 @@ class VodLanguagesViewTest(ViewTest):
         self.assertTrue(accepted.data["key_set"])
         saved.assert_called_once()
 
+    def test_daily_budgets_of_the_shared_services(self):
+        with mock.patch.object(views.quota, "allow", return_value=False):
+            over = self.call(views.SubtitleDownloadView, "post", who=user(), body={"file_id": 7})
+            segments = self.call(views.VodSegmentsView, path="/?tmdb_id=1", who=user())
+            with mock.patch("tele_api.opensubtitles.download", return_value=(b"x", "srt", None)):
+                admin = self.call(views.SubtitleDownloadView, "post", who=user(level=10), body={"file_id": 7})
+        self.assertEqual((over.status_code, segments.status_code), (429, 429))
+        self.assertEqual(admin.status_code, 200)  # admins are not limited
+
     def test_groups_served_to_the_tvs(self):
         served = {"mode": "selected", "groups": [{"name": "FR | FILMS", "type": "movie"}]}
         with mock.patch.object(views.probe, "served_groups", return_value=served):

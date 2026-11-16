@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sim7b.tele.data.UiText
+import io.github.sim7b.tele.data.storage.Profile
 import io.github.sim7b.tele.data.storage.Reminders
 import io.github.sim7b.tele.data.sync.TvSync
 import io.github.sim7b.tele.data.bouquet.Bouquet
@@ -249,6 +250,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * most every [TV_SYNC_EVERY_MS].
      */
     private fun syncTvs(force: Boolean = false) {
+        // The other TVs share the main profile only: the other profiles stay on this TV
+        if (!configRepository.profiles.current.value.isMain) return
         val source = sources.firstOrNull { it.dispatcharr != null } ?: return
         val client = source.dispatcharr ?: return
         val now = SystemClock.elapsedRealtime()
@@ -293,6 +296,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             prefs.edit().putString(key, TvSync.toJson(remembered)).apply()
         }
         guideStore.replaceReminders(Reminders.pending(TvSync.remindersOf(kept[TvSync.REMINDERS].orEmpty()), System.currentTimeMillis()))
+    }
+
+    /** Uses [profile] (its code already checked): its favorites and movies and series come in place. */
+    fun switchProfile(profile: Profile) {
+        viewModelScope.launch(Dispatchers.IO) { configRepository.switchProfile(profile) }
+    }
+
+    /** Removes [profile] and its data (the main one is kept). */
+    fun removeProfile(profile: Profile) {
+        viewModelScope.launch(Dispatchers.IO) { configRepository.removeProfile(profile) }
     }
 
     fun refreshStreamSlots() {
@@ -355,7 +368,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mergeAcrossSources = input.mode == CategoryMode.MERGE,
             favoriteIds = input.favoriteIds.toSet(),
             sourceNames = sourceNames,
-            categoryLabel = { resources.getString(it.labelRes) }
+            categoryLabel = { resources.getString(it.labelRes) },
+            // Dispatcharr fails over by itself, on the server
+            failover = ChannelGrouping.Failover(
+                sources = input.configs.filter { it.type != SourceType.DISPATCHARR }.mapTo(HashSet()) { it.id },
+                userAgents = input.configs.associate { it.id to it.playerUserAgent }
+            )
         )
         groupedChannels = grouped
         _unmatchedChannels.value = bouquet?.let { unmatchedNames(it, input.channels) }.orEmpty()
@@ -442,10 +460,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * URLs to play for [channel] in automatic mode, by quality preference: its streams through the Dispatcharr
      * proxy, best first, then the channel itself (Dispatcharr failover) as a last resort. Empty when the
      * server order applies (manual choice, other source, "server order" preference, streams unavailable).
+     * The same channel in the other Xtream / M3U sources comes after them ([Channel.failoverUrls]).
      */
     suspend fun automaticStreamUrls(channel: Channel): List<String> {
-        val preference = configRepository.qualityPreference.value
         if (channel.selectedStreamUrl != null) return emptyList()
+        val urls = ownStreamUrls(channel)
+        // The same channel in another Xtream / M3U source, when every stream of this one failed
+        if (channel.failoverUrls.isEmpty()) return urls
+        return (urls.ifEmpty { listOf(channel.activeStreamUrl) } + channel.failoverUrls).distinct()
+    }
+
+    private suspend fun ownStreamUrls(channel: Channel): List<String> {
+        val preference = configRepository.qualityPreference.value
         // Grouped channel: every version, preferred quality first (the next ones if it fails)
         if (channel.memberIds.size > 1) return preference.sort(channel.availableStreams).map { it.url }
         if (!preference.reordersStreams) return emptyList()

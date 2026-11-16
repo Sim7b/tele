@@ -32,11 +32,19 @@ class ParentalControl(private val prefs: SharedPreferences, private val clock: (
     /** Code entered since the app came to the foreground (always true without a code). */
     val unlocked: StateFlow<Boolean> = _unlocked.asStateFlow()
 
+    private val _forced = MutableStateFlow(false)
+    /** A kids profile is in use: the locks apply whatever the code, and cannot be lifted from it. */
+    val forced: StateFlow<Boolean> = _forced.asStateFlow()
+
+    fun setForced(forced: Boolean) {
+        _forced.value = forced
+    }
+
     private var failures = 0
     private var blockedUntil = 0L
 
     /** Whether the locks apply now: a code set and not entered. */
-    fun active(): Boolean = _hasPin.value && !_unlocked.value
+    fun active(): Boolean = _forced.value || (_hasPin.value && !_unlocked.value)
 
     /** Movies and series left out now. */
     fun vodHiddenNow(): Boolean = active() && _vodLocked.value
@@ -102,12 +110,14 @@ class ParentalControl(private val prefs: SharedPreferences, private val clock: (
     }
 
     /** The categories left out, as they change (code set or entered, categories chosen). */
-    fun hiddenGroupsFlow() = combine(_hasPin, _unlocked, _lockedGroups) { hasPin, unlocked, groups ->
-        if (hasPin && !unlocked) groups else emptySet()
+    fun hiddenGroupsFlow() = combine(_hasPin, _unlocked, _lockedGroups, _forced) { hasPin, unlocked, groups, forced ->
+        if (forced || (hasPin && !unlocked)) groups else emptySet()
     }
 
     /** Movies and series left out, as it changes. */
-    fun vodHiddenFlow() = combine(_hasPin, _unlocked, _vodLocked) { hasPin, unlocked, vod -> hasPin && !unlocked && vod }
+    fun vodHiddenFlow() = combine(_hasPin, _unlocked, _vodLocked, _forced) { hasPin, unlocked, vod, forced ->
+        vod && (forced || (hasPin && !unlocked))
+    }
 
     companion object {
         const val PIN_LENGTH = 4

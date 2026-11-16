@@ -137,4 +137,45 @@ class ChannelGroupingTest {
         // A single stream: the version is enough
         assertTrue(ChannelGrouping.subStreams(version, streams.take(1)).isEmpty())
     }
+
+    @Test
+    fun `a channel of one source fails over to the same channel in the other Xtream and M3U sources`() {
+        val channels = listOf(
+            Channel(id = "d1", name = "TF1 HD", group = "TNT", streamUrl = "https://dispatcharr/tf1", sourceId = "disp"),
+            Channel(id = "x1", name = "FR | TF1 FHD", group = "FR", streamUrl = "https://xtream/tf1", sourceId = "xt"),
+            Channel(id = "m1", name = "TF1", group = "FR", streamUrl = "https://m3u/tf1", sourceId = "m3u"),
+            Channel(id = "m2", name = "TF1 HEVC", group = "FR", streamUrl = "https://m3u/tf1-hevc", sourceId = "m3u"),
+            Channel(id = "o1", name = "TF1 SD", group = "FR", streamUrl = "https://ua/tf1", sourceId = "ua"),
+            Channel(id = "x2", name = "Alpe d'Huez TV", group = "FR", streamUrl = "https://xtream/alpe", sourceId = "xt")
+        )
+        val failover = ChannelGrouping.Failover(
+            sources = setOf("xt", "m3u", "ua"),
+            userAgents = mapOf("disp" to null, "xt" to null, "m3u" to null, "ua" to "VLC")
+        )
+        val result = ChannelGrouping(bouquet, names).build(
+            channels, mergeAcrossSources = false, favoriteIds = emptySet(), sourceNames = emptyMap(), categoryLabel = ::label, failover = failover
+        )
+        val bySource = result.associateBy { it.sourceId }
+        // Dispatcharr is never a failover; one stream per other source, the first one found
+        assertEquals(listOf("https://xtream/tf1", "https://m3u/tf1"), bySource.getValue("disp").failoverUrls)
+        assertEquals(listOf("https://m3u/tf1"), result.first { it.id == "x1" }.failoverUrls)
+        assertEquals(listOf("https://xtream/tf1"), bySource.getValue("m3u").failoverUrls)
+        // Another user agent: not mixed
+        assertEquals(emptyList<String>(), result.first { it.id == "o1" }.failoverUrls)
+        assertEquals(emptyList<String>(), result.first { it.id == "x2" }.failoverUrls)
+    }
+
+    @Test
+    fun `merged across sources, the other sources are already streams`() {
+        val channels = listOf(
+            Channel(id = "x1", name = "TF1", group = "FR", streamUrl = "https://xtream/tf1", sourceId = "xt"),
+            Channel(id = "m1", name = "TF1", group = "FR", streamUrl = "https://m3u/tf1", sourceId = "m3u")
+        )
+        val result = ChannelGrouping(bouquet, names).build(
+            channels, mergeAcrossSources = true, favoriteIds = emptySet(), sourceNames = emptyMap(), categoryLabel = ::label,
+            failover = ChannelGrouping.Failover(setOf("xt", "m3u"), emptyMap())
+        )
+        assertEquals(1, result.size)
+        assertEquals(emptyList<String>(), result.single().failoverUrls)
+    }
 }

@@ -426,14 +426,11 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     private fun createPlayer(): ExoPlayer {
         // Fast channel switching (playback starts with 500 ms buffered), then a comfortable buffer
         // against network hiccups: the channel switch speed only depends on bufferForPlaybackMs
+        // Durations of the setting (BufferSize): kept ahead, at most, needed to start, needed after a stall
+        val buffer = bufferSize
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                15_000, // minBufferMs: buffer kept ahead of the playback position
-                30_000, // maxBufferMs
-                500,    // bufferForPlaybackMs: buffer required to start (channel switch)
-                2_500   // bufferForPlaybackAfterRebufferMs: buffer required to resume after a stall
-            )
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBufferDurationsMs(buffer.minMs, buffer.maxMs, buffer.startMs, buffer.afterStallMs)
+            .setPrioritizeTimeOverSizeThresholds(buffer.timeOverSize)
             .build()
 
         val audioAttributes = AudioAttributes.Builder()
@@ -947,6 +944,12 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
      * Languages kept for a movie or a series: [audioLanguage] null keeps the stream's default track;
      * subtitles in [subtitleLanguage] when [subtitlesOn]. Set after [playVod].
      */
+    /** Prefers the audio in [language] (when the stream has it), the subtitles left as they are. */
+    fun preferAudioLanguage(language: String) {
+        val player = getPlayer()
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setPreferredAudioLanguage(language).build()
+    }
+
     fun applyTrackPreferences(audioLanguage: String?, subtitlesOn: Boolean, subtitleLanguage: String?) {
         val player = getPlayer()
         val builder = player.trackSelectionParameters.buildUpon()
@@ -1102,6 +1105,15 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
             if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) rebuildPlayer() else rebuildOnStop = true
         }
     private var rebuildOnStop = false
+
+    /** Buffer of the player (setting): the player is built again with it, now when nothing plays, else once stopped. */
+    var bufferSize = io.github.sim7b.tele.data.model.BufferSize.NORMAL
+        set(value) {
+            if (field == value) return
+            field = value
+            val player = exoPlayer ?: return
+            if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) rebuildPlayer() else rebuildOnStop = true
+        }
 
     private fun rebuildPlayer() {
         rebuildOnStop = false

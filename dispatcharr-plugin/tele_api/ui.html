@@ -771,7 +771,11 @@
     text("kpi-tvs-sub", active + " seen in the last 24 h · " + list.filter(function (d) { return d.sessions; }).length + " playing");
     var versions = {};
     list.forEach(function (d) { if (d.version) versions[d.version] = (versions[d.version] || 0) + 1; });
-    text("devices-versions", Object.keys(versions).sort().reverse().map(function (v) { return "v" + v + " × " + versions[v]; }).join(" · "));
+    var behind = list.filter(function (d) { return d.behind; }).length;
+    var latest = state.latestApp;
+    text("devices-versions", (latest ? "Latest Télé: v" + latest.version + (behind ? " · " + behind + " TV(s) to update" : " · every TV is up to date") + " · " : "") +
+      Object.keys(versions).sort().reverse().map(function (v) { return "v" + v + " × " + versions[v]; }).join(" · "));
+    $("devices-versions").className = "small " + (behind ? "warn" : "muted");
     var body = clear($("devices"));
     list.forEach(function (device) {
       var recent = device.last_seen && Date.now() / 1000 - device.last_seen < 900;
@@ -794,7 +798,10 @@
         el("td", {}, [el("span", { class: "dot" + (recent ? "" : " off"), title: recent ? "Seen in the last 15 minutes" : "Not seen lately" })]),
         el("td", { style: "font-family:ui-monospace,monospace;font-size:12px", text: device.id }),
         el("td", { text: device.user || "" }),
-        el("td", { text: device.version ? "v" + device.version : "" }),
+        el("td", {}, [
+          el("span", { text: device.version ? "v" + device.version : "" }),
+          device.behind ? el("span", { class: "pill warn", style: "margin-left:6px", title: "Update it from its settings (Télé checks GitHub by itself)", text: "update" }) : null
+        ]),
         el("td", { class: "muted", text: device.ip || "" }),
         el("td", { class: "muted", title: when(device.last_seen), text: ago(device.last_seen) }),
         el("td", { text: String(device.sessions || 0) }),
@@ -1395,7 +1402,7 @@
         call("slots/").then(showSlots).catch(function () { showSlots({}); }),
         call("sessions/?all=1").then(function (data) { showSessions(data.sessions || []); }),
         call("admin/probes/").then(showProbes),
-        call("admin/devices/").then(function (data) { showDevices(data.devices || []); return loadMessages(); }),
+        call("admin/devices/").then(function (data) { state.latestApp = data.latest_app || null; showDevices(data.devices || []); return loadMessages(); }),
         call("admin/stats/?days=14").then(showOverviewDays).catch(function () { showOverviewDays({}); }),
         loadStats(state.statsDays),
         call("admin/tmdb/").then(showTmdb),

@@ -18,3 +18,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "tele"
 include(":app")
+// Startup profile of the app, generated on an emulator (Baseline profile workflow)
+include(":baselineprofile")

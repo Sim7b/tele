@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("androidx.baselineprofile")
 }
 
 // Release signing: keystore.properties (not versioned) at the project root,
@@ -81,6 +82,12 @@ android {
     // Robolectric tests (app startup) read the merged resources
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // README screenshots (ReadmeScreenshots): written only with -Ptele.screenshots=<folder from the root>
+        unitTests.all { test ->
+            providers.gradleProperty("tele.screenshots").orNull?.let {
+                test.systemProperty("tele.screenshots", rootProject.file(it).absolutePath)
+            }
+        }
     }
 
     packaging {
@@ -127,6 +134,10 @@ dependencies {
     // QR codes of the API key pages (encoder only)
     implementation("com.google.zxing:core:3.5.4")
 
+    // Installs the startup profile (src/main/generated/baselineProfiles) on the TVs that sideload the APK
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    baselineProfile(project(":baselineprofile"))
+
     // Image loading for Channel Logos (Coil)
     implementation("io.coil-kt:coil-compose:2.7.0")
 
@@ -152,6 +163,13 @@ dependencies {
     // Compose UI tests on the JVM (Robolectric): focus and remote navigation of the screens
     testImplementation("androidx.compose.ui:ui-test-junit4:1.11.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest:1.11.0")
+}
+
+// The startup profile is generated on request (Baseline profile workflow), not at every build, and kept in the sources
+baselineProfile {
+    automaticGenerationDuringBuild = false
+    saveInSrc = true
+    mergeIntoMain = true
 }
 
 configurations.configureEach {

@@ -2,6 +2,18 @@ package io.github.sim7b.tele.data.vod
 
 import java.util.Locale
 
+/**
+ * Language of a movie or series from another country than the TV: dubbed in the language of the TV, or in its
+ * original language with subtitles in the language of the TV.
+ */
+enum class AudioPreference { DUBBED, ORIGINAL }
+
+/**
+ * Tracks a movie or episode starts with when none was chosen for it: the [audio] language preferred, and
+ * subtitles turned on in [subtitles] (null: the subtitles of the stream are left as they are, forced ones included).
+ */
+data class DefaultTracks(val audio: String?, val subtitles: String?)
+
 /** Order of the files of a movie or an episode: the first one is played when none is chosen. */
 enum class VersionOrder {
     // The language of the TV first (audio, then subtitles), then the best picture
@@ -20,24 +32,73 @@ enum class VersionOrder {
  */
 object VodVersionOrder {
 
-    /** [details] with its files, and the files of each episode, in [order] for a TV in [language]. */
-    fun apply(details: VodDetails, order: VersionOrder, language: String): VodDetails {
+    /**
+     * [details] with its files, and the files of each episode, in [order] for a TV in [language]; with
+     * [AudioPreference.ORIGINAL] and a title from elsewhere ([original] language), the original version with
+     * subtitles in [language] first.
+     */
+    fun apply(
+        details: VodDetails,
+        order: VersionOrder,
+        language: String,
+        preference: AudioPreference = AudioPreference.DUBBED,
+        original: String? = null
+    ): VodDetails {
         if (order == VersionOrder.AS_LISTED) return details
         return details.copy(
-            versions = sort(details.versions, order, language),
+            versions = sort(details.versions, order, language, preference, original),
             seasons = details.seasons.map { season ->
-                season.copy(episodes = season.episodes.map { it.copy(versions = sort(it.versions, order, language)) })
+                season.copy(episodes = season.episodes.map { it.copy(versions = sort(it.versions, order, language, preference, original)) })
             }
         )
     }
 
-    fun sort(versions: List<VodVersion>, order: VersionOrder, language: String): List<VodVersion> {
+    fun sort(
+        versions: List<VodVersion>,
+        order: VersionOrder,
+        language: String,
+        preference: AudioPreference = AudioPreference.DUBBED,
+        original: String? = null
+    ): List<VodVersion> {
         if (versions.size < 2 || order == VersionOrder.AS_LISTED) return versions
-        val byLanguage = compareByDescending<VodVersion> { languageScore(it, language) }
+        val wantsOriginal = wantsOriginal(preference, language, original)
+        val byLanguage = compareByDescending<VodVersion> {
+            if (wantsOriginal) originalScore(it, language, original!!) else languageScore(it, language)
+        }
         val byQuality = compareByDescending<VodVersion> { qualityScore(it) }
         // Stable: files equal on both stay in the order of the providers
         return versions.sortedWith(if (order == VersionOrder.LANGUAGE_FIRST) byLanguage.then(byQuality) else byQuality.then(byLanguage))
     }
+
+    /** The original version is wanted: [preference] says so and the title comes from a country of another language. */
+    internal fun wantsOriginal(preference: AudioPreference, language: String, original: String?): Boolean {
+        if (preference != AudioPreference.ORIGINAL || original == null) return false
+        val wanted = iso3(original) ?: return false
+        return wanted != iso3(language)
+    }
+
+    /**
+     * For the original version with subtitles in [language]: 2 for the original audio (its track, or VO / VOST /
+     * MULTI in the name), plus 1 for subtitles in [language]; a version dubbed in [language] only gets 0.
+     */
+    internal fun originalScore(version: VodVersion, language: String, original: String): Int {
+        val wantedAudio = iso3(original)
+        val tv = iso3(language)
+        val tags = version.languageTags.map { it.uppercase(Locale.ROOT) }
+        val originalAudio = version.audio.any { iso3(it.language) == wantedAudio } ||
+            tags.any { it == "VO" || it.startsWith("VOST") || it == "MULTI" }
+        val subtitled = version.subtitles.any { iso3(it) == tv } ||
+            (tv == "fra" && "VOSTFR" in tags) || (tv == "eng" && "VOSTEN" in tags)
+        return (if (originalAudio) 2 else 0) + (if (subtitled) 1 else 0)
+    }
+
+    /**
+     * Tracks to start with when none was chosen for the title: the original audio with subtitles in [language]
+     * when the original version is wanted, else the audio in [language] (the stream's own choice when absent).
+     */
+    fun defaultTracks(preference: AudioPreference, language: String, original: String?): DefaultTracks =
+        if (wantsOriginal(preference, language, original)) DefaultTracks(original, subtitles = language)
+        else DefaultTracks(language, subtitles = null)
 
     /** 3: audio in [language], 2: MULTI (the local language and the original one), 1: subtitles in it, 0: neither. */
     internal fun languageScore(version: VodVersion, language: String): Int {

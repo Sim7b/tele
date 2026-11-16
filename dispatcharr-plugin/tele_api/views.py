@@ -19,7 +19,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
-from . import core, data, messages, probe, vault
+from . import core, data, messages, probe, quota, vault
 
 # Under "apps": a logger Dispatcharr sends to its console and log browser
 logger = logging.getLogger("apps.tele_api.views")
@@ -31,6 +31,12 @@ MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
 DEFAULT_RATE_LIMIT = 120
+# Daily budgets of a standard user on the services the server pays for with its own quotas
+SUBTITLE_SEARCHES = 300
+SUBTITLE_DOWNLOADS = 40
+EXTRAS_PER_DAY = 3000
+# Light posters made for one address every 10 minutes (the route needs no key); the made ones are free
+POSTERS_MADE = 600
 STANDARD_LEVEL = 1
 
 
@@ -447,6 +453,15 @@ class VodPopularView(TeleView):
         return Response(answer, headers={"ETag": tag})
 
 
+def _within(request, scope: str, limit: int) -> bool:
+    """[request] of a standard user within its daily budget of [scope] (admins are not limited)."""
+    return is_admin(request.user) or quota.allow(data.redis_client(), scope, request.user.pk, limit, 86400)
+
+
+def _over_budget() -> Response:
+    return Response({"error": "daily_limit"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
 class SubtitleSearchView(TeleView):
     """OpenSubtitles search with the key of the server (same parameters as the API: tmdb_id, imdb_id, parent_tmdb_id,
     parent_imdb_id, season_number, episode_number, query, year, languages), answered like it."""
@@ -454,6 +469,8 @@ class SubtitleSearchView(TeleView):
     def get(self, request):
         from . import opensubtitles
 
+        if not _within(request, "subtitle_search", SUBTITLE_SEARCHES):
+            return _over_budget()
         try:
             return Response(opensubtitles.search(request.query_params))
         except opensubtitles.Refused as refused:
@@ -472,6 +489,9 @@ class SubtitleDownloadView(TeleView):
         file_id = core.to_int(body.get("file_id"))
         if file_id is None or file_id <= 0:
             return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        # The downloads of OpenSubtitles are counted per day for the whole server: shared fairly
+        if not _within(request, "subtitle_download", SUBTITLE_DOWNLOADS):
+            return _over_budget()
         try:
             content, extension, remaining = opensubtitles.download(data.redis_client(), file_id)
         except opensubtitles.Refused as refused:
@@ -563,7 +583,12 @@ class PosterView(APIView):
         from . import posters
 
         width = posters.width_of(request.query_params.get("w"))
-        content = posters.poster(int(logo_id), width) if posters.available() else None
+        content = posters.kept(int(logo_id), width)
+        # A poster to make: at most POSTERS_MADE every 10 minutes for an address (the route needs no key)
+        if content is None and posters.available() and quota.allow(
+            data.redis_client(), "posters", request.META.get("REMOTE_ADDR") or "?", POSTERS_MADE, 600
+        ):
+            content = posters.poster(int(logo_id), width)
         if content is None:
             return HttpResponseRedirect(f"/api/vod/vodlogos/{int(logo_id)}/cache/")
         response = HttpResponse(content, content_type="image/jpeg")
@@ -587,6 +612,8 @@ class VodSegmentsView(TeleView):
                 or (episode is not None and not 0 <= episode <= 10000):
             return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
         duration = duration if duration and 0 < duration < 24 * 3600 * 1000 else None
+        if not _within(request, "segments", EXTRAS_PER_DAY):
+            return _over_budget()
         return Response({"api": core.API_VERSION, "segments": extras.segments(tmdb_id, season, episode, duration)})
 
 
@@ -601,6 +628,8 @@ class VodRelatedView(TeleView):
         tmdb_id = core.to_int(request.query_params.get("tmdb_id"))
         if kind not in ("movie", "series") or not tmdb_id or tmdb_id <= 0:
             return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        if not _within(request, "related", EXTRAS_PER_DAY):
+            return _over_budget()
         found = extras.related(kind, tmdb_id, core.to_text(self.setting("tmdb_language", "fr-FR")) or "fr-FR")
         if found is None:
             return Response({"error": "no_tmdb_key"}, status=status.HTTP_404_NOT_FOUND)
@@ -629,7 +658,13 @@ class AdminDevicesView(AdminView):
         raw = devices.all_raw(client)
         sessions = data.all_sessions() or []
         users = data.usernames(core.device_users(raw))
-        return Response({"api": core.API_VERSION, "devices": core.devices_json(raw, users, sessions, time.time())})
+        from . import updates
+
+        listed = core.devices_json(raw, users, sessions, time.time())
+        newest = updates.latest(client)
+        for device in listed:
+            device["behind"] = core.is_behind(device.get("version"), newest and newest["version"])
+        return Response({"api": core.API_VERSION, "devices": listed, "latest_app": newest})
 
 
 class AdminMessagesView(AdminView):

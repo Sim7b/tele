@@ -26,6 +26,10 @@ WIDTHS = (185, 240, 342, 500)
 MAX_SOURCE = 15 * 1024 * 1024
 MAX_FOLDER = 400 * 1024 * 1024
 QUALITY = 80
+MAX_PIXELS = 50_000_000
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
+# Posters made at once in a worker: the others get the image of Dispatcharr meanwhile
+_making = threading.BoundedSemaphore(2)
 _writes = 0
 _lock = threading.Lock()
 
@@ -53,8 +57,11 @@ def shrink(content: bytes, width: int) -> Optional[bytes]:
     from PIL import Image
 
     try:
-        Image.MAX_IMAGE_PIXELS = 50_000_000
         with Image.open(io.BytesIO(content)) as image:
+            # Read lazily: a huge picture (a decompression bomb) is refused before it is decoded, without changing
+            # the global limit of Pillow for the rest of Dispatcharr
+            if image.width * image.height > MAX_PIXELS:
+                return None
             image.draft("RGB", (width * 2, width * 3))
             image = image.convert("RGB")
             if image.width > width:
@@ -90,7 +97,12 @@ def fetch(url: str) -> Optional[bytes]:
 def local(path: str) -> Optional[bytes]:
     """An image Dispatcharr keeps in its data folder (uploaded logos): only under /data, MAX_SOURCE at most."""
     real = os.path.realpath(path)
-    if not real.startswith("/data/") or not os.path.isfile(real) or os.path.getsize(real) > MAX_SOURCE:
+    if not real.startswith("/data/") or not real.lower().endswith(IMAGE_SUFFIXES):
+        return None
+    # Never the files of the plugin (its secrets among them)
+    if real.startswith(os.path.realpath(probe.data_dir()) + os.sep):
+        return None
+    if not os.path.isfile(real) or os.path.getsize(real) > MAX_SOURCE:
         return None
     try:
         with open(real, "rb") as fh:
@@ -99,19 +111,32 @@ def local(path: str) -> Optional[bytes]:
         return None
 
 
-def poster(logo_id: int, width: int) -> Optional[bytes]:
-    """The light poster of the VOD logo [logo_id], from the disk or made now; None when there is none."""
-    path = os.path.join(folder(), f"{logo_id}-{width}.jpg")
+def kept(logo_id: int, width: int) -> Optional[bytes]:
+    """The light poster already made, from the disk."""
     try:
-        with open(path, "rb") as fh:
+        with open(os.path.join(folder(), f"{logo_id}-{width}.jpg"), "rb") as fh:
             return fh.read()
     except OSError:
-        pass
-    from apps.vod.models import VODLogo
+        return None
 
-    url = VODLogo.objects.filter(id=logo_id).values_list("url", flat=True).first()
-    content = (local(url) if url.startswith("/data/") else fetch(url)) if url else None
-    light = shrink(content, width) if content else None
+
+def poster(logo_id: int, width: int) -> Optional[bytes]:
+    """The light poster of the VOD logo [logo_id], from the disk or made now; None when there is none (or when
+    two are being made in this worker already)."""
+    path = os.path.join(folder(), f"{logo_id}-{width}.jpg")
+    found = kept(logo_id, width)
+    if found is not None:
+        return found
+    if not _making.acquire(blocking=False):
+        return None
+    try:
+        from apps.vod.models import VODLogo
+
+        url = VODLogo.objects.filter(id=logo_id).values_list("url", flat=True).first()
+        content = (local(url) if url.startswith("/data/") else fetch(url)) if url else None
+        light = shrink(content, width) if content else None
+    finally:
+        _making.release()
     if light is None:
         return None
     os.makedirs(folder(), exist_ok=True)

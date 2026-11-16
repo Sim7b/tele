@@ -35,6 +35,20 @@ class PostersTest(unittest.TestCase):
         self.assertIsNone(posters.local("/data/../etc/passwd"))
         self.assertIsNone(posters.local("/etc/passwd"))
 
+    def test_a_decompression_bomb_is_refused(self):
+        huge = io.BytesIO()
+        Image.new("1", (10000, 6000)).save(huge, "PNG")
+        self.assertIsNone(posters.shrink(huge.getvalue(), 342))
+        self.assertGreater(Image.MAX_IMAGE_PIXELS or 0, posters.MAX_PIXELS)  # the global limit of Pillow is left alone
+
+    def test_never_the_files_of_the_plugin(self):
+        with mock.patch.object(probe, "data_dir", return_value="/data/tele_api"), \
+                mock.patch.object(posters.os.path, "isfile", return_value=True), \
+                mock.patch.object(posters.os.path, "getsize", return_value=10):
+            self.assertIsNone(posters.local("/data/tele_api/secrets.json"))
+            self.assertIsNone(posters.local("/data/tele_api/poster.png"))
+            self.assertIsNone(posters.local("/data/logos/notes.txt"))
+
     def test_posters_are_kept_on_disk(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)

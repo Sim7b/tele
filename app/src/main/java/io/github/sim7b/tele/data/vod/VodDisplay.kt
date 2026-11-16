@@ -16,13 +16,16 @@ data class VodDisplay(
     val hideTheater: Boolean = false,
     val defaults: Map<VodKind, VodFilter> = emptyMap(),
     // File played when none is chosen: the language of the TV first by default
-    val versionOrder: VersionOrder = VersionOrder.LANGUAGE_FIRST
+    val versionOrder: VersionOrder = VersionOrder.LANGUAGE_FIRST,
+    // Titles from another country: dubbed in the language of the TV, or original version with its subtitles
+    val audioPreference: AudioPreference = AudioPreference.DUBBED
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("hiddenRows", JSONArray(hiddenRows.map { it.name }))
         put("posterSize", posterSize.name)
         put("hideTheater", hideTheater)
         put("versionOrder", versionOrder.name)
+        put("audioPreference", audioPreference.name)
         put("defaults", JSONObject().apply {
             defaults.forEach { (kind, filter) ->
                 put(
@@ -64,7 +67,8 @@ data class VodDisplay(
                 posterSize = PosterSize.entries.firstOrNull { it.name == json.optString("posterSize") } ?: PosterSize.NORMAL,
                 hideTheater = json.optBoolean("hideTheater", false),
                 defaults = defaults,
-                versionOrder = VersionOrder.entries.firstOrNull { it.name == json.optString("versionOrder") } ?: VersionOrder.LANGUAGE_FIRST
+                versionOrder = VersionOrder.entries.firstOrNull { it.name == json.optString("versionOrder") } ?: VersionOrder.LANGUAGE_FIRST,
+                audioPreference = AudioPreference.entries.firstOrNull { it.name == json.optString("audioPreference") } ?: AudioPreference.DUBBED
             )
         }
 

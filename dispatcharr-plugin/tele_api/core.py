@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.9"
+PLUGIN_VERSION = "0.3.10"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1518,3 +1518,28 @@ def related_ids(details: Any, limit: int = 30) -> List[str]:
             if tmdb_id and tmdb_id > 0 and str(tmdb_id) not in found and str(tmdb_id) != str(details.get("id")):
                 found.append(str(tmdb_id))
     return found[:limit]
+
+
+def version_tuple(value: Any) -> Optional[Tuple[int, ...]]:
+    """(0, 3, 35) of "0.3.35" or "v0.3.35"; None when it is no plain version."""
+    text = (to_text(value) or "").strip().lstrip("vV")
+    if not re.match(r"^[0-9]{1,4}(\.[0-9]{1,4}){0,3}$", text):
+        return None
+    return tuple(int(part) for part in text.split("."))
+
+
+def is_behind(version: Any, latest: Any) -> bool:
+    """Whether a TV runs an older version than [latest] (unknown versions: not said to be behind)."""
+    current, newest = version_tuple(version), version_tuple(latest)
+    return bool(current and newest and current < newest)
+
+
+def latest_release(answer: Any) -> Optional[Dict[str, Any]]:
+    """{"version", "url"} of a GitHub release answer (untrusted); None for a draft, a pre-release or a bad answer."""
+    if not isinstance(answer, Mapping) or answer.get("draft") or answer.get("prerelease"):
+        return None
+    tag = to_text(answer.get("tag_name"))
+    url = to_text(answer.get("html_url")) or ""
+    if version_tuple(tag) is None or not url.startswith("https://github.com/"):
+        return None
+    return {"version": tag.lstrip("vV"), "url": url[:300]}
