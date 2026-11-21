@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.40](https://github.com/Sim7b/tele/compare/v0.3.39...v0.3.40) (2026-11-21)
+
+### Features
+
+* paused movies keep their provider connection, slow starts explained, profiles synced ([17f43d0](https://github.com/Sim7b/tele/commit/17f43d0fdc5b32e390f22ac18cdc20582dc2c55b))
+
 ## [0.3.39](https://github.com/Sim7b/tele/compare/v0.3.38...v0.3.39) (2026-11-21)
 
 ### Features
