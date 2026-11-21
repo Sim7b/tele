@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.38](https://github.com/Sim7b/tele/compare/v0.3.37...v0.3.38) (2026-11-21)
+
+### Bug Fixes
+
+* **dispatcharr-plugin:** no runner left behind by an unloaded plugin, no Celery task ([1a13f27](https://github.com/Sim7b/tele/commit/1a13f2791d093cf1673d9f3baf405971e2806028))
+
 ## [0.3.37](https://github.com/Sim7b/tele/compare/v0.3.36...v0.3.37) (2026-11-21)
 
 ### Bug Fixes
