@@ -1,7 +1,7 @@
 """Télé API: a Dispatcharr plugin serving the Télé player (https://github.com/Sim7b/tele).
 
 Dispatcharr only imports the code of an enabled plugin; importing it installs the /api/tele/ routes in the
-current web process (see routes.py), registers the Celery task of the VOD language probes and its schedule.
+current web process (see routes.py) and starts the runner of its background work (runner.py).
 """
 
 import json
@@ -9,7 +9,7 @@ import logging
 import os
 import time
 
-from . import probe, routes, runner, tasks  # noqa: F401  (tasks: registers the Celery task)
+from . import probe, routes, runner
 from .core import PLUGIN_VERSION
 
 # Under "apps": a logger Dispatcharr sends to its console and log browser
@@ -85,8 +85,10 @@ class Plugin:
         return {"status": "error", "message": f"Unknown action: {action}"}
 
     def stop(self, context):
-        # Only this worker: the others refuse the requests once the plugin is disabled (views.PluginEnabled)
+        # Only this worker: the others refuse the requests once the plugin is disabled (views.PluginEnabled), and
+        # their runners stop once Dispatcharr unloads the plugin there
         routes.uninstall()
+        runner.stop()
 
 
 def page_link(context) -> str:

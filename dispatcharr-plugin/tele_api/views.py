@@ -400,9 +400,11 @@ class VodMediaView(TeleView):
             return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         queued = probe.request_title(client, kind, uuid)
         if queued == "queued":
-            from . import tasks
+            # The runners of the web processes measure it now (not Celery: its workers ignore the tasks of a
+            # plugin installed after they started)
+            from . import runner
 
-            tasks.probe_vod_languages.delay()
+            runner.wake(client)
         return Response({"api": core.API_VERSION, "status": queued})
 
 
@@ -961,9 +963,12 @@ class AdminProbesView(AdminView):
 
 class AdminProbeRunView(AdminView):
     def post(self, request):
-        from . import tasks
+        from . import runner
 
-        tasks.probe_vod_languages.delay()
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        runner.wake(client)
         return Response({"api": core.API_VERSION, "queued": True})
 
 
