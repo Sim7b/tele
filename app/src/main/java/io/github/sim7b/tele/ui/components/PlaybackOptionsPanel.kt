@@ -1,5 +1,7 @@
 package io.github.sim7b.tele.ui.components
 
+import androidx.compose.material.icons.filled.Share
+import io.github.sim7b.tele.data.remote.HandoffTv
 import android.view.KeyEvent
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -77,7 +79,10 @@ fun PlaybackOptionsPanel(
     recordTitle: String? = null,
     recording: Boolean = false,
     onToggleRecording: () -> Unit = {},
-    chooseStreamLabel: String? = null
+    chooseStreamLabel: String? = null,
+    // The other TVs of the user, to send what plays to one of them (Dispatcharr with the Télé API plugin)
+    sendTargets: List<HandoffTv> = emptyList(),
+    onSendTo: (HandoffTv) -> Unit = {}
 ) {
     val firstRow = remember { FocusRequester() }
     var interactions by remember { mutableIntStateOf(0) }
@@ -258,6 +263,19 @@ fun PlaybackOptionsPanel(
                 item {
                     OptionsHeader(R.string.options_stats)
                     ChoiceRow(label = stringResource(R.string.options_stats_show), selected = statsOn, onClick = onToggleStats)
+                }
+            }
+            if (sendTargets.isNotEmpty()) {
+                item { OptionsHeader(R.string.options_send_to_tv) }
+                items(sendTargets, key = { "send_${it.device}" }) { tv ->
+                    MenuRow(
+                        label = tv.name ?: stringResource(R.string.handoff_other_tv),
+                        icon = Icons.Filled.Share,
+                        onClick = {
+                            onSendTo(tv)
+                            onDismiss()
+                        }
+                    )
                 }
             }
         }

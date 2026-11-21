@@ -66,8 +66,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="tele" />
                 <data android:host="vod" />
-                <!-- A channel from the notification of a reminder -->
+                <!-- A channel from the notification of a reminder, or from the favorites row of the TV home -->
                 <data android:host="channel" />
+                <!-- The favorites row of the TV home itself -->
+                <data android:host="home" />
             </intent-filter>
             <!-- Voice requests of the Assistant: "Mets France 2 sur Télé" -->
             <intent-filter>

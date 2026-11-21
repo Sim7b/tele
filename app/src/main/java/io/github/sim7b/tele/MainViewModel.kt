@@ -8,6 +8,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.sim7b.tele.data.UiText
 import io.github.sim7b.tele.data.storage.Profile
+import io.github.sim7b.tele.data.model.StreamQuality
+import io.github.sim7b.tele.data.model.QualityCap
 import io.github.sim7b.tele.data.storage.Reminders
 import io.github.sim7b.tele.data.sync.TvSync
 import io.github.sim7b.tele.data.bouquet.Bouquet
@@ -340,6 +342,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** The Dispatcharr source that passes playback between the TVs of the user (Télé API plugin), when there is one. */
+    private suspend fun handoffClient(): DispatcharrClient? = sources.mapNotNull { it.dispatcharr }.firstOrNull { it.hasHandoff() }
+
+    /** Tells the other TVs what this one ([name]) plays now ([item]), or nothing (null). */
+    fun reportPlaying(name: String?, item: io.github.sim7b.tele.data.remote.HandoffItem?) {
+        viewModelScope.launch { handoffClient()?.reportPlaying(name, item) }
+    }
+
+    /** What the other TVs of the user play, and what one of them sent here (null: no server passes it). */
+    suspend fun handoff(): io.github.sim7b.tele.data.remote.HandoffState? = handoffClient()?.getHandoff()
+
+    /** Sends [item] to another TV of the user. */
+    fun sendTo(device: String, item: io.github.sim7b.tele.data.remote.HandoffItem) {
+        viewModelScope.launch { handoffClient()?.sendTo(device, item) }
+    }
+
     /**
      * The provider connection of the paused movie or episode at [url] kept for its resume ([hold]), or given back
      * (Dispatcharr with the Télé API plugin). In the scope of the app: a release still goes out when the player closes.
@@ -500,20 +518,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun ownStreamUrls(channel: Channel): List<String> {
         val preference = configRepository.qualityPreference.value
-        // Grouped channel: every version, preferred quality first (the next ones if it fails)
-        if (channel.memberIds.size > 1) return preference.sort(channel.availableStreams).map { it.url }
+        val cap = qualityCap.current()
+        // Grouped channel: every version, preferred quality first (the next ones if it fails), within the limit of a
+        // weak connection
+        if (channel.memberIds.size > 1) return qualityCap.apply(preference.sort(channel.availableStreams)).map { it.url }
         val client = sourceOf(channel)?.dispatcharr ?: return emptyList()
-        // Server order: the streams are only read when the plugin tells which ones fail (else nothing to change)
-        if (!preference.reordersStreams && !client.knowsStreamHealth()) return emptyList()
+        // Server order: the streams are only read when the plugin tells which ones fail, or for a weak connection
+        if (!preference.reordersStreams && !client.knowsStreamHealth() && cap == null) return emptyList()
         val serverId = channel.serverId ?: return emptyList()
         val key = streamsKey(channel, serverId)
         val cached = streamsCache[key]?.takeIf { SystemClock.elapsedRealtime() - it.first < STREAMS_CACHE_MS }?.second
         val streams = cached ?: withTimeoutOrNull(STREAMS_TIMEOUT_MS) {
             client.getChannelStreams(serverId).getOrNull()
         }?.also { streamsCache[key] = SystemClock.elapsedRealtime() to it }
+        if (streams.isNullOrEmpty()) return emptyList()
         // The streams that failed lately on the server (Télé API plugin) come last; the channel itself at the end
-        val ordered = preference.automaticOrder(streams.orEmpty()) ?: return emptyList()
-        return ordered.map { it.url } + channel.streamUrl
+        val ordered = preference.automaticOrder(streams)
+        val limited = if (cap != null) qualityCap.apply(ordered ?: streams) else ordered
+        if (limited == null || (ordered == null && limited == streams)) return emptyList()
+        return limited.map { it.url } + channel.streamUrl
+    }
+
+    // Picture limit after stalls of a weak connection, for the automatic choice of the streams
+    private val qualityCap = QualityCap { SystemClock.elapsedRealtime() }
+
+    /**
+     * A playing channel stalled at [resolution] ("1920x1080"): true when the connection proved too weak for it (two
+     * stalls in a short while), the limit lowered: worth starting a lower stream.
+     */
+    fun onLiveStall(resolution: String?): Boolean {
+        val playing = StreamQuality.parseHeight(resolution)?.let(StreamQuality::fromHeight) ?: return false
+        return qualityCap.onStall(playing)
     }
 
     /**

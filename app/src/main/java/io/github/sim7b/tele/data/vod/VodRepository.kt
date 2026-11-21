@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.vod
 
+import io.github.sim7b.tele.data.remote.TeleApi
 import io.github.sim7b.tele.BuildConfig
 import android.os.SystemClock
 import android.util.Log
@@ -171,6 +172,11 @@ class VodRepository(
     val serverPopular: StateFlow<List<String>> = _serverPopular.asStateFlow()
     // ("movie" | "series", Dispatcharr id) most watched, by Dispatcharr source
     private val popularIds = ConcurrentHashMap<String, List<Pair<String, String>>>()
+    // What is new on the Dispatcharr servers (Télé API plugin), by source: the titles added this week, and the latest
+    // episode of the series followed here
+    private val freshBySource = ConcurrentHashMap<String, TeleApi.VodFresh>()
+    @Volatile private var serverAdded: List<String> = emptyList()
+    @Volatile private var newEpisodes: Map<String, TeleApi.NewEpisode> = emptyMap()
 
     private val _platformLogos = MutableStateFlow<Map<StreamingPlatform, String>>(emptyMap())
     val platformLogos: StateFlow<Map<StreamingPlatform, String>> = _platformLogos.asStateFlow()
@@ -653,10 +659,58 @@ class VodRepository(
             if (popular.isEmpty()) popularIds.remove(config.id) else popularIds[config.id] = popular
             updateServerPopular()
         }
+        refreshFresh(config)
         if (measured == measuredLanguages[config.id].orEmpty() && ids == tmdbIds[config.id].orEmpty()) return
         if (measured.isEmpty()) measuredLanguages.remove(config.id) else measuredLanguages[config.id] = measured
         if (ids.isEmpty()) tmdbIds.remove(config.id) else tmdbIds[config.id] = ids
         if (catalogs[config.id] != null) publish(loading = _library.value.loading)
+    }
+
+    /**
+     * What is new on a Dispatcharr server: the titles added this week, and the latest episode of the series followed on
+     * this TV (in my list or being watched); the rows of the home are made again when it changed.
+     */
+    private suspend fun refreshFresh(config: SourceConfig) {
+        val titles = _library.value.titles
+        if (titles.isEmpty()) return
+        val store = settings.vodStore
+        val followedKeys = store.myList.value.toHashSet().apply { store.progress.value.values.forEach { add(it.titleKey) } }
+        val seriesIds = titles.asSequence()
+            .filter { it.kind == VodKind.SERIES && it.key in followedKeys }
+            .flatMap { title -> title.entries.asSequence().filter { it.sourceId == config.id && it.kind == VodKind.SERIES } }
+            .map { it.providerId }
+            .distinct().take(100).toList()
+        val fresh = try {
+            dispatcharr(config).getVodFresh(seriesIds)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        } ?: return
+        if (freshBySource[config.id] == fresh) return
+        freshBySource[config.id] = fresh
+        withContext(Dispatchers.Default) {
+            val byEntry = HashMap<String, String>()
+            titles.forEach { title ->
+                title.entries.forEach { entry ->
+                    byEntry["${entry.sourceId}|${if (entry.kind == VodKind.MOVIE) "movie" else "series"}|${entry.providerId}"] = title.key
+                }
+            }
+            serverAdded = freshBySource.entries
+                .flatMap { (source, f) -> f.added.mapIndexed { rank, (kind, id) -> Triple(byEntry["$source|$kind|$id"], rank, source) } }
+                .filter { it.first != null }
+                .sortedBy { it.second }
+                .mapNotNull { it.first }
+                .distinct()
+            val episodes = HashMap<String, TeleApi.NewEpisode>()
+            freshBySource.forEach { (source, f) ->
+                f.episodes.forEach { (id, episode) ->
+                    val key = byEntry["$source|series|$id"] ?: return@forEach
+                    if ((episodes[key]?.atMs ?: 0L) < episode.atMs) episodes[key] = episode
+                }
+            }
+            newEpisodes = episodes
+        }
+        prepareHome()
     }
 
     /** Keys of the library titles most watched on the servers: their Dispatcharr ids found among the entries. */
@@ -822,7 +876,8 @@ class VodRepository(
             val store = settings.vodStore
             lastRows = VodRows.build(
                 titles, store.progress.value, store.myList.value, store.collections.value, rankings,
-                matcher(titles, rankings), settings.vodDisplay.value.hiddenRows, _serverPopular.value
+                matcher(titles, rankings), settings.vodDisplay.value.hiddenRows, _serverPopular.value,
+                serverAdded, newEpisodes
             )
             // Kept: the next start shows them before its library is ready
             withContext(Dispatchers.IO) { settings.vodSnapshots.saveRows(lastRows) }

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 
@@ -26,7 +27,7 @@ logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog", "vod_segments", "channel_state", "sync_profiles", "vod_hold")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog", "vod_segments", "channel_state", "sync_profiles", "vod_hold", "vod_fresh", "handoff")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -402,6 +403,80 @@ class ChannelStateView(TeleView):
         metadata = client.hgetall(f"live:channel:{key}:metadata")
         chunks = client.get(f"live:channel:{key}:input:buffer:index")
         return Response({"api": core.API_VERSION, **core.channel_state(metadata, chunks, time.time())})
+
+
+class VodFreshView(TeleView):
+    """What is new in the VOD (fresh.py): {"added": [{"kind", "id", "at"}] (?days= 1-30, 7 by default), "episodes":
+    {series id: {"at", "season", "episode"}}} for the series of ?series=1,2,3 (the ones the TV follows, 100 at most)."""
+
+    def get(self, request):
+        from . import fresh
+
+        days = core.query_int(request.query_params.get("days"), 7, 1, 30)
+        series = request.query_params.get("series")
+        ids = core.parse_ids(series) if series else []
+        if ids is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        fresh.follow(data.redis_client(), ids)
+        answer = {"api": core.API_VERSION, "days": days, "added": fresh.added(days), "episodes": fresh.latest_episodes(ids) if ids else {}}
+        tag = core.etag(answer)
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        return Response(answer, headers={"ETag": tag})
+
+
+class HandoffView(TeleView):
+    """What the TVs of the caller play, to resume it on another one (handoff.py), told by the User-Agent.
+
+    GET: {"playing": [{"device", "name", "kind", "key", "title", "position_ms", "duration_ms", "at"}], "tvs":
+    [{"device", "name"}], "incoming": what another TV sent here (read once) or null}. POST {"name", "playing": item
+    or null}: what this TV plays now.
+    """
+
+    def _device(self, request):
+        return core.device_id(request.headers.get("User-Agent"))
+
+    def get(self, request):
+        from . import handoff
+
+        device = self._device(request)
+        client = data.redis_client()
+        if device is None or client is None:
+            return Response({"error": "unknown_device" if device is None else "redis_unavailable"}, status=status.HTTP_400_BAD_REQUEST)
+        answer = handoff.others(client, request.user.pk, device)
+        return Response({"api": core.API_VERSION, **answer, "incoming": handoff.incoming(client, device)})
+
+    def post(self, request):
+        from . import handoff
+
+        device = self._device(request)
+        client = data.redis_client()
+        if device is None or client is None:
+            return Response({"error": "unknown_device" if device is None else "redis_unavailable"}, status=status.HTTP_400_BAD_REQUEST)
+        body = request.data if isinstance(request.data, dict) else {}
+        item = core.handoff_item(body.get("playing")) if body.get("playing") is not None else None
+        if body.get("playing") is not None and item is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        handoff.report(client, request.user.pk, device, core.device_name(body.get("name")), item)
+        return Response({"api": core.API_VERSION, "ok": True})
+
+
+class HandoffSendView(TeleView):
+    """POST {"to": install id, "item": what to play}: sent to that TV of the same user, which offers it."""
+
+    def post(self, request):
+        from . import handoff
+
+        device = core.device_id(request.headers.get("User-Agent"))
+        client = data.redis_client()
+        body = request.data if isinstance(request.data, dict) else {}
+        to = core.to_text(body.get("to")) or ""
+        item = core.handoff_item(body.get("item"))
+        if device is None or client is None or item is None or not re.match(r"^[0-9a-f]{12}$", to):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        if not handoff.send(client, request.user.pk, device, to, item):
+            return Response({"error": "not_found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"api": core.API_VERSION, "sent": True})
 
 
 class VodHoldView(TeleView):

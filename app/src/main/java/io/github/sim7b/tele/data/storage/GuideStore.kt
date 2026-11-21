@@ -122,6 +122,28 @@ class GuideStore(context: Context) {
     fun dismiss(reminder: Reminder) =
         saveReminders(Reminders.pending(_reminders.value, System.currentTimeMillis()).filterNot { it == reminder })
 
+    private val _sportAlerted = MutableStateFlow(readAlerted())
+    /** The matches already given a reminder by the sport alerts (see SportEvents.alertKey). */
+    val sportAlerted: StateFlow<Set<String>> = _sportAlerted.asStateFlow()
+
+    /** Adds the reminders of the sport alerts, each one once. */
+    fun addSportAlerts(alerts: List<Reminder>) {
+        if (alerts.isEmpty()) return
+        var reminders = _reminders.value
+        alerts.forEach { alert ->
+            if (reminders.none { Reminders.matches(it, alert.channelId, alert.startMillis) }) reminders = Reminders.toggle(reminders, alert)
+        }
+        saveReminders(reminders)
+        val now = System.currentTimeMillis()
+        // Kept until a day after their match, at most a few hundred
+        val alerted = (_sportAlerted.value + alerts.map { "${it.channelId}|${it.startMillis}" })
+            .filter { key -> (key.substringAfterLast('|').toLongOrNull() ?: 0L) > now - ALERTED_KEPT_MS }
+            .takeLast(MAX_ALERTED)
+            .toSet()
+        _sportAlerted.value = alerted
+        prefs.edit { putString(KEY_SPORT_ALERTED, JSONArray(alerted.toList()).toString()) }
+    }
+
     fun addRecent(channelId: String) {
         val updated = Reminders.recent(_recentChannels.value, channelId)
         if (updated == _recentChannels.value) return
@@ -132,6 +154,13 @@ class GuideStore(context: Context) {
     private fun saveReminders(reminders: List<Reminder>) {
         _reminders.value = reminders
         prefs.edit { putString(KEY_REMINDERS, Reminders.toJson(reminders)) }
+    }
+
+    private fun readAlerted(): Set<String> = try {
+        val array = JSONArray(prefs.getString(KEY_SPORT_ALERTED, null) ?: "[]")
+        (0 until minOf(array.length(), MAX_ALERTED)).mapNotNull { array.optString(it).takeIf { key -> key.isNotEmpty() } }.toSet()
+    } catch (e: Exception) {
+        emptySet()
     }
 
     private fun readRecent(): List<String> = try {
@@ -145,5 +174,8 @@ class GuideStore(context: Context) {
         const val PREFS_NAME = "guide"
         const val KEY_REMINDERS = "reminders"
         const val KEY_RECENT = "recent_channels"
+        const val KEY_SPORT_ALERTED = "sport_alerted"
+        const val MAX_ALERTED = 300
+        const val ALERTED_KEPT_MS = 24 * 60 * 60_000L
     }
 }

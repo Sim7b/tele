@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.14"
+PLUGIN_VERSION = "0.3.15"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1627,3 +1627,40 @@ def sync_profile(value: Any) -> Optional[str]:
     if text is None or text == "":
         return None
     return text if _SYNC_PROFILE_RE.match(text) else False
+
+
+def newest(items: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    """Titles newest first ("at"), each (kind, id) once."""
+    seen = set()
+    result = []
+    for item in sorted(items, key=lambda i: -(to_float(i.get("at")) or 0.0)):
+        key = (item.get("kind"), item.get("id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result[:limit]
+
+
+_HANDOFF_KINDS = {"live", "vod"}
+
+
+def handoff_item(value: Any) -> Optional[Dict[str, Any]]:
+    """What a TV plays, as it reports it: {"kind": "live" | "vod", "key", "title", "position_ms", "duration_ms"}; None
+    when malformed. The key is the id of the channel or the key of the title (and episode) on the TVs."""
+    if not isinstance(value, Mapping) or value.get("kind") not in _HANDOFF_KINDS:
+        return None
+    key = to_text(value.get("key"))
+    if not key or len(key) > 300 or any(ord(c) < 32 for c in key):
+        return None
+    title = (to_text(value.get("title")) or "")[:200]
+    position = max(0, to_int(value.get("position_ms"), 0) or 0)
+    duration = max(0, to_int(value.get("duration_ms"), 0) or 0)
+    return {"kind": value["kind"], "key": key, "title": title, "position_ms": position, "duration_ms": duration}
+
+
+def device_name(value: Any) -> Optional[str]:
+    """Name of a TV as it gives it ("Salon"), printable and short."""
+    text = (to_text(value) or "").strip()
+    text = "".join(c for c in text if c.isprintable())[:60]
+    return text or None

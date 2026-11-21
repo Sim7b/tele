@@ -10,6 +10,7 @@ import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.remote.CachedGuide
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.BufferSize
+import io.github.sim7b.tele.data.model.SubtitleAppearance
 import io.github.sim7b.tele.data.model.HomeStyle
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.AudioLeveling
@@ -193,6 +194,10 @@ class SettingsRepository(context: Context) {
     val vodEnabled: StateFlow<Boolean> = _vodEnabled.asStateFlow()
 
     // Screen switched to the frame rate of the video (50 Hz for the European channels, 24 Hz for movies)
+    private val _sportAlerts = MutableStateFlow(true)
+    /** The coming matches of the followed teams and competitions get a reminder by themselves. */
+    val sportAlerts: StateFlow<Boolean> = _sportAlerts.asStateFlow()
+
     private val _matchFrameRate = MutableStateFlow(true)
     val matchFrameRate: StateFlow<Boolean> = _matchFrameRate.asStateFlow()
     // Same loudness from one channel to the next, or night mode
@@ -202,6 +207,10 @@ class SettingsRepository(context: Context) {
     private val _timeshift = MutableStateFlow(true)
     val timeshift: StateFlow<Boolean> = _timeshift.asStateFlow()
     // Multichannel sound (Dolby, Atmos) sent as it is to the amplifier, or decoded by the device
+    // Look of the subtitles in every player
+    private val _subtitleAppearance = MutableStateFlow(SubtitleAppearance())
+    val subtitleAppearance: StateFlow<SubtitleAppearance> = _subtitleAppearance.asStateFlow()
+
     private val _bufferSize = MutableStateFlow(BufferSize.NORMAL)
     val bufferSize: StateFlow<BufferSize> = _bufferSize.asStateFlow()
 
@@ -290,10 +299,12 @@ class SettingsRepository(context: Context) {
         _styleChosen.value = prefs.getBoolean(KEY_STYLE_CHOSEN, prefs.contains(KEY_HOME_LAYOUT) || _guideSeen.value)
         _vodEnabled.value = prefs.getBoolean(KEY_VOD_ENABLED, false)
         _matchFrameRate.value = prefs.getBoolean(KEY_MATCH_FRAME_RATE, true)
+        _sportAlerts.value = prefs.getBoolean(KEY_SPORT_ALERTS, true)
         _audioLeveling.value = AudioLeveling.entries.firstOrNull { it.name == prefs.getString(KEY_AUDIO_LEVELING, null) } ?: AudioLeveling.OFF
         _timeshift.value = prefs.getBoolean(KEY_TIMESHIFT, true)
         _audioPassthrough.value = prefs.getBoolean(KEY_AUDIO_PASSTHROUGH, true)
         _bufferSize.value = BufferSize.of(prefs.getString(KEY_BUFFER_SIZE, null))
+        _subtitleAppearance.value = SubtitleAppearance.fromJson(prefs.getString(KEY_SUBTITLE_APPEARANCE, null))
         _homeLayout.value = prefs.getString(KEY_HOME_LAYOUT, null)?.let { saved ->
             try {
                 HomeLayout.fromJson(JSONObject(saved))
@@ -492,6 +503,11 @@ class SettingsRepository(context: Context) {
         _vodDisplay.value = display
     }
 
+    fun setSportAlerts(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_SPORT_ALERTS, enabled) }
+        _sportAlerts.value = enabled
+    }
+
     fun setMatchFrameRate(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_MATCH_FRAME_RATE, enabled) }
         _matchFrameRate.value = enabled
@@ -500,6 +516,11 @@ class SettingsRepository(context: Context) {
     fun setAudioLeveling(leveling: AudioLeveling) {
         prefs.edit { putString(KEY_AUDIO_LEVELING, leveling.name) }
         _audioLeveling.value = leveling
+    }
+
+    fun setSubtitleAppearance(appearance: SubtitleAppearance) {
+        prefs.edit { putString(KEY_SUBTITLE_APPEARANCE, appearance.toJson()) }
+        _subtitleAppearance.value = appearance
     }
 
     fun setBufferSize(size: BufferSize) {
@@ -917,10 +938,12 @@ class SettingsRepository(context: Context) {
         _audioLanguage.value?.let { put("audioLanguage", it) }
         put("vodEnabled", _vodEnabled.value)
         put("matchFrameRate", _matchFrameRate.value)
+        put("sportAlerts", _sportAlerts.value)
         put("audioLeveling", _audioLeveling.value.name)
         put("timeshift", _timeshift.value)
         put("audioPassthrough", _audioPassthrough.value)
         put("bufferSize", _bufferSize.value.name)
+        put("subtitleAppearance", _subtitleAppearance.value.toJson())
         put("homeLayout", _homeLayout.value.toJson())
         put("followedSport", JSONArray(_followedSport.value))
         // The Trakt application, not the access to the account: linked again on the other TV
@@ -985,10 +1008,12 @@ class SettingsRepository(context: Context) {
         setAudioLanguage(json.optStringOrNull("audioLanguage"))
         if (json.has("vodEnabled")) setVodEnabled(json.optBoolean("vodEnabled", false))
         if (json.has("matchFrameRate")) setMatchFrameRate(json.optBoolean("matchFrameRate", true))
+        if (json.has("sportAlerts")) setSportAlerts(json.optBoolean("sportAlerts", true))
         AudioLeveling.entries.firstOrNull { it.name == json.optString("audioLeveling") }?.let { setAudioLeveling(it) }
         if (json.has("timeshift")) setTimeshift(json.optBoolean("timeshift", true))
         if (json.has("audioPassthrough")) setAudioPassthrough(json.optBoolean("audioPassthrough", true))
         if (json.has("bufferSize")) setBufferSize(BufferSize.of(json.optString("bufferSize")))
+        if (json.has("subtitleAppearance")) setSubtitleAppearance(SubtitleAppearance.fromJson(json.optString("subtitleAppearance")))
         json.optJSONObject("homeLayout")?.let { setHomeLayout(HomeLayout.fromJson(it)) }
         strings("followedSport")?.let { setFollowedSport(it.joinToString("\n")) }
         json.optJSONObject("traktApp")?.let { setTraktApp(it.optString("id"), it.optString("secret")) }
@@ -1057,11 +1082,13 @@ class SettingsRepository(context: Context) {
         private const val KEY_PREVIEW_DELAY = "home_preview_delay"
         private const val KEY_VOD_ENABLED = "vod_enabled"
         private const val KEY_MATCH_FRAME_RATE = "match_frame_rate"
+        private const val KEY_SPORT_ALERTS = "sport_alerts"
         private const val KEY_AUDIO_LEVELING = "audio_leveling"
         private const val KEY_TIMESHIFT = "timeshift"
         private const val KEY_AUDIO_PASSTHROUGH = "audio_passthrough"
         private const val KEY_HOME_LAYOUT = "home_layout"
         private const val KEY_BUFFER_SIZE = "buffer_size"
+        private const val KEY_SUBTITLE_APPEARANCE = "subtitle_appearance"
         private const val KEY_STYLE_CHOSEN = "style_chosen"
         private const val KEY_FOLLOWED_SPORT = "followed_sport"
         private const val KEY_TRAKT_APP = "trakt_app"

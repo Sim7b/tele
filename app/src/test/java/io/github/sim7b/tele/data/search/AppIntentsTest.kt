@@ -58,4 +58,18 @@ class AppIntentsTest {
         assertEquals("Alien", AppIntents.titleFor("ALIEN", titles)?.title)
         assertNull(AppIntents.titleFor("Matrix", titles))
     }
+
+    @Test
+    fun `voice requests without their verbs, with the season and episode apart`() {
+        assertEquals(AppIntents.VoiceQuery("France 2"), AppIntents.voiceQuery("Mets France 2 sur Télé"))
+        assertEquals(AppIntents.VoiceQuery("TF1"), AppIntents.voiceQuery("mets la chaîne TF1"))
+        assertEquals(AppIntents.VoiceQuery("Le Journal"), AppIntents.voiceQuery("regarde Le Journal"))
+        assertEquals(AppIntents.VoiceQuery("Dune"), AppIntents.voiceQuery("lance le film Dune sur Tele"))
+        assertEquals(AppIntents.VoiceQuery("Engrenages", season = 2, episode = 3), AppIntents.voiceQuery("regarde Engrenages saison 2 épisode 3"))
+        assertEquals(AppIntents.VoiceQuery("Engrenages", season = 4), AppIntents.voiceQuery("Engrenages saison 4"))
+        assertEquals(AppIntents.VoiceQuery("The Office", season = 1, episode = 12), AppIntents.voiceQuery("watch The Office S01E12"))
+        assertEquals(AppIntents.VoiceQuery("Lupin", episode = 5), AppIntents.voiceQuery("Lupin episode 5 on Tele"))
+        assertEquals(AppIntents.VoiceQuery("regarde"), AppIntents.voiceQuery("regarde"))
+        assertEquals(AppIntents.VoiceQuery("Arte"), AppIntents.voiceQuery("  Arte "))
+    }
 }

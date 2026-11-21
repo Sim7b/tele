@@ -82,3 +82,56 @@ enum class QualityPreference(
         return streams.sortedBy { ranks.indexOf(StreamQuality.of(it)) }
     }
 }
+
+/**
+ * Picture limit after the connection proved too weak: two stalls of a playing channel within [STALL_WINDOW_MS]
+ * lower the limit one step below the quality that stalled ([QualityCap.onStall]), for [CAP_MS]; the streams above
+ * it then come after the others ([apply]). A further pair of stalls lowers it again.
+ */
+class QualityCap(private val clock: () -> Long) {
+    private val stalls = ArrayDeque<Long>()
+    private var cap: StreamQuality? = null
+    private var capUntil = 0L
+
+    /** The limit now; null without one. */
+    fun current(): StreamQuality? = cap?.takeIf { clock() < capUntil }
+
+    /** A stall of a channel playing at [playing]: true when the limit was just lowered (worth another stream). */
+    fun onStall(playing: StreamQuality): Boolean {
+        val now = clock()
+        stalls.addLast(now)
+        while (stalls.isNotEmpty() && now - stalls.first() > STALL_WINDOW_MS) stalls.removeFirst()
+        if (stalls.size < STALLS) return false
+        stalls.clear()
+        val below = when (minOf(playing, current() ?: StreamQuality.UHD, compareBy { rank(it) })) {
+            StreamQuality.UHD -> StreamQuality.FHD
+            StreamQuality.FHD -> StreamQuality.HD
+            StreamQuality.HD -> StreamQuality.SD
+            else -> return false
+        }
+        cap = below
+        capUntil = now + CAP_MS
+        return true
+    }
+
+    /** [streams] with the ones above the limit last, in their order. */
+    fun apply(streams: List<StreamSource>): List<StreamSource> {
+        val limit = current() ?: return streams
+        val (fitting, above) = streams.partition { rank(StreamQuality.of(it)) <= rank(limit) }
+        return fitting + above
+    }
+
+    companion object {
+        const val STALLS = 2
+        const val STALL_WINDOW_MS = 90_000L
+        const val CAP_MS = 30 * 60_000L
+
+        // Picture sizes from the smallest; an unknown quality is taken as an HD one
+        private fun rank(quality: StreamQuality): Int = when (quality) {
+            StreamQuality.SD -> 0
+            StreamQuality.HD, StreamQuality.UNKNOWN -> 1
+            StreamQuality.FHD -> 2
+            StreamQuality.UHD -> 3
+        }
+    }
+}

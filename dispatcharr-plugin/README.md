@@ -25,6 +25,13 @@ no admin key needed:
   provider connection (setting *Keep the provider connection of a paused movie*, 30 minutes by default):
   Dispatcharr frees it as soon as the paused stream closes, and another viewer could take it before the resume. It
   is given back at the resume, when the TV leaves the player, or after that time.
+- **What is new**: the movies and series added this week on the server, and the latest episode of the series a TV
+  follows (in its list, being watched): the TVs show them in rows *Added this week* and *New episodes*. The
+  followed series are loaded from the provider every day, so their new episodes are found.
+- **Resume on another TV**: each TV tells what it plays (a channel, or a movie or episode at its position); the
+  other TVs of the same user offer to resume it, and a player can send what it plays to one of them (*Send to
+  another TV* in its options). Only between the TVs of one user; what a TV plays is forgotten 90 seconds after it
+  stops telling it.
 - **Stream health**: the failures of each provider stream (errors, failovers, buffering) are counted from
   the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
   marks them in its stream picker.

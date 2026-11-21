@@ -4,6 +4,8 @@ import io.github.sim7b.tele.data.epg.GuideTimeline
 import io.github.sim7b.tele.data.model.Channel
 import io.github.sim7b.tele.data.model.GuideProgram
 import io.github.sim7b.tele.data.search.ChannelSearch
+import io.github.sim7b.tele.data.storage.Reminder
+import io.github.sim7b.tele.data.storage.Reminders
 
 /** A program of a followed team or competition, on the channel showing it. */
 data class SportEvent(val channel: Channel, val program: GuideProgram)
@@ -75,6 +77,32 @@ object SportEvents {
             .filter { seen.add(it.program.title.lowercase() to it.program.startMillis) }
             .take(limit)
     }
+
+    // Alerts: the matches starting within a day, long enough to be one (not a news item of a few minutes)
+    const val ALERT_AHEAD_MS = 24 * 60 * 60_000L
+    const val ALERT_MIN_LENGTH_MS = 45 * 60_000L
+    const val MAX_ALERTS = 10
+
+    /** Key of an alert already offered: the channel and the start of the program. */
+    fun alertKey(channelId: String, startMillis: Long) = "$channelId|$startMillis"
+
+    /**
+     * Reminders to add by themselves for the coming matches of [events]: starting within [ALERT_AHEAD_MS], not
+     * already set in [reminders] nor already [offered] (a reminder removed by the user is not added again).
+     */
+    fun alerts(events: List<SportEvent>, reminders: List<Reminder>, offered: Set<String>, now: Long): List<Reminder> =
+        events.asSequence()
+            .filter { (_, program) ->
+                program.startMillis > now && program.startMillis < now + ALERT_AHEAD_MS &&
+                    program.endMillis - program.startMillis >= ALERT_MIN_LENGTH_MS
+            }
+            .filter { (channel, program) ->
+                alertKey(channel.id, program.startMillis) !in offered &&
+                    reminders.none { Reminders.matches(it, channel.id, program.startMillis) }
+            }
+            .map { (channel, program) -> Reminder(channel.id, channel.name, program.title, program.startMillis, program.endMillis) }
+            .take(MAX_ALERTS)
+            .toList()
 
     /** On air, to come, past. */
     fun rank(program: GuideProgram, now: Long) = when {

@@ -34,6 +34,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
   - **guide grid** (Guide button of the home screen): the channels in rows and the next 30 hours in columns, by category (favorites, all, each category); ← / → go from program to program, ↑ / ↓ change channel at the same time, the focused program is detailed at the top, OK watches the channel and Back returns to now, then closes the grid. CH+ / CH− skip a page and the digits go to a channel number;
   - **reminders**: OK on a coming program (grid or channel panel) sets a reminder; a minute before it starts, a message offers to switch to the channel;
+  - **match alerts** (**Settings → Appearance**, with followed teams and competitions): the coming matches of the day get a reminder by themselves, once each (one removed is not set again);
   - **replay** (Xtream accounts with catch-up): the programs of the past day kept by the provider are marked REPLAY in the grid and the channel panel, and OK plays them again with the movie player (seek, pause).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → System**.
@@ -41,6 +42,11 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 
   ![Profiles](docs/screenshots/profiles.png)
 
+- **Subtitles** (**Settings → Playback**): size, color, background (outline, shadow, box) and height on the screen, with a preview.
+- **Google TV home**: the favorite channels in a row of the system home screen, opened in one click (locked categories left out).
+- **Voice**: a channel, a movie, a series or one of its seasons ("season 2 of …") asked to the Google Assistant opens directly.
+- **Weak connection**: when a channel stalls twice in a short while, Télé plays a lower quality stream for 30 minutes and says so.
+- With the Télé API plugin: **Added this week** and **New episodes** rows for movies and series, and **Resume on another TV** (what another TV of the user plays is offered on the home screen; *Send to another TV* in the playback options).
 - **Buffer** (**Settings → Playback**): small to maximum, for a weak connection or a small device.
 - **Language of foreign movies and series** (**Settings → Movies and series**): dubbed in the language of the TV, or the original version with subtitles in it.
 - **Copy to another TV**: the whole configuration (sources, favorites, categories, settings) is sent over the local network, encrypted with an 8-digit code shown on the sending TV.

@@ -231,6 +231,10 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     val reconnection: StateFlow<Reconnection?> = _reconnection.asStateFlow()
 
     // Times the channel went over to another of its streams by itself (shown a moment on the picture)
+    private val _liveStalls = MutableStateFlow(0)
+    /** Stalls of a live channel that was playing (not of its start, nor of the timeshift on the device). */
+    val liveStalls: StateFlow<Int> = _liveStalls.asStateFlow()
+
     private val _streamSwitches = MutableStateFlow(0)
     val streamSwitches: StateFlow<Int> = _streamSwitches.asStateFlow()
 
@@ -493,6 +497,11 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         _isLoading.value = playbackState == Player.STATE_BUFFERING
                         mainHandler.removeCallbacks(stallRunnable)
+                        if (playbackState == Player.STATE_BUFFERING && hasPlayed && vodStartMs == null && playWhenReady &&
+                            currentUrl?.startsWith("http") == true
+                        ) {
+                            _liveStalls.value++
+                        }
                         if (playbackState == Player.STATE_BUFFERING) {
                             mainHandler.postDelayed(stallRunnable, ReconnectPolicy.stallTimeoutMs(
                                 live = vodStartMs == null, hasPlayed = hasPlayed,
@@ -1072,6 +1081,12 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     fun togglePlayPause() {
         val player: Player = remotePlayer?.takeIf { casting } ?: exoPlayer ?: return
         if (player.isPlaying) player.pause() else player.play()
+    }
+
+    /** Position and duration of what plays (0 when unknown), read on the main thread. */
+    fun positionAndDuration(): Pair<Long, Long> {
+        val player: Player = remotePlayer?.takeIf { casting } ?: exoPlayer ?: return 0L to 0L
+        return player.currentPosition.coerceAtLeast(0) to player.duration.takeIf { it > 0 }.let { it ?: 0L }
     }
 
     /**
