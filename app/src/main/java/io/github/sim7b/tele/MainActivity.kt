@@ -126,6 +126,13 @@ import io.github.sim7b.tele.playback.DisplayModes
 import io.github.sim7b.tele.data.search.AppIntents
 import io.github.sim7b.tele.data.search.AppRequest
 import io.github.sim7b.tele.data.vod.WatchNext
+import io.github.sim7b.tele.data.launcher.FavoritesRow
+import io.github.sim7b.tele.data.remote.HandoffItem
+import io.github.sim7b.tele.data.remote.HandoffTv
+import io.github.sim7b.tele.ui.components.HandoffDialog
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import io.github.sim7b.tele.data.launcher.HomeChannelItem
 import android.app.SearchManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import android.os.Build
@@ -163,7 +170,8 @@ sealed class CurrentScreen {
     object Vod : CurrentScreen()
     object VodSearch : CurrentScreen()
     /** Sheet of a title; Back returns to [returnTo] (the library, or the search it was opened from). */
-    data class VodDetail(val titleKey: String, val returnTo: CurrentScreen = Vod) : CurrentScreen()
+    // [season]: the season shown at first (asked by voice)
+    data class VodDetail(val titleKey: String, val returnTo: CurrentScreen = Vod, val season: Int? = null) : CurrentScreen()
     /** Choice of the categories of movies and series loaded from a source (from the settings). */
     data class VodCategories(val configId: String, val returnTo: CurrentScreen = Settings()) : CurrentScreen()
     data class VodPlayer(val request: VodPlayRequest, val returnTo: CurrentScreen) : CurrentScreen()
@@ -178,6 +186,9 @@ private const val TRAKT_REFRESH_MS = 30 * 60_000L
 private const val FRAME_RATE_SETTLE_MS = 1_500L
 private const val WATCH_NEXT_SIZE = 10
 private const val WATCH_NEXT_DELAY_MS = 3_000L
+// The favorites row of the TV home follows the programs, at most this often (they change every few minutes)
+private const val FAVORITES_ROW_DELAY_MS = 5_000L
+private const val HANDOFF_EVERY_MS = 30_000L
 private const val WELCOME_MAX_MS = 15_000L
 // Sheet whose file is being measured on the server: built again every 20 s, 4 times at most
 private const val MEDIA_REFRESH_DELAY_MS = 20_000L
@@ -260,6 +271,7 @@ class MainActivity : ComponentActivity() {
             val audioPassthrough by configRepository.audioPassthrough.collectAsState()
             LaunchedEffect(audioPassthrough) { playerManager.audioPassthrough = audioPassthrough }
             val bufferSize by configRepository.bufferSize.collectAsState()
+            val subtitleAppearance by configRepository.subtitleAppearance.collectAsState()
             LaunchedEffect(bufferSize) { playerManager.bufferSize = bufferSize }
             val timeshiftOn by configRepository.timeshift.collectAsState()
             LaunchedEffect(timeshiftOn) { playerManager.timeshiftEnabled = timeshiftOn }
@@ -577,6 +589,53 @@ class MainActivity : ComponentActivity() {
                     if (adding) askNotificationsIfNeeded()
                 }
             )
+            // Resume on another TV (plugin "handoff"): what this TV plays is told to the server while it plays
+            val deviceName = remember { Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)?.take(60) ?: Build.MODEL }
+            val playingItem: HandoffItem? = when (val screen = currentScreen) {
+                is CurrentScreen.Player -> HandoffItem(HandoffItem.LIVE, screen.channel.id, screen.channel.name)
+                is CurrentScreen.VodPlayer -> screen.request.takeIf { !it.titleKey.startsWith(REPLAY_KEY_PREFIX) }
+                    ?.let { HandoffItem(HandoffItem.VOD, it.itemKey, it.label) }
+                else -> null
+            }
+            LaunchedEffect(playingItem) {
+                val item = playingItem ?: return@LaunchedEffect viewModel.reportPlaying(deviceName, null)
+                while (true) {
+                    val (position, duration) = if (item.kind == HandoffItem.VOD) playerManager.positionAndDuration() else 0L to 0L
+                    viewModel.reportPlaying(deviceName, item.copy(positionMs = position, durationMs = duration))
+                    delay(HANDOFF_EVERY_MS)
+                }
+            }
+            // The other TVs (to send to), and what they play or sent here: offered once each, while the app is shown
+            var handoffTvs by remember { mutableStateOf(emptyList<HandoffTv>()) }
+            var handoffOffer by remember { mutableStateOf<Triple<HandoffTv, HandoffItem, Boolean>?>(null) }
+            val handoffOffered = remember { mutableSetOf<String>() }
+            val onHome = currentScreen is CurrentScreen.Home
+            LaunchedEffect(showWelcome) {
+                if (showWelcome) return@LaunchedEffect
+                lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (true) {
+                        val state = viewModel.handoff()
+                        handoffTvs = state?.tvs.orEmpty()
+                        val incoming = state?.incoming
+                        if (incoming != null) {
+                            handoffOffer = Triple(incoming.first, incoming.second, true)
+                        } else if (handoffOffer == null && currentScreen is CurrentScreen.Home) {
+                            state?.playing?.firstOrNull { (tv, item) -> handoffOffered.add("${tv.device}|${item.key}") }
+                                ?.let { (tv, item) -> handoffOffer = Triple(tv, item, false) }
+                        }
+                        delay(HANDOFF_EVERY_MS)
+                    }
+                }
+            }
+            // Sends what plays here to another TV
+            val sendPlaying: (HandoffTv) -> Unit = { tv ->
+                playingItem?.let { item ->
+                    val (position, duration) = if (item.kind == HandoffItem.VOD) playerManager.positionAndDuration() else 0L to 0L
+                    viewModel.sendTo(tv.device, item.copy(positionMs = position, durationMs = duration))
+                }
+            }
+            SideEffect { if (!onHome && handoffOffer?.third == false) handoffOffer = null }
+
             // A program with a reminder starts: shown once, on any screen (after the welcome)
             var dueReminder by remember { mutableStateOf<Reminder?>(null) }
             LaunchedEffect(reminders, showWelcome) {
@@ -1039,6 +1098,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 VodDetailScreen(
+                                    initialSeason = screen.season,
                                     related = related,
                                     onOpenTitle = { other -> currentScreen = CurrentScreen.VodDetail(other.key, returnTo = screen.returnTo) },
                                     title = title,
@@ -1081,6 +1141,7 @@ class MainActivity : ComponentActivity() {
                                 value = viewModel.vod.segments(request.sourceId, request.tmdbId, request.season, request.episode)
                             }
                             VodPlayerScreen(
+                                subtitleAppearance = subtitleAppearance,
                                 segments = segments,
                                 request = request,
                                 playerManager = playerManager,
@@ -1137,7 +1198,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 pictureFormat = pictureFormat,
                                 onPictureFormatChange = { configRepository.setPictureFormat(it) },
-                                subtitles = vodSubtitles.takeIf { !isReplay }
+                                subtitles = vodSubtitles.takeIf { !isReplay },
+                                handoffTvs = if (isReplay) emptyList() else handoffTvs,
+                                onSendTo = sendPlaying
                             )
                         }
                         is CurrentScreen.Player -> {
@@ -1150,6 +1213,7 @@ class MainActivity : ComponentActivity() {
                             }
                             val channelConfig = configsById[liveChannel.sourceId]
                             PlayerScreen(
+                                subtitleAppearance = subtitleAppearance,
                                 channel = liveChannel,
                                 channels = visibleChannels,
                                 playerManager = playerManager,
@@ -1159,6 +1223,7 @@ class MainActivity : ComponentActivity() {
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
                                 resolveStreams = { ch -> viewModel.automaticStreamUrls(ch) },
                                 startState = { url -> viewModel.startState(url) },
+                                onLiveStall = { resolution -> viewModel.onLiveStall(resolution) },
                                 onSelectStream = { stream -> viewModel.selectStream(liveChannel, stream) },
                                 onSelectChannel = { selected -> currentScreen = CurrentScreen.Player(selected, screen.returnTo) },
                                 automaticStreamDescription = automaticStreamDescription(liveChannel),
@@ -1182,7 +1247,9 @@ class MainActivity : ComponentActivity() {
                                         currentScreen = CurrentScreen.Player(other, screen.returnTo)
                                     }
                                 },
-                                onCloseInset = { insetChannel = null }
+                                onCloseInset = { insetChannel = null },
+                                handoffTvs = handoffTvs,
+                                onSendTo = sendPlaying
                             )
                             // The corner channel plays while it is set; leaving the player closes it
                             LaunchedEffect(insetChannel) {
@@ -1207,6 +1274,33 @@ class MainActivity : ComponentActivity() {
                                 openExactAlarmsSettings()
                             },
                             onDismiss = { askExactAlarms = false }
+                        )
+                    }
+
+                    handoffOffer?.let { (tv, item, sent) ->
+                        HandoffDialog(
+                            tv = tv,
+                            item = item,
+                            sent = sent,
+                            onResume = {
+                                if (item.kind == HandoffItem.LIVE) {
+                                    unhiddenChannels.firstOrNull { item.key in it.allIds }?.let { channel ->
+                                        val returnTo = (currentScreen as? CurrentScreen.Player)?.returnTo ?: CurrentScreen.Home
+                                        currentScreen = CurrentScreen.Player(channel, returnTo)
+                                    }
+                                } else if (vodEnabled) {
+                                    val open = {
+                                        lifecycleScope.launch(Dispatchers.IO) {
+                                            if (item.positionMs > 0) {
+                                                configRepository.vodStore.saveProgress(item.key, item.titleKey, item.positionMs, item.durationMs)
+                                            }
+                                        }
+                                        currentScreen = CurrentScreen.VodDetail(item.titleKey, returnTo = CurrentScreen.Home)
+                                    }
+                                    if (vodHidden) pinFor = open else open()
+                                }
+                            },
+                            onDismiss = { handoffOffer = null }
                         )
                     }
 
@@ -1266,11 +1360,15 @@ class MainActivity : ComponentActivity() {
                             is AppRequest.Play -> {
                                 if (unhiddenChannels.isEmpty()) return@LaunchedEffect
                                 showWelcome = false
-                                val channel = AppIntents.channelFor(request.query, unhiddenChannels)
-                                val title = if (channel == null && vodEnabled) AppIntents.titleFor(request.query, requestLibrary.titles) else null
+                                // "Regarde Engrenages saison 2 sur Télé": the words around and the season apart
+                                val voice = AppIntents.voiceQuery(request.query)
+                                val channel = if (voice.season == null) AppIntents.channelFor(voice.text, unhiddenChannels) else null
+                                val title = if (channel == null && vodEnabled) AppIntents.titleFor(voice.text, requestLibrary.titles) else null
                                 when {
                                     channel != null -> currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Home)
-                                    title != null -> openVod { currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) }
+                                    title != null -> openVod {
+                                        currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home, season = voice.season)
+                                    }
                                     else -> currentScreen = CurrentScreen.Search(startWithVoice = false, query = request.query)
                                 }
                             }
@@ -1290,6 +1388,21 @@ class MainActivity : ComponentActivity() {
                             if (shown && requestLibrary.titles.isEmpty()) return@LaunchedEffect
                             delay(WATCH_NEXT_DELAY_MS)
                             watchNext.publish(if (shown) VodRows.continuing(requestLibrary.byKey, nextProgress, WATCH_NEXT_SIZE) else emptyList())
+                        }
+                    }
+
+                    // Favorite channels in a row of the TV home, with what they show now (not those locked by the parental
+                    // code: that row is outside the app)
+                    if (!Device.isTouch) {
+                        val favoritesRow = remember { FavoritesRow(applicationContext) }
+                        val lockedGroups by configRepository.parental.lockedGroups.collectAsState()
+                        val parentalOn by configRepository.parental.hasPin.collectAsState()
+                        val homeItems = remember(favoriteChannels, lockedGroups, parentalOn) {
+                            HomeChannelItem.of(favoriteChannels, if (parentalOn) lockedGroups else emptySet())
+                        }
+                        LaunchedEffect(homeItems) {
+                            delay(FAVORITES_ROW_DELAY_MS)
+                            favoritesRow.publish(homeItems)
                         }
                     }
 

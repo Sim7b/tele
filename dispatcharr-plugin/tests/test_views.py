@@ -294,6 +294,42 @@ class VodLanguagesViewTest(ViewTest):
         self.assertIsNone(by_hash.data["state"])
         self.assertEqual((bad.status_code, hidden.status_code), (400, 404))
 
+    def test_handoff_between_the_tvs_of_a_user(self):
+        item = {"kind": "live", "key": "c9af", "title": "TF1", "position_ms": 0, "duration_ms": 0}
+        with mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch.object(views.core, "device_id", return_value="aaaaaaaaaaaa"), \
+                mock.patch("tele_api.handoff.others", return_value={"playing": [], "tvs": []}), \
+                mock.patch("tele_api.handoff.incoming", return_value=item), \
+                mock.patch("tele_api.handoff.report") as report, \
+                mock.patch("tele_api.handoff.send", return_value=True) as send:
+            got = self.call(views.HandoffView, who=user())
+            reported = self.call(views.HandoffView, "post", who=user(), body={"name": "Salon", "playing": item})
+            bad = self.call(views.HandoffView, "post", who=user(), body={"playing": {"kind": "radio"}})
+            sent = self.call(views.HandoffSendView, "post", who=user(), body={"to": "bbbbbbbbbbbb", "item": item})
+            refused = self.call(views.HandoffSendView, "post", who=user(), body={"to": "../x", "item": item})
+        self.assertEqual(got.data["incoming"], item)
+        self.assertEqual(report.call_args.args[2:], ("aaaaaaaaaaaa", "Salon", item))
+        self.assertTrue(reported.data["ok"])
+        self.assertEqual((bad.status_code, refused.status_code), (400, 400))
+        self.assertTrue(sent.data["sent"])
+        send.assert_called_once()
+
+    def test_what_is_new_in_the_vod(self):
+        added = [{"kind": "movie", "id": 5, "at": 9.0}]
+        episodes = {"12": {"at": 8.0, "season": 2, "episode": 3}}
+        with mock.patch.object(views.data, "redis_client", return_value=None), \
+                mock.patch("tele_api.fresh.added", return_value=added) as find_added, \
+                mock.patch("tele_api.fresh.latest_episodes", return_value=episodes) as find_episodes, \
+                mock.patch("tele_api.fresh.follow") as follow:
+            answer = self.call(views.VodFreshView, path="/?series=12,13&days=3", who=user())
+            bad = self.call(views.VodFreshView, path="/?series=x", who=user())
+            plain = self.call(views.VodFreshView, path="/", who=user())
+        self.assertEqual((answer.data["added"], answer.data["episodes"], answer.data["days"]), (added, episodes, 3))
+        find_added.assert_called_with(7)
+        find_episodes.assert_called_once_with([12, 13])
+        follow.assert_any_call(None, [12, 13])
+        self.assertEqual((bad.status_code, plain.data["episodes"]), (400, {}))
+
     def test_a_paused_tv_holds_its_vod_connection(self):
         with mock.patch.object(views.data, "redis_client", return_value=object()), \
                 mock.patch("tele_api.holds.hold", return_value={"held": True, "until": 5.0}) as hold, \

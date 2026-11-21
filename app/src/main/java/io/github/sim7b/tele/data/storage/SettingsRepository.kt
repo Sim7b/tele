@@ -10,6 +10,7 @@ import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.remote.CachedGuide
 import io.github.sim7b.tele.data.bouquet.BouquetPreference
 import io.github.sim7b.tele.data.model.BufferSize
+import io.github.sim7b.tele.data.model.SubtitleAppearance
 import io.github.sim7b.tele.data.model.HomeStyle
 import io.github.sim7b.tele.data.model.CategoryMode
 import io.github.sim7b.tele.playback.AudioLeveling
@@ -202,6 +203,10 @@ class SettingsRepository(context: Context) {
     private val _timeshift = MutableStateFlow(true)
     val timeshift: StateFlow<Boolean> = _timeshift.asStateFlow()
     // Multichannel sound (Dolby, Atmos) sent as it is to the amplifier, or decoded by the device
+    // Look of the subtitles in every player
+    private val _subtitleAppearance = MutableStateFlow(SubtitleAppearance())
+    val subtitleAppearance: StateFlow<SubtitleAppearance> = _subtitleAppearance.asStateFlow()
+
     private val _bufferSize = MutableStateFlow(BufferSize.NORMAL)
     val bufferSize: StateFlow<BufferSize> = _bufferSize.asStateFlow()
 
@@ -294,6 +299,7 @@ class SettingsRepository(context: Context) {
         _timeshift.value = prefs.getBoolean(KEY_TIMESHIFT, true)
         _audioPassthrough.value = prefs.getBoolean(KEY_AUDIO_PASSTHROUGH, true)
         _bufferSize.value = BufferSize.of(prefs.getString(KEY_BUFFER_SIZE, null))
+        _subtitleAppearance.value = SubtitleAppearance.fromJson(prefs.getString(KEY_SUBTITLE_APPEARANCE, null))
         _homeLayout.value = prefs.getString(KEY_HOME_LAYOUT, null)?.let { saved ->
             try {
                 HomeLayout.fromJson(JSONObject(saved))
@@ -500,6 +506,11 @@ class SettingsRepository(context: Context) {
     fun setAudioLeveling(leveling: AudioLeveling) {
         prefs.edit { putString(KEY_AUDIO_LEVELING, leveling.name) }
         _audioLeveling.value = leveling
+    }
+
+    fun setSubtitleAppearance(appearance: SubtitleAppearance) {
+        prefs.edit { putString(KEY_SUBTITLE_APPEARANCE, appearance.toJson()) }
+        _subtitleAppearance.value = appearance
     }
 
     fun setBufferSize(size: BufferSize) {
@@ -921,6 +932,7 @@ class SettingsRepository(context: Context) {
         put("timeshift", _timeshift.value)
         put("audioPassthrough", _audioPassthrough.value)
         put("bufferSize", _bufferSize.value.name)
+        put("subtitleAppearance", _subtitleAppearance.value.toJson())
         put("homeLayout", _homeLayout.value.toJson())
         put("followedSport", JSONArray(_followedSport.value))
         // The Trakt application, not the access to the account: linked again on the other TV
@@ -989,6 +1001,7 @@ class SettingsRepository(context: Context) {
         if (json.has("timeshift")) setTimeshift(json.optBoolean("timeshift", true))
         if (json.has("audioPassthrough")) setAudioPassthrough(json.optBoolean("audioPassthrough", true))
         if (json.has("bufferSize")) setBufferSize(BufferSize.of(json.optString("bufferSize")))
+        if (json.has("subtitleAppearance")) setSubtitleAppearance(SubtitleAppearance.fromJson(json.optString("subtitleAppearance")))
         json.optJSONObject("homeLayout")?.let { setHomeLayout(HomeLayout.fromJson(it)) }
         strings("followedSport")?.let { setFollowedSport(it.joinToString("\n")) }
         json.optJSONObject("traktApp")?.let { setTraktApp(it.optString("id"), it.optString("secret")) }
@@ -1062,6 +1075,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_AUDIO_PASSTHROUGH = "audio_passthrough"
         private const val KEY_HOME_LAYOUT = "home_layout"
         private const val KEY_BUFFER_SIZE = "buffer_size"
+        private const val KEY_SUBTITLE_APPEARANCE = "subtitle_appearance"
         private const val KEY_STYLE_CHOSEN = "style_chosen"
         private const val KEY_FOLLOWED_SPORT = "followed_sport"
         private const val KEY_TRAKT_APP = "trakt_app"

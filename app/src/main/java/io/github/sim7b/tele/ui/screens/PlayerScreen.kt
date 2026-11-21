@@ -92,12 +92,14 @@ import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
 import io.github.sim7b.tele.data.remote.ChannelStartState
+import io.github.sim7b.tele.data.model.SubtitleAppearance
 import io.github.sim7b.tele.playback.StartProgress
 import io.github.sim7b.tele.playback.StartStep
 import kotlinx.coroutines.launch
 
 private const val ZAP_DEBOUNCE_MS = 300L
 private const val START_POLL_MS = 1_500L
+private const val WEAK_NOTICE_MS = 5_000L
 
 @Composable
 private fun startStepLabel(step: StartStep): String = stringResource(
@@ -126,6 +128,13 @@ fun PlayerScreen(
     loadStreams: suspend () -> Result<List<StreamSource>>,
     // Streams to try in automatic mode, best quality first (empty: the channel URL as is)
     resolveStreams: suspend (Channel) -> List<String> = { emptyList() },
+    // Look of the subtitles (settings)
+    subtitleAppearance: SubtitleAppearance = SubtitleAppearance(),
+    // The other TVs of the user, to send what plays to one of them
+    handoffTvs: List<io.github.sim7b.tele.data.remote.HandoffTv> = emptyList(),
+    onSendTo: (io.github.sim7b.tele.data.remote.HandoffTv) -> Unit = {},
+    // A stall of the playing channel at a resolution: true when the connection proved too weak for it
+    onLiveStall: (String?) -> Boolean = { false },
     // What the server is doing with an address being started (Dispatcharr with the Télé API plugin)
     startState: suspend (String) -> ChannelStartState? = { null },
     onSelectStream: (StreamSource?) -> Unit,
@@ -214,6 +223,19 @@ fun PlayerScreen(
     val currentStreamAuths by rememberUpdatedState(streamAuths)
     val currentUserAgent by rememberUpdatedState(userAgent)
     val currentChannel by rememberUpdatedState(channel)
+    // A connection too weak for the playing quality: the streams chosen again within the new limit
+    val liveStalls by playerManager.liveStalls.collectAsState()
+    var weakNotice by remember { mutableStateOf(false) }
+    LaunchedEffect(liveStalls) {
+        if (liveStalls == 0 || !onLiveStall(playerManager.streamInfo.value.resolution)) return@LaunchedEffect
+        val urls = resolveStreams(currentChannel)
+        val first = urls.firstOrNull() ?: return@LaunchedEffect
+        if (first == playerManager.playingUrl.value) return@LaunchedEffect
+        playerManager.playStream(first, customUserAgent = currentUserAgent, auths = currentStreamAuths, fallbacks = urls.drop(1), info = currentChannel.castInfo())
+        weakNotice = true
+        delay(WEAK_NOTICE_MS)
+        weakNotice = false
+    }
     val scope = rememberCoroutineScope()
 
     fun revealOverlay() {
@@ -423,14 +445,17 @@ fun PlayerScreen(
                     // Prevents the Android TV screensaver from covering the live stream
                     keepScreenOn = true
                     isFocusable = false
-                    subtitleView?.applyTeleStyle()
+                    subtitleView?.applyTeleStyle(subtitleAppearance)
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                 }
             },
-            update = { view -> view.resizeMode = pictureFormat.resizeMode },
+            update = { view ->
+                view.resizeMode = pictureFormat.resizeMode
+                view.subtitleView?.applyTeleStyle(subtitleAppearance)
+            },
             onRelease = { view -> view.player = null },
             modifier = Modifier.fillMaxSize()
         )
@@ -558,7 +583,21 @@ fun PlayerScreen(
             }
         }
 
-        if (switchNotice && errorMessage == null && reconnection == null) {
+        if (weakNotice && errorMessage == null) {
+            Text(
+                text = stringResource(R.string.player_weak_connection),
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 32.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            )
+        }
+
+        if (switchNotice && errorMessage == null && reconnection == null && !weakNotice) {
             Text(
                 text = stringResource(R.string.player_stream_switched),
                 color = Color.White.copy(alpha = 0.8f),
@@ -669,6 +708,8 @@ fun PlayerScreen(
             modifier = Modifier.align(Alignment.CenterEnd)
         ) {
             PlaybackOptionsPanel(
+                sendTargets = handoffTvs,
+                onSendTo = onSendTo,
                 tracks = tracks,
                 pictureFormat = pictureFormat,
                 onChooseStream = {

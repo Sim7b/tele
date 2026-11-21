@@ -22,6 +22,7 @@ object AppIntents {
     const val SCHEME = "tele"
     const val VOD_HOST = "vod"
     const val CHANNEL_HOST = "channel"
+    const val HOME_HOST = "home"
     const val KEY_PARAM = "key"
     const val ACTION_PLAY_FROM_SEARCH = "android.media.action.MEDIA_PLAY_FROM_SEARCH"
     const val ACTION_SEARCH = "android.intent.action.SEARCH"
@@ -40,6 +41,9 @@ object AppIntents {
     /** Link of a title for the TV home: tele://vod?key=… */
     fun titleLink(titleKey: String): String = "$SCHEME://$VOD_HOST?$KEY_PARAM=" + java.net.URLEncoder.encode(titleKey, "UTF-8")
 
+    /** Link of the app itself (the row of the favorites on the TV home): tele://home, nothing more to open */
+    fun homeLink(): String = "$SCHEME://$HOME_HOST"
+
     /** Link of a channel (notification of a reminder): tele://channel?key=… */
     fun channelLink(channelId: String): String = "$SCHEME://$CHANNEL_HOST?$KEY_PARAM=" + java.net.URLEncoder.encode(channelId, "UTF-8")
 
@@ -56,6 +60,38 @@ object AppIntents {
         }
     } catch (e: Exception) {
         null
+    }
+
+    /** A voice request made plain: what to look for, and the season and episode asked for ("saison 2 épisode 3"). */
+    data class VoiceQuery(val text: String, val season: Int? = null, val episode: Int? = null)
+
+    // "regarde", "mets la chaîne", "lance le film"...: the words around what is asked
+    private val LEADING = Regex(
+        """^(?:(?:je veux |je voudrais )?(?:regarder?|mets|mettre|lance[rz]?|joue[rz]?|ouvre|affiche|voir|watch|play|put on|open|start)\s+)?""" +
+            // "la chaîne", "le film": the article only with the kind ("Le Journal" stays whole)
+            """(?:(?:(?:la|le|l'|the)\s*)?(?:chaine|chaîne|film|série|serie|channel|movie|series)\s+)?""",
+        RegexOption.IGNORE_CASE
+    )
+    private val TRAILING = Regex("""\s+(?:sur|on|dans|in)\s+t[ée]l[ée]\s*$""", RegexOption.IGNORE_CASE)
+    private val SEASON_EPISODE = Regex(
+        """\b(?:(?:saison|season)\s*(\d{1,2})(?:\s*(?:,|et|and)?\s*(?:[ée]pisode|episode)\s*(\d{1,3}))?|s(\d{1,2})\s*e(\d{1,3})|(?:[ée]pisode|episode)\s*(\d{1,3}))\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** What a voice request asks for: [VoiceQuery.text] without the verbs nor "sur Télé", the season and episode apart. */
+    fun voiceQuery(raw: String): VoiceQuery {
+        var text = raw.trim().take(MAX_QUERY)
+        val found = SEASON_EPISODE.find(text)
+        var season: Int? = null
+        var episode: Int? = null
+        if (found != null) {
+            val groups = found.groupValues
+            season = (groups[1].ifEmpty { groups[3] }).toIntOrNull()
+            episode = (groups[2].ifEmpty { groups[4] }.ifEmpty { groups[5] }).toIntOrNull()
+            text = text.removeRange(found.range)
+        }
+        text = text.replace(TRAILING, "").replace(LEADING, "").replace(Regex("\\s+"), " ").trim()
+        return VoiceQuery(text.ifEmpty { raw.trim().take(MAX_QUERY) }, season?.takeIf { it > 0 }, episode?.takeIf { it > 0 })
     }
 
     /**

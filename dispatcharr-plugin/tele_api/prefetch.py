@@ -26,7 +26,8 @@ POPULAR_DAYS = 30
 
 
 def candidates(redis_client) -> List[int]:
-    """Series ids: the ones of the episodes watched lately first, then the most watched ones."""
+    """Series ids: the ones of the episodes watched lately first, then the ones the TVs follow, then the most
+    watched ones."""
     from apps.vod.models import Episode
 
     uuids: List[str] = []
@@ -37,7 +38,10 @@ def candidates(redis_client) -> List[int]:
                 uuids.append(key.split(":", 1)[1])
     watched = list(Episode.objects.filter(uuid__in=uuids[:500]).values_list("series_id", flat=True).distinct())
     popular = [t["id"] for t in stats.popular(redis_client, POPULAR_DAYS, limit=40) if t["kind"] == "series"]
-    return list(dict.fromkeys(i for i in watched + popular if i))
+    # The series the TVs follow (in their list, being watched): their new episodes found every day
+    from . import fresh
+
+    return list(dict.fromkeys(i for i in watched + fresh.followed(redis_client) + popular if i))
 
 
 def _admin():

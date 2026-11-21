@@ -65,4 +65,32 @@ class StreamQualityTest {
             QualityPreference.BEST.automaticOrder(listOf(stream("a", failing = true), stream("b")))?.map { it.name }
         )
     }
+
+    @Test
+    fun `two stalls in a short while lower the picture limit, for a while`() {
+        var now = 0L
+        val cap = QualityCap { now }
+        fun stream(name: String, height: Int?) = StreamSource(name = name, url = "u/$name", measuredHeight = height)
+        val streams = listOf(stream("uhd", 2160), stream("fhd", 1080), stream("hd", 720), stream("unknown", null))
+
+        assertEquals(streams, cap.apply(streams))
+        assertEquals(false, cap.onStall(StreamQuality.UHD))
+        now += QualityCap.STALL_WINDOW_MS + 1
+        // Too far apart: not a weak connection
+        assertEquals(false, cap.onStall(StreamQuality.UHD))
+        now += 10_000
+        assertEquals(true, cap.onStall(StreamQuality.UHD))
+        assertEquals(StreamQuality.FHD, cap.current())
+        assertEquals(listOf("fhd", "hd", "unknown", "uhd"), cap.apply(streams).map { it.name })
+        // Stalls again in Full HD: HD at most
+        assertEquals(false, cap.onStall(StreamQuality.FHD))
+        assertEquals(true, cap.onStall(StreamQuality.FHD))
+        assertEquals(listOf("hd", "unknown", "uhd", "fhd"), cap.apply(streams).map { it.name })
+        // An SD channel cannot go lower
+        assertEquals(false, cap.onStall(StreamQuality.SD))
+        assertEquals(false, cap.onStall(StreamQuality.SD))
+        now += QualityCap.CAP_MS
+        assertNull(cap.current())
+        assertEquals(streams, cap.apply(streams))
+    }
 }

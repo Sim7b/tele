@@ -74,7 +74,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
-import androidx.media3.ui.SubtitleView
+import io.github.sim7b.tele.data.model.SubtitleAppearance
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
@@ -151,6 +151,11 @@ fun VodPlayerScreen(
     segments: VodSegments? = null,
     // Tracks to start with when none was chosen for the title (dubbed, or original with subtitles)
     defaultTracks: io.github.sim7b.tele.data.vod.DefaultTracks? = null,
+    // Look of the subtitles (settings)
+    subtitleAppearance: SubtitleAppearance = SubtitleAppearance(),
+    // The other TVs of the user, to send what plays to one of them
+    handoffTvs: List<io.github.sim7b.tele.data.remote.HandoffTv> = emptyList(),
+    onSendTo: (io.github.sim7b.tele.data.remote.HandoffTv) -> Unit = {},
     // Keeps the provider connection of a paused title for its resume (true), gives it back (false)
     onPauseHold: (Boolean) -> Unit = {}
 ) {
@@ -495,15 +500,16 @@ fun VodPlayerScreen(
                     view.useController = false
                     view.keepScreenOn = true
                     view.isFocusable = false
-                    view.subtitleView?.applyTeleStyle()
+                    view.subtitleView?.applyTeleStyle(subtitleAppearance)
                 }
             },
             update = { view ->
                 view.resizeMode = pictureFormat.resizeMode
+                view.subtitleView?.applyTeleStyle(subtitleAppearance)
                 // Subtitles above the controls while they are shown
-                view.subtitleView?.setBottomPaddingFraction(
-                    if (showControls) SUBTITLES_ABOVE_CONTROLS else SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION
-                )
+                if (showControls) {
+                    view.subtitleView?.setBottomPaddingFraction(maxOf(SUBTITLES_ABOVE_CONTROLS, subtitleAppearance.position.bottomFraction))
+                }
             },
             onRelease = { view -> view.player = null },
             modifier = Modifier.fillMaxSize()
@@ -651,6 +657,8 @@ fun VodPlayerScreen(
             fun savePrefs(audio: TrackChoice?, subtitle: TrackChoice?, subtitlesOn: Boolean) =
                 onTrackPrefsChange(VodTrackPrefs(audio?.language, subtitle?.language, subtitlesOn))
             PlaybackOptionsPanel(
+                sendTargets = handoffTvs,
+                onSendTo = onSendTo,
                 tracks = tracks,
                 pictureFormat = pictureFormat,
                 onChooseStream = if (request.files.size > 1 && castDevice == null) ({

@@ -188,6 +188,7 @@ fun SettingsScreen(
     val matchFrameRate by repository.matchFrameRate.collectAsState()
     val audioPassthrough by repository.audioPassthrough.collectAsState()
     val bufferSize by repository.bufferSize.collectAsState()
+    val subtitleAppearance by repository.subtitleAppearance.collectAsState()
     val audioLeveling by repository.audioLeveling.collectAsState()
     val timeshift by repository.timeshift.collectAsState()
     val vodEnabled by repository.vodEnabled.collectAsState()
@@ -604,6 +605,36 @@ fun SettingsScreen(
                                         description = stringResource(R.string.settings_audio_passthrough_description),
                                         toggle = audioPassthrough,
                                         onClick = { repository.setAudioPassthrough(!audioPassthrough) }
+                                    )
+                                }
+                                // Look of the subtitles: a preview, then each choice goes through its values
+                                item { SubtitlePreview(subtitleAppearance) }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_subtitle_size),
+                                        value = subtitleSizeLabel(subtitleAppearance.size),
+                                        onClick = { repository.setSubtitleAppearance(subtitleAppearance.copy(size = subtitleAppearance.size.next())) }
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_subtitle_color),
+                                        value = subtitleColorLabel(subtitleAppearance.color),
+                                        onClick = { repository.setSubtitleAppearance(subtitleAppearance.copy(color = subtitleAppearance.color.next())) }
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_subtitle_background),
+                                        value = subtitleBackgroundLabel(subtitleAppearance.background),
+                                        onClick = { repository.setSubtitleAppearance(subtitleAppearance.copy(background = subtitleAppearance.background.next())) }
+                                    )
+                                }
+                                item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_subtitle_position),
+                                        value = subtitlePositionLabel(subtitleAppearance.position),
+                                        onClick = { repository.setSubtitleAppearance(subtitleAppearance.copy(position = subtitleAppearance.position.next())) }
                                     )
                                 }
                                 item {
@@ -1771,6 +1802,8 @@ private fun vodRowLabel(kind: VodRow.Kind): String = stringResource(
         VodRow.Kind.CONTINUE -> R.string.vod_row_continue
         VodRow.Kind.TRENDING -> R.string.vod_row_trending
         VodRow.Kind.SERVER_POPULAR -> R.string.vod_row_server_popular
+        VodRow.Kind.SERVER_ADDED -> R.string.vod_row_server_added
+        VodRow.Kind.NEW_EPISODES -> R.string.vod_row_new_episodes
         VodRow.Kind.MY_LIST -> R.string.vod_row_my_list
         VodRow.Kind.COLLECTION -> R.string.settings_vod_collections_row
         VodRow.Kind.RECENT_MOVIES -> R.string.vod_row_recent_movies

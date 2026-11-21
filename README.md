@@ -41,6 +41,11 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 
   ![Profiles](docs/screenshots/profiles.png)
 
+- **Subtitles** (**Settings → Playback**): size, color, background (outline, shadow, box) and height on the screen, with a preview.
+- **Google TV home**: the favorite channels in a row of the system home screen, opened in one click (locked categories left out).
+- **Voice**: a channel, a movie, a series or one of its seasons ("season 2 of …") asked to the Google Assistant opens directly.
+- **Weak connection**: when a channel stalls twice in a short while, Télé plays a lower quality stream for 30 minutes and says so.
+- With the Télé API plugin: **Added this week** and **New episodes** rows for movies and series, and **Resume on another TV** (what another TV of the user plays is offered on the home screen; *Send to another TV* in the playback options).
 - **Buffer** (**Settings → Playback**): small to maximum, for a weak connection or a small device.
 - **Language of foreign movies and series** (**Settings → Movies and series**): dubbed in the language of the TV, or the original version with subtitles in it.
 - **Copy to another TV**: the whole configuration (sources, favorites, categories, settings) is sent over the local network, encrypted with an 8-digit code shown on the sending TV.

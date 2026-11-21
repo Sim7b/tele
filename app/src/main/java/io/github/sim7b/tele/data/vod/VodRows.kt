@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.data.vod
 
+import io.github.sim7b.tele.data.remote.TeleApi.NewEpisode
 import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.storage.VodProgress
 
@@ -23,7 +24,9 @@ data class VodRow(
         // The titles of a streaming service ([VodRow.name]: its name)
         PLATFORM, GENRE,
         // The titles most watched on the Dispatcharr server (last: the rows kept on the device store the position)
-        SERVER_POPULAR
+        SERVER_POPULAR,
+        // The titles added this week on the Dispatcharr server, the followed series with a new episode
+        SERVER_ADDED, NEW_EPISODES
     }
 }
 
@@ -43,7 +46,12 @@ object VodRows {
         matcher: VodRankings.Matcher? = null,
         hidden: Set<VodRow.Kind> = emptySet(),
         // Keys of the titles most watched on the Dispatcharr server, most watched first
-        serverPopular: List<String> = emptyList()
+        serverPopular: List<String> = emptyList(),
+        // Keys of the titles added this week on the server, newest first
+        serverAdded: List<String> = emptyList(),
+        // The latest episode found of the followed series, by title key, and the time now
+        newEpisodes: Map<String, NewEpisode> = emptyMap(),
+        now: Long = System.currentTimeMillis()
     ): List<VodRow> {
         if (titles.isEmpty()) return emptyList()
         val byKey = titles.associateBy { it.key }
@@ -55,8 +63,10 @@ object VodRows {
         val rows = ArrayList<VodRow>()
 
         rows += VodRow(VodRow.Kind.CONTINUE, continuing(byKey, progress).map { it.first })
+        rows += VodRow(VodRow.Kind.NEW_EPISODES, withNewEpisode(byKey, progress, newEpisodes, now))
         rows += VodRow(VodRow.Kind.TRENDING, ranked(Ranking.TRENDING, TRENDING_SIZE), ranked = true)
         rows += VodRow(VodRow.Kind.SERVER_POPULAR, serverPopular.mapNotNull { byKey[it] }.distinctBy { it.key }.take(TRENDING_SIZE), ranked = true)
+        rows += VodRow(VodRow.Kind.SERVER_ADDED, serverAdded.mapNotNull { byKey[it] }.distinctBy { it.key }.take(ROW_SIZE))
         rows += VodRow(VodRow.Kind.MY_LIST, myList.mapNotNull { byKey[it] }.take(ROW_SIZE))
         collections.forEach { collection ->
             rows += VodRow(VodRow.Kind.COLLECTION, collection.titleKeys.mapNotNull { byKey[it] }.take(ROW_SIZE), collection.name, collectionId = collection.id)
@@ -95,6 +105,33 @@ object VodRows {
             .take(limit)
 
     /** Latest additions; without dates (M3U), the order of the playlist. */
+    /**
+     * The followed series whose latest episode came after the last time they were watched (within [NEW_FOR_MS] for a
+     * series never watched), that episode not watched yet; latest first.
+     */
+    fun withNewEpisode(
+        byKey: Map<String, VodTitle>,
+        progress: Map<String, VodProgress>,
+        newEpisodes: Map<String, NewEpisode>,
+        now: Long
+    ): List<VodTitle> {
+        if (newEpisodes.isEmpty()) return emptyList()
+        val lastWatched = HashMap<String, Long>()
+        progress.values.forEach { p -> lastWatched[p.titleKey] = maxOf(lastWatched[p.titleKey] ?: 0L, p.updatedAt) }
+        return newEpisodes.entries
+            .filter { (key, episode) ->
+                val seen = lastWatched[key]
+                val episodeKey = if (episode.season != null && episode.episode != null) "$key#S${episode.season}E${episode.episode}" else null
+                episode.atMs <= now && (episodeKey == null || episodeKey !in progress) &&
+                    (if (seen != null) episode.atMs > seen else now - episode.atMs < NEW_FOR_MS)
+            }
+            .sortedByDescending { it.value.atMs }
+            .mapNotNull { byKey[it.key] }
+            .take(ROW_SIZE)
+    }
+
+    private const val NEW_FOR_MS = 7 * 24 * 3_600_000L
+
     private fun recent(titles: List<VodTitle>): List<VodTitle> =
         titles.sortedByDescending { it.addedAt ?: 0L }.take(ROW_SIZE)
 

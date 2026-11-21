@@ -122,7 +122,9 @@ fun VodDetailScreen(
     languagesMeasured: Boolean = false,
     // Titles of the library that may also please (TMDB recommendations, then similar titles), and opening one
     related: List<VodTitle> = emptyList(),
-    onOpenTitle: (VodTitle) -> Unit = {}
+    onOpenTitle: (VodTitle) -> Unit = {},
+    // Season shown at first, by its number (asked by voice): else the one of the next episode
+    initialSeason: Int? = null
 ) {
     BackHandler(onBack = onBack)
     val compact = LocalScreen.current.compact
@@ -152,7 +154,8 @@ fun VodDetailScreen(
     // Series: the episode to play (the one in progress, else the one after the last watched, else the first)
     val episodes = seasons.flatMap { it.episodes }
     val nextEpisode = remember(episodes, progress) { nextEpisode(title.key, episodes, progress) }
-    val currentSeason = if (seasonIndex >= 0) seasonIndex else seasons.indexOfFirst { it.number == nextEpisode?.season }.coerceAtLeast(0)
+    val askedSeason = initialSeason?.let { asked -> seasons.indexOfFirst { it.number == asked } }?.takeIf { it >= 0 }
+    val currentSeason = if (seasonIndex >= 0) seasonIndex else askedSeason ?: seasons.indexOfFirst { it.number == nextEpisode?.season }.coerceAtLeast(0)
 
     val moviePosition = progress[title.key]?.takeIf { !it.finished && it.positionMs > 0 }
     val episodePosition = nextEpisode?.let { progress[VodRows.progressKey(title.key, it.key)] }?.takeIf { !it.finished && it.positionMs > 0 }

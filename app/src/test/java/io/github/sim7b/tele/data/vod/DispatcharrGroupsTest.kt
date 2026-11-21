@@ -62,7 +62,8 @@ class DispatcharrGroupsTest {
         val rows = VodRows.build(titles, emptyMap(), emptyList(), serverPopular = listOf("unknown", key))
         assertEquals(listOf(key), rows.single { it.kind == VodRow.Kind.SERVER_POPULAR }.titles.map { it.key })
         assertTrue(VodRows.build(titles, emptyMap(), emptyList()).none { it.kind == VodRow.Kind.SERVER_POPULAR })
-        // Last of the kinds: the rows kept on the device store their position
-        assertEquals(VodRow.Kind.SERVER_POPULAR, VodRow.Kind.entries.last())
+        // The rows kept on the device store the position of their kind: the new kinds come after the former ones
+        assertEquals(16, VodRow.Kind.SERVER_POPULAR.ordinal)
+        assertEquals(listOf(VodRow.Kind.SERVER_ADDED, VodRow.Kind.NEW_EPISODES), VodRow.Kind.entries.drop(17))
     }
 }

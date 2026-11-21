@@ -134,6 +134,56 @@ class DispatcharrClient(
         TeleApi.channelState(getObject(request.toString(), quick = true))
     }
 
+    /** Whether the plugin passes what is played from one TV of the user to another. */
+    suspend fun hasHandoff(): Boolean = baseUrl.isNotBlank() && "handoff" in teleApi()
+
+    /** Tells what this TV ([name]) plays now ([item]), or that it plays nothing (null); false on error. */
+    suspend fun reportPlaying(name: String?, item: HandoffItem?): Boolean = withContext(Dispatchers.IO) {
+        if (!hasHandoff()) return@withContext false
+        val body = JSONObject().put("name", name).put("playing", item?.toJson() ?: JSONObject.NULL)
+        postQuick(TeleApi.DEVICES_NOW_PATH, body) != null
+    }
+
+    /** What the other TVs of the user play, and what one of them sent here; null without the plugin or on error. */
+    suspend fun getHandoff(): HandoffState? = withContext(Dispatchers.IO) {
+        if (!hasHandoff()) return@withContext null
+        HandoffState.fromJson(getObject("$baseUrl${TeleApi.DEVICES_NOW_PATH}", quick = true))
+    }
+
+    /** Sends [item] to the TV [device] of the user, which offers it; false when it could not. */
+    suspend fun sendTo(device: String, item: HandoffItem): Boolean = withContext(Dispatchers.IO) {
+        if (!hasHandoff()) return@withContext false
+        postQuick(TeleApi.DEVICES_SEND_PATH, JSONObject().put("to", device).put("item", item.toJson()))?.optBoolean("sent") == true
+    }
+
+    private suspend fun postQuick(path: String, body: JSONObject): JSONObject? {
+        val request = Request.Builder().url("$baseUrl$path")
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        return try {
+            quickClient.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) return@executeCancellable null
+                JSONObject(HttpClients.jsonString(response.body))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            null
+        }
+    }
+
+    /**
+     * What is new in the VOD (Télé API plugin): the titles added this week, and the latest episode of the series of
+     * [seriesIds] (the ones followed on this TV, 100 at most); null without the plugin or on error.
+     */
+    suspend fun getVodFresh(seriesIds: List<String>): TeleApi.VodFresh? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_fresh" !in teleApi()) return@withContext null
+        val url = "$baseUrl${TeleApi.VOD_FRESH_PATH}".toHttpUrlOrNull()?.newBuilder()?.apply {
+            seriesIds.filter { it.all(Char::isDigit) }.distinct().take(100).takeIf { it.isNotEmpty() }
+                ?.let { addQueryParameter("series", it.joinToString(",")) }
+        }?.build() ?: return@withContext null
+        TeleApi.vodFresh(getObject(url.toString()))
+    }
+
     /**
      * Keeps ([hold]) or gives back the provider connection of the movie or episode this TV paused (Télé API plugin):
      * Dispatcharr frees it as soon as the paused stream closes. True when the server did it.

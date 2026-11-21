@@ -41,6 +41,9 @@ object TeleApi {
     const val VOD_RELATED_PATH = "/api/tele/v1/vod/related/"
     const val CHANNEL_STATE_PATH = "/api/tele/v1/channels/state/"
     const val VOD_HOLD_PATH = "/api/tele/v1/vod/hold/"
+    const val VOD_FRESH_PATH = "/api/tele/v1/vod/fresh/"
+    const val DEVICES_NOW_PATH = "/api/tele/v1/devices/now/"
+    const val DEVICES_SEND_PATH = "/api/tele/v1/devices/send/"
 
     /** TMDB ids of an answer of [VOD_RELATED_PATH] (or a TMDB list), in their order; others are skipped. */
     fun relatedIds(answer: JSONObject?): List<String> {
@@ -87,6 +90,39 @@ object TeleApi {
     }
     const val SUBTITLES_DOWNLOAD_PATH = "/api/tele/v1/subtitles/download/"
     private const val MAX_POPULAR = 100
+
+    /** The latest episode found of a followed series: when, and its season and episode numbers. */
+    data class NewEpisode(val atMs: Long, val season: Int?, val episode: Int?)
+
+    /**
+     * What is new in the VOD of the server, from [VOD_FRESH_PATH]: the titles added lately, newest first
+     * (("movie" | "series", Dispatcharr id)), and the latest episode of the series asked for, by Dispatcharr id.
+     */
+    data class VodFresh(val added: List<Pair<String, String>>, val episodes: Map<String, NewEpisode>)
+
+    fun vodFresh(answer: JSONObject?): VodFresh? {
+        answer ?: return null
+        val list = answer.optJSONArray("added")
+        val added = (0 until minOf(list?.length() ?: 0, MAX_POPULAR)).mapNotNull { i ->
+            val item = list?.optJSONObject(i) ?: return@mapNotNull null
+            val kind = item.optString("kind").takeIf { it == "movie" || it == "series" } ?: return@mapNotNull null
+            val id = item.opt("id")?.toString()?.takeIf { DIGITS.matches(it) } ?: return@mapNotNull null
+            kind to id
+        }.distinct()
+        val found = answer.optJSONObject("episodes")
+        val episodes = HashMap<String, NewEpisode>()
+        found?.keys()?.asSequence()?.take(MAX_POPULAR)?.forEach { id ->
+            if (!DIGITS.matches(id)) return@forEach
+            val item = found.optJSONObject(id) ?: return@forEach
+            val at = item.optDouble("at", Double.NaN).takeIf { it.isFinite() && it > 0 } ?: return@forEach
+            episodes[id] = NewEpisode(
+                (at * 1000).toLong(),
+                item.optInt("season", 0).takeIf { it > 0 },
+                item.optInt("episode", 0).takeIf { it > 0 }
+            )
+        }
+        return VodFresh(added, episodes)
+    }
 
     /** Movies and series most played on the server, most played first: ("movie" | "series", Dispatcharr id). */
     fun popularTitles(answer: JSONObject?): List<Pair<String, String>> {
