@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.41](https://github.com/Sim7b/tele/compare/v0.3.40...v0.3.41) (2026-11-21)
+
+### Features
+
+* resume on another TV, new episodes, adjustable subtitles, Google TV home row, voice, bandwidth-aware quality and match alerts ([#72](https://github.com/Sim7b/tele/issues/72)) ([259d67e](https://github.com/Sim7b/tele/commit/259d67e39665f216a760d30be14afbde50181e04))
+
 ## [0.3.40](https://github.com/Sim7b/tele/compare/v0.3.39...v0.3.40) (2026-11-21)
 
 ### Features
