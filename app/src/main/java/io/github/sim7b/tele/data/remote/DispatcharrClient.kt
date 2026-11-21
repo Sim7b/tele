@@ -120,6 +120,9 @@ class DispatcharrClient(
         }
     }
 
+    /** Whether the plugin of the server tells which streams failed lately (as last probed, without asking). */
+    fun knowsStreamHealth(): Boolean = "stream_health" in pluginHealth.known()
+
     private fun pluginFailed(request: Request) {
         if (pluginHealth.known().isNotEmpty()) Log.w(TAG, "Télé API plugin set aside after a failure: ${request.url.encodedPath}")
         pluginHealth.failed()

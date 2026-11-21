@@ -459,7 +459,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * URLs to play for [channel] in automatic mode, by quality preference: its streams through the Dispatcharr
      * proxy, best first, then the channel itself (Dispatcharr failover) as a last resort. Empty when the
-     * server order applies (manual choice, other source, "server order" preference, streams unavailable).
+     * server order applies (manual choice, other source, streams unavailable, "server order" preference unless
+     * the first stream of the server failed lately: [QualityPreference.automaticOrder]).
      * The same channel in the other Xtream / M3U sources comes after them ([Channel.failoverUrls]).
      */
     suspend fun automaticStreamUrls(channel: Channel): List<String> {
@@ -474,18 +475,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val preference = configRepository.qualityPreference.value
         // Grouped channel: every version, preferred quality first (the next ones if it fails)
         if (channel.memberIds.size > 1) return preference.sort(channel.availableStreams).map { it.url }
-        if (!preference.reordersStreams) return emptyList()
         val client = sourceOf(channel)?.dispatcharr ?: return emptyList()
+        // Server order: the streams are only read when the plugin tells which ones fail (else nothing to change)
+        if (!preference.reordersStreams && !client.knowsStreamHealth()) return emptyList()
         val serverId = channel.serverId ?: return emptyList()
         val key = streamsKey(channel, serverId)
         val cached = streamsCache[key]?.takeIf { SystemClock.elapsedRealtime() - it.first < STREAMS_CACHE_MS }?.second
         val streams = cached ?: withTimeoutOrNull(STREAMS_TIMEOUT_MS) {
             client.getChannelStreams(serverId).getOrNull()
         }?.also { streamsCache[key] = SystemClock.elapsedRealtime() to it }
-        if (streams.isNullOrEmpty()) return emptyList()
-        // The streams that failed lately on the server (Télé API plugin) come last, in the same order
-        val (failing, healthy) = preference.sort(streams).partition { it.recentFailures }
-        return (healthy + failing).map { it.url } + channel.streamUrl
+        // The streams that failed lately on the server (Télé API plugin) come last; the channel itself at the end
+        val ordered = preference.automaticOrder(streams.orEmpty()) ?: return emptyList()
+        return ordered.map { it.url } + channel.streamUrl
     }
 
     /**

@@ -44,4 +44,25 @@ class StreamQualityTest {
         assertEquals(listOf("fhd", "hd", "hd2", "plain", "sd", "uhd"), order(QualityPreference.FHD_MAX))
         assertEquals(listOf("hd", "hd2", "sd", "plain", "fhd", "uhd"), order(QualityPreference.HD_MAX))
     }
+
+    @Test
+    fun `in server order the channel plays itself, unless its first stream failed lately`() {
+        fun stream(name: String, failing: Boolean = false) = StreamSource(name = name, url = "u/$name", recentFailures = failing)
+        val server = QualityPreference.SERVER_ORDER
+
+        assertNull(server.automaticOrder(emptyList()))
+        assertNull(server.automaticOrder(listOf(stream("a"), stream("b", failing = true))))
+        // Dispatcharr would wait for its startup timeout on the first one again: the healthy ones first
+        assertEquals(
+            listOf("b", "c", "a"),
+            server.automaticOrder(listOf(stream("a", failing = true), stream("b"), stream("c")))?.map { it.name }
+        )
+        // All failing: the server keeps its choice
+        assertNull(server.automaticOrder(listOf(stream("a", failing = true), stream("b", failing = true))))
+        // A quality preference always gives the order, the failing ones last
+        assertEquals(
+            listOf("b", "a"),
+            QualityPreference.BEST.automaticOrder(listOf(stream("a", failing = true), stream("b")))?.map { it.name }
+        )
+    }
 }
