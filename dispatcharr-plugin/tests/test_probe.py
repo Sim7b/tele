@@ -425,3 +425,40 @@ class SelectionTest(unittest.TestCase):
 class ServedGroupsTest(SelectionTest):
     def test_every_group_without_a_selection(self):
         self.assertEqual(probe.served_groups(), {"mode": "all"})
+
+
+class ScheduleTest(unittest.TestCase):
+    """The Celery Beat schedule of earlier versions: removed when there, never asked for when missing (Dispatcharr
+    warns of every missing one)."""
+
+    def _modules(self, exists):
+        deleted = []
+        scheduling = SimpleNamespace(delete_periodic_task=lambda name: deleted.append(name) or True)
+        query = SimpleNamespace(exists=lambda: exists)
+        models = SimpleNamespace(PeriodicTask=SimpleNamespace(objects=SimpleNamespace(filter=lambda **kwargs: query)))
+        modules = {
+            "core": SimpleNamespace(scheduling=scheduling), "core.scheduling": scheduling,
+            "django_celery_beat": SimpleNamespace(models=models), "django_celery_beat.models": models,
+        }
+        return modules, deleted
+
+    def test_missing_schedule_is_not_asked_for(self):
+        modules, deleted = self._modules(exists=False)
+        with mock.patch.dict("sys.modules", modules):
+            self.assertTrue(probe.schedule().startswith("none"))
+        self.assertEqual([], deleted)
+
+    def test_former_schedule_is_removed(self):
+        modules, deleted = self._modules(exists=True)
+        with mock.patch.dict("sys.modules", modules):
+            self.assertTrue(probe.schedule().startswith("removed"))
+        self.assertEqual([probe.SCHEDULE_NAME], deleted)
+
+
+class RunLogTest(unittest.TestCase):
+    def test_idle_runs_are_not_logged_as_info(self):
+        with self.assertLogs("apps.tele_api.probe", level="DEBUG") as logs:
+            probe._remember_run(None, outcome="done", probed=0)
+            probe._remember_run(None, outcome="done", probed=3)
+        levels = [record.levelname for record in logs.records]
+        self.assertEqual(["DEBUG", "INFO"], levels)

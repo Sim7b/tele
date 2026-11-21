@@ -138,6 +138,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     private val streamHttpClient = HttpClients.base.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        .addInterceptor(DispatcharrStartTimeout)
         .addNetworkInterceptor(ApiKeyInterceptor { request -> currentAuths.firstOrNull { it.appliesTo(request.url) } })
         .build()
 
@@ -483,7 +484,10 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
                         _isLoading.value = playbackState == Player.STATE_BUFFERING
                         mainHandler.removeCallbacks(stallRunnable)
                         if (playbackState == Player.STATE_BUFFERING) {
-                            mainHandler.postDelayed(stallRunnable, ReconnectPolicy.stallTimeoutMs(live = vodStartMs == null, hasPlayed = hasPlayed))
+                            mainHandler.postDelayed(stallRunnable, ReconnectPolicy.stallTimeoutMs(
+                                live = vodStartMs == null, hasPlayed = hasPlayed,
+                                dispatcharr = currentUrl?.let(ReconnectPolicy::isDispatcharrLive) == true
+                            ))
                         }
                         if (playbackState == Player.STATE_READY) {
                             _error.value = null
@@ -886,7 +890,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
     private fun isHlsUrl(url: String) = url.contains(".m3u8", ignoreCase = true)
 
-    private fun isDispatcharrTs(url: String) = url.contains("/proxy/ts/")
+    private fun isDispatcharrTs(url: String) = ReconnectPolicy.isDispatcharrLive(url)
 
     private fun readTracks(tracks: Tracks): PlaybackTracks {
         fun choices(type: Int) = tracks.groups.withIndex()

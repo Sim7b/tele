@@ -19,15 +19,28 @@ object ReconnectPolicy {
 
     /**
      * Loading time after which the stream is taken as frozen: a channel that played gets [PLAYING_STALL_MS],
-     * a start [START_STALL_MS] (Dispatcharr may first try several provider streams), a movie more.
+     * a start [START_STALL_MS] (Dispatcharr may first try several provider streams), a movie more. A Dispatcharr
+     * channel ([dispatcharr]) answers only once its provider filled its buffer: often 10 s, sometimes more.
      */
-    fun stallTimeoutMs(live: Boolean, hasPlayed: Boolean): Long = when {
+    fun stallTimeoutMs(live: Boolean, hasPlayed: Boolean, dispatcharr: Boolean = false): Long = when {
+        !hasPlayed && dispatcharr -> DISPATCHARR_START_STALL_MS
         !hasPlayed -> START_STALL_MS
         live -> PLAYING_STALL_MS
         else -> VOD_STALL_MS
     }
 
     const val START_STALL_MS = 20_000L
+    const val DISPATCHARR_START_STALL_MS = 40_000L
+
+    /**
+     * Wait for the first bytes of a Dispatcharr channel: the server sends nothing until its provider filled the
+     * buffer. A shorter wait asked the channel again, which on an account limited to one stream ended the first
+     * request on the server, then refused the second one (503): the channel never started.
+     */
+    const val DISPATCHARR_FIRST_BYTES_S = 30L
+
+    /** A live channel served by the proxy of a Dispatcharr server. */
+    fun isDispatcharrLive(url: String): Boolean = url.contains("/proxy/ts/")
     const val PLAYING_STALL_MS = 12_000L
     const val VOD_STALL_MS = 30_000L
 }

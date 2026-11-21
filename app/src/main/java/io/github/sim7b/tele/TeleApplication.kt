@@ -7,6 +7,7 @@ import coil.disk.DiskCache
 import io.github.sim7b.tele.data.remote.DeviceUserAgent
 import io.github.sim7b.tele.data.remote.HttpClients
 import io.github.sim7b.tele.data.remote.ImageCacheSize
+import io.github.sim7b.tele.data.remote.PosterFallback
 import io.github.sim7b.tele.data.remote.TlsCompat
 import io.github.sim7b.tele.ui.components.Device
 
@@ -30,7 +31,8 @@ class TeleApplication : Application(), ImageLoaderFactory {
     // when it lacks room; its images used without asking the servers again: their addresses change when the
     // picture does (TMDB, providers)
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        .okHttpClient { HttpClients.base }
+        // The light posters of the Télé API plugin fall back to the images of Dispatcharr
+        .okHttpClient { HttpClients.base.newBuilder().addInterceptor(PosterFallback).build() }
         .respectCacheHeaders(false)
         .diskCache {
             val dir = cacheDir.resolve("images")

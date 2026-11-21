@@ -696,7 +696,9 @@ LAST_RUN_KEY = "tele_api:probe:last_run"
 def _remember_run(redis_client, **summary) -> None:
     """Outcome of a run, read by the Status action (the runs happen in the Celery worker)."""
     summary["at"] = time.time()
-    logger.info("Télé API: probe run %s", summary)
+    # Every 10 minutes in each web worker: logged only when it did something
+    idle = summary.get("outcome") == "done" and not summary.get("probed")
+    (logger.debug if idle else logger.info)("Télé API: probe run %s", summary)
     if redis_client is None:
         return
     try:
@@ -784,6 +786,11 @@ def schedule() -> str:
     except ImportError:
         return "not inside Dispatcharr"
     try:
+        # Asked only when it is there: Dispatcharr warns of every missing one, at every load of the plugin
+        from django_celery_beat.models import PeriodicTask
+
+        if not PeriodicTask.objects.filter(name=SCHEDULE_NAME).exists():
+            return "none (the probes run in the web workers)"
         return "removed (the probes run in the web workers)" if delete_periodic_task(SCHEDULE_NAME) else "none (the probes run in the web workers)"
     except Exception as error:
         logger.warning("Télé API: former probe schedule not removed yet (%s)", type(error).__name__)

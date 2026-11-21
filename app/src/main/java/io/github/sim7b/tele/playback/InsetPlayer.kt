@@ -34,6 +34,7 @@ class InsetPlayer(private val context: Context) {
     private val client = HttpClients.base.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        .addInterceptor(DispatcharrStartTimeout)
         .addNetworkInterceptor(ApiKeyInterceptor { request -> auths.firstOrNull { it.appliesTo(request.url) } })
         .build()
     private val extractors = DefaultExtractorsFactory().setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES)

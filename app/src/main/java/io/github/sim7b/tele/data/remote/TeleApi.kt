@@ -14,6 +14,7 @@ import org.json.JSONObject
  */
 object TeleApi {
     const val API_VERSION = 1
+    const val ROOT_PATH = "/api/tele/"
     const val INFO_PATH = "/api/tele/v1/info/"
     const val CHANNELS_PATH = "/api/tele/v1/channels/"
     const val SLOTS_PATH = "/api/tele/v1/slots/"

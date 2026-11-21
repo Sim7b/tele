@@ -145,6 +145,75 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `a failing plugin is set aside, not asked again on every call`() = runBlocking {
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json(info)
+                TeleApi.CHANNELS_PATH -> MockResponse.Builder().code(502).build()
+                else -> standardChannels(request)
+            }
+        }
+
+        val client = client()
+        client.getChannels().getOrThrow()
+        assertEquals("TF1", client.getChannels().getOrThrow().single().name)
+        // Once only, and not probed again meanwhile: the standard API answers at once
+        assertEquals(1, paths.count { it == TeleApi.CHANNELS_PATH })
+        assertEquals(1, paths.count { it == TeleApi.INFO_PATH })
+        assertNull(client.getStreamSlots())
+        assertTrue(TeleApi.SLOTS_PATH !in paths)
+    }
+
+    @Test
+    fun `routes of the plugin missing after a restart of the server set it aside`() = runBlocking {
+        // Probed with the plugin, then the server came back without it: the web interface answers its routes
+        var restarted = false
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> if (restarted) MockResponse.Builder().body("<html></html>").build() else json(info)
+                TeleApi.CHANNELS_PATH -> MockResponse.Builder().code(403).addHeader("Content-Type", "text/html").body("<h1>CSRF</h1>").build()
+                else -> standardChannels(request)
+            }
+        }
+
+        val client = client()
+        client.getStreamSlots()
+        restarted = true
+        assertEquals("TF1", client.getChannels().getOrThrow().single().name)
+        client.getChannels().getOrThrow()
+        assertEquals(1, paths.count { it == TeleApi.CHANNELS_PATH })
+    }
+
+    @Test
+    fun `a plugin that does not answer holds the start a few seconds only`() = runBlocking {
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> MockResponse.Builder().headersDelay(20, java.util.concurrent.TimeUnit.SECONDS).body("{}").build()
+                else -> standardChannels(request)
+            }
+        }
+
+        val started = System.nanoTime()
+        assertEquals("TF1", client().getChannels().getOrThrow().single().name)
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 10_000)
+    }
+
+    @Test
+    fun `admin stats refused to a standard key are not asked again`() = runBlocking {
+        serve { request ->
+            when (request.url.encodedPath) {
+                "/proxy/stats/" -> MockResponse.Builder().code(403).addHeader("Content-Type", "application/json").body("{}").build()
+                else -> null
+            }
+        }
+
+        val client = client()
+        assertNull(client.getStreamSlots())
+        assertNull(client.getStreamSlots())
+        assertEquals(1, paths.count { it == "/proxy/stats/" })
+    }
+
+    @Test
     fun `free connections come from the plugin, without the admin stats`() = runBlocking {
         serve { request ->
             when (request.url.encodedPath) {
