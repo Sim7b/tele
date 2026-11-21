@@ -8,7 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -153,7 +153,7 @@ fun PlaybackOptionsPanel(
                 if (onChooseStream != null) {
                     MenuRow(
                         label = chooseStreamLabel ?: stringResource(R.string.options_choose_stream),
-                        icon = Icons.Filled.List,
+                        icon = Icons.AutoMirrored.Filled.List,
                         onClick = onChooseStream,
                         modifier = Modifier.focusRequester(firstRow)
                     )

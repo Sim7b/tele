@@ -398,3 +398,22 @@ class UpdatesTest(unittest.TestCase):
         self.assertEqual(core.latest_release(answer), {"version": "0.3.35", "url": answer["html_url"]})
         self.assertIsNone(core.latest_release(dict(answer, prerelease=True)))
         self.assertIsNone(core.latest_release(dict(answer, html_url="https://evil.example/")))
+
+
+class ChannelStateTest(unittest.TestCase):
+    def test_state_of_a_starting_channel(self):
+        metadata = {b"state": b"connecting", b"state_changed_at": b"1000.0", b"stream_id": b"153212", b"channel_name": b"TF1"}
+        self.assertEqual(
+            {"state": "connecting", "since": 6.5, "stream": 153212, "chunks": 2},
+            core.channel_state(metadata, b"2", 1006.5),
+        )
+        self.assertEqual({"state": None}, core.channel_state({}, None, 1.0))
+        self.assertEqual({"state": None}, core.channel_state({"state": "<script>"}, None, 1.0))
+        odd = core.channel_state({"state": "active", "state_changed_at": "nan", "stream_id": "x"}, "-3", 5.0)
+        self.assertEqual({"state": "active", "since": None, "stream": None, "chunks": 0}, odd)
+
+    def test_proxy_keys(self):
+        self.assertEqual("c9af2342-5b82-4871-9780-98a07230f594", core.proxy_key("c9af2342-5b82-4871-9780-98a07230f594"))
+        self.assertEqual("abcdef1234", core.proxy_key("abcdef1234"))
+        for bad in ("../x", "", None, "a" * 65, "abc", "a b c d e f g"):
+            self.assertIsNone(core.proxy_key(bad))

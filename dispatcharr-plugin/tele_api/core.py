@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.13"
+PLUGIN_VERSION = "0.3.14"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1586,3 +1586,44 @@ def stream_order(streams: List[Mapping[str, Any]]) -> List[int]:
         return (1 if unavailable else 0, -height, index)
 
     return [stream["id"] for _, stream in sorted(enumerate(streams), key=key)]
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Start of a channel on Dispatcharr, for a TV waiting for it
+
+CHANNEL_STATES = {"initializing", "connecting", "waiting_for_clients", "active", "buffering", "error", "stopping", "stopped"}
+_PROXY_KEY_RE = re.compile(r"^[0-9A-Za-z-]{8,64}$")
+
+
+def proxy_key(value: Any) -> Optional[str]:
+    """A channel uuid or stream hash of the Dispatcharr proxy, as it appears in the address of a stream."""
+    text = to_text(value) or ""
+    return text if _PROXY_KEY_RE.match(text) else None
+
+
+def channel_state(metadata: Optional[Mapping[Any, Any]], buffer_index: Any, now: float) -> Dict[str, Any]:
+    """What Dispatcharr is doing with a channel: its state (none when it is not running), how long it has been in
+    it, the stream it plays (to see a switch to the next one) and the chunks received from the provider."""
+    values = {to_text(key): to_text(value) for key, value in (metadata or {}).items()}
+    state = values.get("state")
+    if state not in CHANNEL_STATES:
+        return {"state": None}
+    changed = to_float(values.get("state_changed_at")) or to_float(values.get("init_time"))
+    return {
+        "state": state,
+        "since": round(max(0.0, now - changed), 1) if changed else None,
+        "stream": to_int(values.get("stream_id")),
+        "chunks": max(0, to_int(buffer_index, 0) or 0),
+    }
+
+
+_SYNC_PROFILE_RE = re.compile(r"^[a-z0-9]{1,24}$")
+
+
+def sync_profile(value: Any) -> Optional[str]:
+    """The profile of a sync request (?profile=, its name on the TVs made plain: "lea"); None for the main one, False
+    when malformed."""
+    text = to_text(value)
+    if text is None or text == "":
+        return None
+    return text if _SYNC_PROFILE_RE.match(text) else False

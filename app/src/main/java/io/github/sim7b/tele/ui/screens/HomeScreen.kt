@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.ui.screens
 
+import io.github.sim7b.tele.ui.components.LocalClock
 import io.github.sim7b.tele.data.storage.VodCollection
 import io.github.sim7b.tele.data.storage.VodProgress
 import io.github.sim7b.tele.data.vod.VodTitle
@@ -292,7 +293,7 @@ fun HomeScreen(
         }
         val (key, channel) = focusedCard ?: return@LaunchedEffect
         if (!previewAllowed) return@LaunchedEffect
-        delay(previewDelayMs ?: return@LaunchedEffect)
+        delay(previewDelayMs)
         previewKey = key
         onPreviewChannel(channel)
     }
@@ -825,9 +826,10 @@ private fun CompactHomeHeader(
 /** Discreet time and date at the top of the home screen. */
 @Composable
 internal fun HeaderClock() {
-    val now by produceState(initialValue = LocalDateTime.now()) {
+    val clock = LocalClock.current
+    val now by produceState(initialValue = LocalDateTime.now(clock)) {
         while (true) {
-            value = LocalDateTime.now()
+            value = LocalDateTime.now(clock)
             delay(5_000)
         }
     }

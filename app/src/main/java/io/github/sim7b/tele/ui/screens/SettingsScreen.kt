@@ -15,7 +15,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import io.github.sim7b.tele.data.model.ChannelList
@@ -85,7 +85,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
@@ -126,7 +126,7 @@ import io.github.sim7b.tele.ui.components.groupLabel
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.components.touchClick
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.ui.platform.LocalUriHandler
 import io.github.sim7b.tele.ui.theme.*
 import io.github.sim7b.tele.update.UpdateState
@@ -139,7 +139,7 @@ import java.util.UUID
 
 /** Sections of the settings, listed on the left. */
 private enum class SettingsPage(@param:StringRes val labelRes: Int, @param:StringRes val hintRes: Int, val icon: ImageVector) {
-    SOURCES(R.string.settings_nav_sources, R.string.settings_nav_sources_hint, Icons.Filled.List),
+    SOURCES(R.string.settings_nav_sources, R.string.settings_nav_sources_hint, Icons.AutoMirrored.Filled.List),
     CHANNELS(R.string.settings_nav_channels, R.string.settings_nav_channels_hint, Icons.Filled.Star),
     PLAYBACK(R.string.settings_nav_playback, R.string.settings_nav_playback_hint, Icons.Filled.PlayArrow),
     APPEARANCE(R.string.settings_nav_appearance, R.string.settings_nav_appearance_hint, Icons.Filled.Create),
@@ -352,7 +352,7 @@ fun SettingsScreen(
 
                 ActionButton(
                     label = stringResource(R.string.settings_back),
-                    icon = Icons.Filled.ArrowBack,
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
                     onClick = { if (compact && pageOpen) pageOpen = false else onBack() }
                 )
             }
@@ -1684,7 +1684,7 @@ private fun ApiKeyDialog(service: ApiKeyService, accentColorObj: Color, onDismis
                 // The page where the key is created, in the browser of the device
                 ActionButton(
                     label = stringResource(R.string.api_key_open_page, service.label),
-                    icon = Icons.Filled.ArrowForward,
+                    icon = Icons.AutoMirrored.Filled.ArrowForward,
                     onClick = { runCatching { uriHandler.openUri(service.keyPageUrl) } }
                 )
             } else {

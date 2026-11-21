@@ -37,7 +37,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - **replay** (Xtream accounts with catch-up): the programs of the past day kept by the provider are marked REPLAY in the grid and the channel panel, and OK plays them again with the movie player (seek, pause).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → System**.
-- **Profiles** (**Settings → Profiles**): each member of the family has their own favorites, positions, my list and collections; a profile can ask a 4-digit code, and a kids profile always keeps the locks of the parental control. "Who is watching?" is asked at startup when the TV has several profiles.
+- **Profiles** (**Settings → Profiles**): each member of the family has their own favorites, positions, my list and collections; a profile can ask a 4-digit code, and a kids profile always keeps the locks of the parental control. "Who is watching?" is asked at startup when the TV has several profiles. With the Télé API plugin, a profile syncs with the profile of the same name on the other TVs of the user.
 
   ![Profiles](docs/screenshots/profiles.png)
 

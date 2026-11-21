@@ -33,7 +33,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -584,7 +584,7 @@ fun VodHomeScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 RoundIconButton(icon = Icons.Filled.Settings, contentDescription = stringResource(R.string.vod_settings), onClick = onOpenSettings)
                 Spacer(modifier = Modifier.width(10.dp))
-                RoundIconButton(icon = Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.vod_back_to_tv), onClick = onBack)
+                RoundIconButton(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.vod_back_to_tv), onClick = onBack)
             }
             if (compact) {
                 Row(

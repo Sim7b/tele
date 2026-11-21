@@ -159,9 +159,10 @@ fun GlassTab(
 /** The time, alone, in a corner. */
 @Composable
 fun GlassClock(modifier: Modifier = Modifier) {
-    val time by produceState(initialValue = LocalTime.now()) {
+    val clock = LocalClock.current
+    val time by produceState(initialValue = LocalTime.now(clock)) {
         while (true) {
-            value = LocalTime.now()
+            value = LocalTime.now(clock)
             delay(5_000)
         }
     }

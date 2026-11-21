@@ -23,6 +23,17 @@ object TvSync {
     const val MY_LIST = "my_list"
     const val COLLECTIONS = "collections"
     const val REMINDERS = "reminders"
+
+    /**
+     * The name of a profile other than the main one, made plain for the server ("Léa" -> "lea"): the profiles named
+     * the same on several TVs share their items. Null when nothing is left of it (letters of another alphabet only).
+     */
+    fun profileKey(name: String): String? =
+        java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD)
+            .lowercase(java.util.Locale.ROOT)
+            .filter { it in 'a'..'z' || it in '0'..'9' }
+            .take(24)
+            .ifEmpty { null }
     val COLLECTION_NAMES = listOf(FAVORITES, VOD_PROGRESS, MY_LIST, COLLECTIONS, REMINDERS)
 
     /** A local item: its value as JSON text, and when it changed when the item knows it (VOD positions). */

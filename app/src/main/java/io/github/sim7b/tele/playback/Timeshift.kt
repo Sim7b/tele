@@ -49,6 +49,8 @@ class TimeshiftBuffer(
     // Time a byte offset was received (every MARK_INTERVAL_MS): where to go back to
     private class Mark(val timeMs: Long, val offset: Long)
 
+    // An Object for its wait / notifyAll
+    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     private val lock = Object()
     private val chunks = ArrayDeque<Chunk>()
     private val marks = ArrayDeque<Mark>()
@@ -128,7 +130,7 @@ class TimeshiftBuffer(
     }
 
     /** Called by the recording thread only; written under the lock, the readers see whole writes. */
-    internal fun append(data: ByteArray, length: Int) = synchronized(lock) {
+    internal fun append(data: ByteArray, length: Int): Unit = synchronized(lock) {
         if (closed) return
         val now = clock()
         var chunk = chunks.lastOrNull()

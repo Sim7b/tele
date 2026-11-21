@@ -12,8 +12,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -669,7 +669,7 @@ private fun GuideHeader(
             ) {
                 if (arrows) {
                     Icon(
-                        Icons.Filled.KeyboardArrowLeft,
+                        Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                         contentDescription = if (Device.isTouch) stringResource(R.string.guide_previous_category) else null,
                         modifier = Modifier.size(18.dp).touchTap(onPrevious)
                     )
@@ -687,7 +687,7 @@ private fun GuideHeader(
                 )
                 if (arrows) {
                     Icon(
-                        Icons.Filled.KeyboardArrowRight,
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = if (Device.isTouch) stringResource(R.string.guide_next_category) else null,
                         modifier = Modifier.size(18.dp).touchTap(onNext)
                     )

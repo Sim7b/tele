@@ -250,8 +250,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * most every [TV_SYNC_EVERY_MS].
      */
     private fun syncTvs(force: Boolean = false) {
-        // The other TVs share the main profile only: the other profiles stay on this TV
-        if (!configRepository.profiles.current.value.isMain) return
         val source = sources.firstOrNull { it.dispatcharr != null } ?: return
         val client = source.dispatcharr ?: return
         val now = SystemClock.elapsedRealtime()
@@ -260,32 +258,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             if (!tvSyncLock.tryLock()) return@launch
             try {
-                runTvSync(source.config.id, client)
+                runTvSync(source.config.id, client, configRepository.profiles.current.value)
             } finally {
                 tvSyncLock.unlock()
             }
         }
     }
 
-    private fun localSyncItems(): Map<String, Map<String, TvSync.Local>> {
+    /** Items of the profile in use; the reminders are of the TV, synced with its main profile only. */
+    private fun localSyncItems(withReminders: Boolean): Map<String, Map<String, TvSync.Local>> {
         val vod = configRepository.vodStore
-        return mapOf(
-            TvSync.FAVORITES to TvSync.favorites(configRepository.favoriteIds.value),
-            TvSync.VOD_PROGRESS to TvSync.progress(vod.progress.value),
-            TvSync.MY_LIST to TvSync.myList(vod.myList.value),
-            TvSync.COLLECTIONS to TvSync.collections(vod.collections.value),
-            TvSync.REMINDERS to TvSync.reminders(guideStore.reminders.value)
-        )
+        return buildMap {
+            put(TvSync.FAVORITES, TvSync.favorites(configRepository.favoriteIds.value))
+            put(TvSync.VOD_PROGRESS, TvSync.progress(vod.progress.value))
+            put(TvSync.MY_LIST, TvSync.myList(vod.myList.value))
+            put(TvSync.COLLECTIONS, TvSync.collections(vod.collections.value))
+            if (withReminders) put(TvSync.REMINDERS, TvSync.reminders(guideStore.reminders.value))
+        }
     }
 
-    private suspend fun runTvSync(sourceId: String, client: DispatcharrClient) {
+    /**
+     * Sync of [profile]: the main one with its former items on the server, another one with the items of the
+     * profiles of the same name on the other TVs ([TvSync.profileKey]). Nothing is applied when the profile changed
+     * meanwhile.
+     */
+    private suspend fun runTvSync(sourceId: String, client: DispatcharrClient, profile: Profile) {
+        val profileKey = if (profile.isMain) null else TvSync.profileKey(profile.name) ?: return
         val app = getApplication<Application>()
         val prefs = app.getSharedPreferences(TV_SYNC_PREFS, Context.MODE_PRIVATE)
-        val key = "synced_$sourceId"
+        val key = if (profileKey == null) "synced_$sourceId" else "synced_${sourceId}_${profile.id}_$profileKey"
         val synced = withContext(Dispatchers.IO) { TvSync.fromJson(prefs.getString(key, null)) }
-        val sent = localSyncItems()
-        val answer = client.syncTvs(TvSync.changes(sent, synced, System.currentTimeMillis())) ?: return
-        val (kept, remembered) = withContext(Dispatchers.Default) { TvSync.resolve(TvSync.items(answer), sent, localSyncItems()) }
+        val sent = localSyncItems(withReminders = profile.isMain)
+        val answer = client.syncTvs(TvSync.changes(sent, synced, System.currentTimeMillis()), profileKey) ?: return
+        if (configRepository.profiles.current.value.id != profile.id) return
+        val (kept, remembered) = withContext(Dispatchers.Default) {
+            TvSync.resolve(TvSync.items(answer), sent, localSyncItems(withReminders = profile.isMain))
+        }
         configRepository.replaceFavorites(TvSync.favoriteOrder(kept[TvSync.FAVORITES].orEmpty()))
         withContext(Dispatchers.IO) {
             configRepository.vodStore.replaceSynced(
@@ -295,12 +303,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             prefs.edit().putString(key, TvSync.toJson(remembered)).apply()
         }
-        guideStore.replaceReminders(Reminders.pending(TvSync.remindersOf(kept[TvSync.REMINDERS].orEmpty()), System.currentTimeMillis()))
+        if (profile.isMain) {
+            guideStore.replaceReminders(Reminders.pending(TvSync.remindersOf(kept[TvSync.REMINDERS].orEmpty()), System.currentTimeMillis()))
+        }
     }
 
     /** Uses [profile] (its code already checked): its favorites and movies and series come in place. */
     fun switchProfile(profile: Profile) {
-        viewModelScope.launch(Dispatchers.IO) { configRepository.switchProfile(profile) }
+        viewModelScope.launch(Dispatchers.IO) {
+            configRepository.switchProfile(profile)
+            // Its items on the other TVs at once
+            withContext(Dispatchers.Main) { syncTvs(force = true) }
+        }
     }
 
     /** Removes [profile] and its data (the main one is kept). */
@@ -325,6 +339,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    /**
+     * The provider connection of the paused movie or episode at [url] kept for its resume ([hold]), or given back
+     * (Dispatcharr with the Télé API plugin). In the scope of the app: a release still goes out when the player closes.
+     */
+    fun holdVod(url: String?, hold: Boolean) {
+        val client = url?.let { u -> sources.mapNotNull { it.dispatcharr }.firstOrNull { it.isProxyUrl(u) } } ?: return
+        viewModelScope.launch { client.holdVod(hold) }
+    }
+
+    /** What the Dispatcharr server of [url] is doing with it while it starts (Télé API plugin); null otherwise. */
+    suspend fun startState(url: String): io.github.sim7b.tele.data.remote.ChannelStartState? =
+        sources.mapNotNull { it.dispatcharr }.firstOrNull { it.isProxyUrl(url) }?.getChannelState(url)
 
     /**
      * A stream of a Dispatcharr server found no free provider connection: the sessions this TV left open there

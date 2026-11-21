@@ -43,7 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -77,8 +77,8 @@ import io.github.sim7b.tele.ui.components.playerGestures
 import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.vod.VodChip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import io.github.sim7b.tele.ui.components.PlaybackOptionsPanel
 import io.github.sim7b.tele.ui.components.PlaybackStatsOverlay
@@ -91,9 +91,25 @@ import io.github.sim7b.tele.ui.components.Tag
 import io.github.sim7b.tele.ui.components.requestFocusWithRetry
 import io.github.sim7b.tele.ui.theme.*
 import kotlinx.coroutines.delay
+import io.github.sim7b.tele.data.remote.ChannelStartState
+import io.github.sim7b.tele.playback.StartProgress
+import io.github.sim7b.tele.playback.StartStep
 import kotlinx.coroutines.launch
 
 private const val ZAP_DEBOUNCE_MS = 300L
+private const val START_POLL_MS = 1_500L
+
+@Composable
+private fun startStepLabel(step: StartStep): String = stringResource(
+    when (step) {
+        StartStep.PREPARING -> R.string.player_start_preparing
+        StartStep.CONNECTING -> R.string.player_start_connecting
+        StartStep.PROVIDER_SLOW -> R.string.player_start_provider_slow
+        StartStep.SWITCHING -> R.string.player_start_switching
+        StartStep.STARTING -> R.string.player_start_starting
+        StartStep.WAITING -> R.string.player_start_waiting
+    }
+)
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -110,6 +126,8 @@ fun PlayerScreen(
     loadStreams: suspend () -> Result<List<StreamSource>>,
     // Streams to try in automatic mode, best quality first (empty: the channel URL as is)
     resolveStreams: suspend (Channel) -> List<String> = { emptyList() },
+    // What the server is doing with an address being started (Dispatcharr with the Télé API plugin)
+    startState: suspend (String) -> ChannelStartState? = { null },
     onSelectStream: (StreamSource?) -> Unit,
     onSelectChannel: (Channel) -> Unit,
     automaticStreamDescription: String,
@@ -139,6 +157,27 @@ fun PlayerScreen(
     val errorMessage by playerManager.error.collectAsState()
     val streamInfo by playerManager.streamInfo.collectAsState()
     val reconnection by playerManager.reconnection.collectAsState()
+    val playingUrl by playerManager.playingUrl.collectAsState()
+    // While the channel starts: asked to the server every 1.5 s, what it waits for ([StartProgress])
+    var startStep by remember { mutableStateOf<StartStep?>(null) }
+    LaunchedEffect(isLoading, playingUrl) {
+        startStep = null
+        val url = playingUrl
+        if (!isLoading || url == null) return@LaunchedEffect
+        val startedAt = SystemClock.elapsedRealtime()
+        var previousStream: Long? = null
+        var switchShownUntil = 0L
+        while (true) {
+            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            val state = if (elapsed >= StartProgress.QUIET_MS - START_POLL_MS) startState(url) else null
+            val now = SystemClock.elapsedRealtime()
+            val step = StartProgress.step(state, previousStream, now - startedAt)
+            if (step == StartStep.SWITCHING) switchShownUntil = now + StartProgress.SWITCH_SHOWN_MS
+            startStep = if (now < switchShownUntil) StartStep.SWITCHING else step
+            state?.stream?.let { previousStream = it }
+            delay(START_POLL_MS)
+        }
+    }
     // The channel went over to another of its streams by itself: said a moment on the picture
     val streamSwitches by playerManager.streamSwitches.collectAsState()
     var switchNotice by remember { mutableStateOf(false) }
@@ -435,6 +474,22 @@ fun PlayerScreen(
             )
         }
 
+        // A slow start: what it waits for, under the spinner
+        val startStepText = startStep?.let { startStepLabel(it) }
+        if (startStepText != null && isLoading && errorMessage == null && reconnection == null) {
+            Text(
+                text = startStepText,
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(top = 84.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            )
+        }
+
         // Playback error: message and a hint to get out of it
         if (errorMessage != null) {
             Column(
@@ -696,7 +751,7 @@ private fun PlayerTopBar(
             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
             .padding(horizontal = screenMargin(32.dp), vertical = 16.dp)
     ) {
-        RoundIconButton(icon = Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), onClick = onBack)
+        RoundIconButton(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), onClick = onBack)
         Spacer(modifier = Modifier.weight(1f))
         if (paused != null) {
             RoundIconButton(
@@ -706,7 +761,7 @@ private fun PlayerTopBar(
             )
         }
         CastButton(playerManager)
-        RoundIconButton(icon = Icons.Filled.List, contentDescription = stringResource(R.string.panel_title), onClick = onChannels)
+        RoundIconButton(icon = Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.panel_title), onClick = onChannels)
         RoundIconButton(icon = Icons.Filled.Settings, contentDescription = stringResource(R.string.options_title), onClick = onOptions)
     }
 }

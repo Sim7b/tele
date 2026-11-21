@@ -1,6 +1,6 @@
 {
   "name": "Télé API",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "Endpoints and a page for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, playback sessions, and the audio and subtitle languages of the VOD measured with ffprobe.",
   "author": "Télé",
   "help_url": "/api/tele/ui/",
@@ -59,6 +59,13 @@
       "label": "VOD languages",
       "type": "info",
       "description": "ffprobe reads the audio and subtitle tracks of one file per category. A probe uses a real provider connection: it only starts when one is free, one at a time, and stops at once when a viewer needs the connection."
+    },
+    {
+      "id": "vod_pause_hold_minutes",
+      "label": "Keep the provider connection of a paused movie (minutes)",
+      "type": "number",
+      "default": 30,
+      "help_text": "A movie or an episode paused on a Télé TV keeps its provider connection this long, so nobody takes it before the resume (Dispatcharr frees it as soon as the paused stream closes). Given back at the resume, when the TV leaves the player, or after this time. 0: off."
     },
     {
       "id": "prefetch_episodes",

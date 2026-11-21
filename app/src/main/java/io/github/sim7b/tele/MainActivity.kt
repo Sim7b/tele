@@ -1084,6 +1084,7 @@ class MainActivity : ComponentActivity() {
                                 segments = segments,
                                 request = request,
                                 playerManager = playerManager,
+                                onPauseHold = { hold -> viewModel.holdVod(playerManager.playingUrl.value, hold) },
                                 streamAuths = streamAuths,
                                 userAgent = configsById[request.sourceId]?.playerUserAgent,
                                 onProgress = { played, position, duration ->
@@ -1157,6 +1158,7 @@ class MainActivity : ComponentActivity() {
                                 userAgent = channelConfig?.playerUserAgent,
                                 loadStreams = { viewModel.loadStreams(liveChannel) },
                                 resolveStreams = { ch -> viewModel.automaticStreamUrls(ch) },
+                                startState = { url -> viewModel.startState(url) },
                                 onSelectStream = { stream -> viewModel.selectStream(liveChannel, stream) },
                                 onSelectChannel = { selected -> currentScreen = CurrentScreen.Player(selected, screen.returnTo) },
                                 automaticStreamDescription = automaticStreamDescription(liveChannel),

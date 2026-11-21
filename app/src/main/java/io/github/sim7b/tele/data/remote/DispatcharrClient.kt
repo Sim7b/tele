@@ -120,6 +120,41 @@ class DispatcharrClient(
         }
     }
 
+    /**
+     * What the server is doing with the channel or stream of the proxy address [url] being started (Télé API plugin);
+     * null without the plugin or on error. A short call: asked every second or two while a channel starts.
+     */
+    suspend fun getChannelState(url: String): ChannelStartState? = withContext(Dispatchers.IO) {
+        if (!isProxyUrl(url) || "channel_state" !in teleApi()) return@withContext null
+        val key = url.toHttpUrlOrNull()?.pathSegments?.let { segments ->
+            segments.getOrNull(segments.indexOf("stream") + 1)?.takeIf { segments.indexOf("stream") >= 0 }
+        }?.takeIf { it.matches(PROXY_KEY) } ?: return@withContext null
+        val request = "$baseUrl${TeleApi.CHANNEL_STATE_PATH}".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("key", key)?.build() ?: return@withContext null
+        TeleApi.channelState(getObject(request.toString(), quick = true))
+    }
+
+    /**
+     * Keeps ([hold]) or gives back the provider connection of the movie or episode this TV paused (Télé API plugin):
+     * Dispatcharr frees it as soon as the paused stream closes. True when the server did it.
+     */
+    suspend fun holdVod(hold: Boolean): Boolean = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || "vod_hold" !in teleApi()) return@withContext false
+        val body = JSONObject().put("hold", hold).toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl${TeleApi.VOD_HOLD_PATH}").post(body).build()
+        try {
+            quickClient.newCall(request).executeCancellable { response ->
+                if (!response.isSuccessful) return@executeCancellable false
+                val answer = JSONObject(HttpClients.jsonString(response.body))
+                answer.optBoolean(if (hold) "held" else "released")
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            false
+        }
+    }
+
     /** Whether the plugin of the server tells which streams failed lately (as last probed, without asking). */
     fun knowsStreamHealth(): Boolean = "stream_health" in pluginHealth.known()
 
@@ -772,10 +807,14 @@ class DispatcharrClient(
      * Sync between the TVs of the user (Télé API plugin): sends [changes] ({collection: {key: {"v", "t", "d"}}})
      * and answers every item of the user. Null without the plugin, when the sync is off on the server, or on error.
      */
-    suspend fun syncTvs(changes: JSONObject): JSONObject? = withContext(Dispatchers.IO) {
+    suspend fun syncTvs(changes: JSONObject, profile: String? = null): JSONObject? = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank() || "sync" !in teleApi()) return@withContext null
+        // A profile other than the main one: its own items on the server (newer plugins only)
+        if (profile != null && "sync_profiles" !in teleApi()) return@withContext null
         val body = JSONObject().put("changes", changes).toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url("$baseUrl${TeleApi.SYNC_PATH}").post(body).build()
+        val url = "$baseUrl${TeleApi.SYNC_PATH}".toHttpUrlOrNull()?.newBuilder()
+            ?.apply { profile?.let { addQueryParameter("profile", it) } }?.build() ?: return@withContext null
+        val request = Request.Builder().url(url).post(body).build()
         try {
             client.newCall(request).executeCancellable { response ->
                 if (!response.isSuccessful) {
@@ -958,6 +997,7 @@ class DispatcharrClient(
         private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "ttml")
         private const val TAG = "Dispatcharr"
         private const val QUICK_CALL_S = 6L
+        private val PROXY_KEY = Regex("^[0-9A-Za-z-]{8,64}$")
         const val DEFAULT_USER_AGENT = HttpClients.DEFAULT_USER_AGENT
         private const val ARTWORK_PAGE_SIZE = 500
         private const val MAX_ARTWORK_PAGES = 6

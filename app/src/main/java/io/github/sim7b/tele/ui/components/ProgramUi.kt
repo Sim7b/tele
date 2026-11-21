@@ -30,10 +30,11 @@ import java.util.Locale
 /** Current time, refreshed every [periodMs]: progress bars and remaining times move on their own. */
 @Composable
 fun rememberNow(periodMs: Long = 30_000L): Long {
-    val now by produceState(initialValue = System.currentTimeMillis()) {
+    val clock = LocalClock.current
+    val now by produceState(initialValue = clock.millis()) {
         while (true) {
             delay(periodMs)
-            value = System.currentTimeMillis()
+            value = clock.millis()
         }
     }
     return now
