@@ -62,6 +62,20 @@ enum class QualityPreference(
 
     val reordersStreams: Boolean get() = order != null
 
+    /**
+     * Streams of a Dispatcharr channel to play one after the other in automatic mode, the ones that failed lately
+     * (Télé API plugin) last; null to play the channel itself (Dispatcharr picks the stream and fails over). In
+     * server order, only when the first stream of the server failed lately: Dispatcharr would try it first again,
+     * and wait for its startup timeout (8 s by default) before the next one.
+     */
+    fun automaticOrder(streams: List<StreamSource>): List<StreamSource>? {
+        if (streams.isEmpty()) return null
+        if (!reordersStreams && !streams.first().recentFailures) return null
+        val (failing, healthy) = sort(streams).partition { it.recentFailures }
+        if (!reordersStreams && healthy.isEmpty()) return null
+        return healthy + failing
+    }
+
     /** Streams by preference; streams of the same quality keep the server order (stable sort). */
     fun sort(streams: List<StreamSource>): List<StreamSource> {
         val ranks = order ?: return streams

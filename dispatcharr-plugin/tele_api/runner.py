@@ -73,6 +73,12 @@ def _loop(token: object) -> None:
 
             stats.sample_peaks(client)
             stats.sample_vod(client)
+            # Streams of the channels: the available ones first, then the best (every 30 minutes on the server)
+            if settings.get("sort_streams", True):
+                from . import streamsort
+
+                if streamsort.due(client):
+                    streamsort.run(client, lambda: not _current(token))
             probe.run(settings)
             from . import tmdb
 

@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 API_VERSION = 1
 # Same as plugin.json (checked by the tests)
-PLUGIN_VERSION = "0.3.12"
+PLUGIN_VERSION = "0.3.13"
 
 DEFAULT_PAGE_SIZE = 1000
 MAX_PAGE_SIZE = 5000
@@ -1543,3 +1543,46 @@ def latest_release(answer: Any) -> Optional[Dict[str, Any]]:
     if version_tuple(tag) is None or not url.startswith("https://github.com/"):
         return None
     return {"version": tag.lstrip("vV"), "url": url[:300]}
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Order of the streams of a channel: available ones first, then by quality
+
+STREAM_SORT_EVERY = 30 * 60
+# A stream of unknown quality between HD and SD, as on the TVs
+UNKNOWN_HEIGHT = 600
+_RESOLUTION_RE = re.compile(r"^\s*\d{2,5}\s*[xX]\s*(\d{2,5})\s*$")
+_NAME_HEIGHTS = (
+    (re.compile(r"(?<![A-Z0-9])(4K|UHD|2160P?)(?![A-Z0-9])"), 2160),
+    (re.compile(r"(?<![A-Z0-9])(FHD|FULL ?HD|1080[PI]?)(?![A-Z0-9])"), 1080),
+    (re.compile(r"(?<![A-Z0-9])(HD|720P?)(?![A-Z0-9])"), 720),
+    (re.compile(r"(?<![A-Z0-9])(SD|480P?|576P?|LQ)(?![A-Z0-9])"), 480),
+)
+
+
+def stream_height(stats: Any, name: Any) -> Optional[int]:
+    """Height of a stream: measured by Dispatcharr ("resolution": "1920x1080") when it played, else read from its
+    name (4K, FHD, HD, SD...); None when unknown."""
+    if isinstance(stats, Mapping):
+        found = _RESOLUTION_RE.match(to_text(stats.get("resolution")) or "")
+        if found:
+            height = int(found.group(1))
+            if 100 <= height <= 4320:
+                return height
+    text = (to_text(name) or "").upper()[:300]
+    for pattern, height in _NAME_HEIGHTS:
+        if pattern.search(text):
+            return height
+    return None
+
+
+def stream_order(streams: List[Mapping[str, Any]]) -> List[int]:
+    """Stream ids of a channel in their new order: the available ones first (not failing lately, provider account
+    active, still in the playlist), then the highest quality; equal ones keep their order."""
+    def key(item):
+        index, stream = item
+        unavailable = bool(stream.get("failing")) or not stream.get("active", True) or bool(stream.get("stale"))
+        height = stream.get("height") or UNKNOWN_HEIGHT
+        return (1 if unavailable else 0, -height, index)
+
+    return [stream["id"] for _, stream in sorted(enumerate(streams), key=key)]
