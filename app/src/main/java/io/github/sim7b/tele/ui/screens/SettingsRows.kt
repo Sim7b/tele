@@ -26,7 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -153,7 +153,7 @@ internal fun SettingRow(
             }
             if (chevron) {
                 Spacer(modifier = Modifier.width(6.dp))
-                Icon(imageVector = Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = secondaryColor, modifier = Modifier.size(20.dp))
+                Icon(imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = secondaryColor, modifier = Modifier.size(20.dp))
             }
         }
     }

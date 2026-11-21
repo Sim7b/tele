@@ -772,7 +772,7 @@ class VodRepository(
             val stamps = chosen.mapNotNull { config -> settings.getVodCatalogStamp(config.id)?.let { config.id to it } }.toMap()
             val signature = librarySignature(loadedFor.map { it.id }.filter { it in chosenIds }, settings.vodDisplay.value.hideTheater, stamps)
             signature to signature?.let { settings.vodSnapshots.library(it) }
-        } ?: return
+        }
         if (signature == null || titles.isNullOrEmpty() || _library.value.titles.isNotEmpty()) return
         keptLibrary = signature to titles
         val (byKey, featured) = withContext(Dispatchers.Default) { titles.associateBy { it.key } to VodRows.featured(titles) }

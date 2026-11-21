@@ -77,7 +77,7 @@ import io.github.sim7b.tele.ui.components.FadeInImage
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.SelectionDot
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import io.github.sim7b.tele.ui.components.screenMargin
 import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.components.ProgressLine
@@ -263,7 +263,7 @@ fun VodDetailScreen(
                             if (buttonFiles.size > 1 && buttonFile != null) {
                                 VodButton(
                                     label = stringResource(R.string.vod_file_button, versionLabel(buttonFile)),
-                                    icon = Icons.Filled.List,
+                                    icon = Icons.AutoMirrored.Filled.List,
                                     onClick = { pickingFile = true }
                                 )
                             }
@@ -402,7 +402,7 @@ fun VodDetailScreen(
             if (episode.versions.size > 1) {
                 MenuRow(
                     label = stringResource(R.string.vod_menu_choose_file),
-                    icon = Icons.Filled.List,
+                    icon = Icons.AutoMirrored.Filled.List,
                     onClick = {
                         episodeMenu = null
                         pickingEpisodeFile = episode

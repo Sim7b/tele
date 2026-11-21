@@ -403,6 +403,7 @@ object DispatcharrVod {
 
     /** Id of the VOD logo of a list item: an id, or an object with its id. */
     private fun logoId(item: JSONObject): String? = when (val logo = item.opt("logo")) {
+        null -> null
         is JSONObject -> logo.optStringOrNull("id")
         is Number -> logo.toString().takeIf { logo.toLong() > 0 }
         is String -> logo.takeIf { it.isNotBlank() && it != "null" }

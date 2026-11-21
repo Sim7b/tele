@@ -141,7 +141,7 @@ object VodVersionOrder {
         BIBLIOGRAPHIC[value]?.let { return it }
         if (value.length == 2 || value.length == 3) {
             return try {
-                Locale(value).isO3Language.takeIf { it.isNotEmpty() } ?: value
+                Locale.Builder().setLanguage(value).build().isO3Language.takeIf { it.isNotEmpty() } ?: value
             } catch (e: java.util.MissingResourceException) {
                 value
             }

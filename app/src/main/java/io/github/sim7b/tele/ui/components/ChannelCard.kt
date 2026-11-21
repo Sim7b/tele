@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -952,7 +952,7 @@ fun ProgramActionDialog(
                 add { modifier ->
                     MenuRow(
                         label = stringResource(R.string.program_watch_live),
-                        icon = Icons.Filled.KeyboardArrowRight,
+                        icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         onClick = {
                             onDismiss()
                             onWatchLive()

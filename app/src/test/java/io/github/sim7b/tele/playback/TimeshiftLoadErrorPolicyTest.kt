@@ -16,6 +16,8 @@ import java.io.IOException
 @RunWith(RobolectricTestRunner::class)
 class TimeshiftLoadErrorPolicyTest {
 
+    // The constructor Media3 itself uses for its load events: deprecated for apps, kept for this test
+    @Suppress("DEPRECATION")
     private fun info(error: IOException, count: Int = 1) = LoadErrorHandlingPolicy.LoadErrorInfo(
         LoadEventInfo(0, DataSpec(Uri.parse("timeshift://live/0")), 0),
         MediaLoadData(C.DATA_TYPE_MEDIA),

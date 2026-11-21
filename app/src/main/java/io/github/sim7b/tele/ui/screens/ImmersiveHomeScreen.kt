@@ -1,5 +1,6 @@
 package io.github.sim7b.tele.ui.screens
 
+import io.github.sim7b.tele.ui.components.LocalClock
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -235,7 +236,7 @@ fun ImmersiveHomeScreen(
     // Free provider connections (Dispatcharr), next to the clock
     streamSlots: StreamSlots? = null
 ) {
-    val now = System.currentTimeMillis()
+    val now = LocalClock.current.millis()
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
@@ -1047,7 +1048,7 @@ private object NoFollow : BringIntoViewSpec {
 /** The cards of a row follow the focus as little as needed (the card fully shown), with a smooth ease. */
 @OptIn(ExperimentalFoundationApi::class)
 private object SmoothFollow : BringIntoViewSpec {
-    @Suppress("DEPRECATION")
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override val scrollAnimationSpec: AnimationSpec<Float> = tween(260, easing = FastOutSlowInEasing)
 
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {

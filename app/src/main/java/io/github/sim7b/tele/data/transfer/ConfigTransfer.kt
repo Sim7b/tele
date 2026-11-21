@@ -62,7 +62,9 @@ object ConfigTransfer {
                             val reader = client.getInputStream().bufferedReader()
                             val requestLine = reader.readLine().orEmpty()
                             // Headers, up to the blank line
-                            while (reader.readLine()?.isNotEmpty() == true) Unit
+                            do {
+                                val header = reader.readLine()
+                            } while (header?.isNotEmpty() == true)
                             val ok = requestLine.startsWith("GET $PATH ")
                             val body = if (ok) sealed.toByteArray(Charsets.UTF_8) else ByteArray(0)
                             val status = if (ok) "200 OK" else "404 Not Found"

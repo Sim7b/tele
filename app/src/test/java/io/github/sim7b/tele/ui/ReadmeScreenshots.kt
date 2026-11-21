@@ -8,7 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.isRoot
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
@@ -35,6 +35,11 @@ import androidx.compose.ui.res.stringResource
 import io.github.sim7b.tele.ui.screens.SearchScreen
 import io.github.sim7b.tele.ui.screens.SettingsScreen
 import io.github.sim7b.tele.ui.theme.TeleTheme
+import io.github.sim7b.tele.ui.components.LocalClock
+import androidx.compose.runtime.CompositionLocalProvider
+import java.time.Clock
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -89,8 +94,11 @@ class ReadmeScreenshots {
     private fun shoot(name: String, settle: () -> Unit = {}, jpeg: Boolean = false, content: @Composable () -> Unit) {
         assumeTrue("Screenshots are written with -Ptele.screenshots=<folder>", folder != null)
         compose.setContent {
-            TeleTheme {
-                Box(Modifier.fillMaxSize().background(LocalAppColors.current.background)) { content() }
+            // The same time on every capture (a fixed evening): the images only change with the screens
+            CompositionLocalProvider(LocalClock provides CLOCK) {
+                TeleTheme {
+                    Box(Modifier.fillMaxSize().background(LocalAppColors.current.background)) { content() }
+                }
             }
         }
         compose.mainClock.advanceTimeBy(1_500)
@@ -195,5 +203,10 @@ class ReadmeScreenshots {
             // The picker without its dialog window
             ProfileChoice(profiles, profiles.first(), stringResource(R.string.profile_picker_title), remember { FocusRequester() }) {}
         }
+    }
+
+    private companion object {
+        val CLOCK: Clock = ZonedDateTime.of(2026, 11, 16, 20, 35, 0, 0, ZoneId.of("Europe/Paris"))
+            .let { Clock.fixed(it.toInstant(), it.zone) }
     }
 }

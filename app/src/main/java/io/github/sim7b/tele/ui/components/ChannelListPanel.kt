@@ -21,8 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
@@ -527,9 +527,10 @@ private fun PanelHeader(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val now by produceState(initialValue = LocalTime.now()) {
+    val clock = LocalClock.current
+    val now by produceState(initialValue = LocalTime.now(clock)) {
         while (true) {
-            value = LocalTime.now()
+            value = LocalTime.now(clock)
             delay(5_000)
         }
     }
@@ -588,7 +589,7 @@ private fun PanelHeader(
                     )
                 }
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowLeft,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                     contentDescription = null,
                     tint = Color.White.copy(alpha = if (expanded) 0.9f else 0.45f),
                     // Small: the touch area grows to the minimum touch size
@@ -611,7 +612,7 @@ private fun PanelHeader(
                     color = Color.White.copy(alpha = 0.45f)
                 )
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowRight,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
                     tint = Color.White.copy(alpha = if (expanded) 0.9f else 0.45f),
                     modifier = Modifier
@@ -745,7 +746,7 @@ private fun PanelChannelRow(
                     Column(modifier = Modifier.padding(top = 8.dp)) {
                         if (!program?.category.isNullOrBlank()) {
                             Text(
-                                text = program?.category.orEmpty().uppercase(),
+                                text = program.category.orEmpty().uppercase(),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 letterSpacing = 1.2.sp,
@@ -754,7 +755,7 @@ private fun PanelChannelRow(
                         }
                         if (!program?.nextTitle.isNullOrBlank()) {
                             Text(
-                                text = stringResource(R.string.panel_next_program, program?.nextStartTime.orEmpty(), program?.nextTitle.orEmpty()),
+                                text = stringResource(R.string.panel_next_program, program.nextStartTime.orEmpty(), program.nextTitle.orEmpty()),
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.5f),
                                 maxLines = 1,
@@ -769,7 +770,7 @@ private fun PanelChannelRow(
             onPrograms?.let { open ->
                 Spacer(modifier = Modifier.width(8.dp))
                 RoundIconButton(
-                    icon = Icons.Filled.KeyboardArrowRight,
+                    icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = stringResource(R.string.panel_programs, channel.name),
                     onClick = open,
                     size = 36.dp,
@@ -808,7 +809,7 @@ private fun ScheduleColumn(
         Row(verticalAlignment = Alignment.CenterVertically) {
             onClose?.let { close ->
                 RoundIconButton(
-                    icon = Icons.Filled.KeyboardArrowLeft,
+                    icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                     contentDescription = stringResource(R.string.panel_title),
                     onClick = close,
                     size = 36.dp,

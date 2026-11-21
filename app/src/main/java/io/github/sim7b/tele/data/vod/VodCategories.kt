@@ -44,7 +44,7 @@ object VodCategories {
     private val COUNTRIES: Map<String, String> by lazy {
         val map = HashMap<String, String>()
         Locale.getISOCountries().forEach { code ->
-            val locale = Locale("", code)
+            val locale = Locale.Builder().setRegion(code).build()
             map[code] = code
             try {
                 map.putIfAbsent(locale.isO3Country, code)

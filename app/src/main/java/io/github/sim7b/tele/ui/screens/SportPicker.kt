@@ -6,7 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -116,7 +116,7 @@ fun SportPickerDialog(followed: List<String>, onChange: (List<String>) -> Unit, 
                     MenuRow(
                         label = topic.name,
                         subtitle = listOfNotNull(pluralStringResource(R.plurals.sport_items, topic.children.size, topic.children.size), state).joinToString(" · "),
-                        trailing = { Icon(imageVector = Icons.Filled.KeyboardArrowRight, contentDescription = null) },
+                        trailing = { Icon(imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                         onClick = { path = path + topic }
                     )
                 }
