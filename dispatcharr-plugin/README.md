@@ -20,6 +20,11 @@ no admin key needed:
 - **Stream health**: the failures of each provider stream (errors, failovers, buffering) are counted from
   the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
   marks them in its stream picker.
+- **Streams of the channels in order**: every 30 minutes (setting *Sort the streams of the channels*, or *Sort
+  now* on the Télé page), the streams of each enabled channel are put in order in Dispatcharr: the available ones
+  first (not failing lately, provider account active, still in the playlist), then the best quality (the
+  resolution Dispatcharr measured, else the one of the name). Dispatcharr plays the first stream: a dead one in
+  first place made every start wait for its startup timeout. A channel being watched is sorted at the next run.
 - **A page for admins** (`/api/tele/ui/`, the link of the plugin card): free connections, every open session
   (with a button to close it), the Télé TVs seen (install id, user, version of Télé, address, last request,
   with a button closing all their sessions), statistics of the last 7 or 30 days (most started channels,

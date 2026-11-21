@@ -61,6 +61,15 @@ class Plugin:
                     stats.record_view(client, params.get("payload"))
                 return {"status": "ok"}
             return {"status": "ok", "message": f"{health.tracked(client) if client else 0} streams with recent failures or plays"}
+        if action == "sort_streams":
+            from . import data, streamsort
+
+            done = streamsort.run(data.redis_client())
+            if done["outcome"] == "running":
+                return {"status": "ok", "message": "A sort is already running"}
+            if done["outcome"] != "done":
+                return {"status": "error", "message": f"Streams not sorted ({done['outcome']})"}
+            return {"status": "ok", "message": streamsort.describe(done)}
         if action == "probe_one":
             return {"status": "ok", "message": probe_one_now(context.get("settings") or {})}
         if action == "probe_now":

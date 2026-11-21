@@ -163,6 +163,15 @@
           <div id="overview-days" class="chart"></div>
         </section>
       </div>
+      <section class="card" aria-labelledby="sort-title">
+        <div class="spread"><h2 id="sort-title">Streams of the channels</h2><span class="muted small" id="sort-last"></span></div>
+        <div class="muted small">The available streams first (not failing lately, provider account active, still in the playlist), then the best quality. Dispatcharr plays the first one: a dead stream in first place delays every start.</div>
+        <div id="sort-result"></div>
+        <div class="row">
+          <button class="primary" id="sort-now" type="button">Sort now</button>
+          <span class="muted small" id="sort-auto"></span>
+        </div>
+      </section>
     </div>
 
     <!-- VOD -->
@@ -1390,6 +1399,19 @@
 
   // ---------- Loading
   var loading = false;
+  function showSort(data) {
+    var last = data.last;
+    text("sort-auto", data.enabled ? "Sorted by itself every 30 minutes" : "Automatic sort off (plugin settings)");
+    text("sort-last", last ? "Last sort " + ago(last.at) : "Never sorted");
+    var box = $("sort-result");
+    box.textContent = "";
+    if (!last) return;
+    var line = fmt(last.changed) + " of " + fmt(last.channels) + " channels with several streams put in order";
+    if (last.playing) line += ", " + fmt(last.playing) + " being watched left for the next run";
+    if (last.outcome && last.outcome !== "done") line += " (" + last.outcome + ")";
+    box.appendChild(el("div", { class: "small", text: line }));
+  }
+
   function load() {
     if (loading) return Promise.resolve();
     loading = true;
@@ -1404,6 +1426,7 @@
         call("admin/probes/").then(showProbes),
         call("admin/devices/").then(function (data) { state.latestApp = data.latest_app || null; showDevices(data.devices || []); return loadMessages(); }),
         call("admin/stats/?days=14").then(showOverviewDays).catch(function () { showOverviewDays({}); }),
+        call("admin/streams/sort/").then(showSort).catch(function () { showSort({}); }),
         loadStats(state.statsDays),
         call("admin/tmdb/").then(showTmdb),
         loadSubtitles(),
@@ -1470,6 +1493,13 @@
   $("retry-failed").addEventListener("click", function () {
     post("admin/probes/retry/").then(function (data) { say(data.forgotten + " failed categories probed again from the next run"); return loadCategories(); })
       .catch(fail("Not done"));
+  });
+  $("sort-now").addEventListener("click", function () {
+    $("sort-now").disabled = true;
+    post("admin/streams/sort/").then(function (data) {
+      say(data.last && data.last.outcome === "running" ? "A sort is already running" : "Streams sorted");
+      showSort(data);
+    }).catch(fail("Not sorted")).then(function () { $("sort-now").disabled = false; });
   });
   $("probe-now").addEventListener("click", function () {
     post("admin/probes/run/").then(function () { say("Probes started: within 15 seconds"); }).catch(fail("Not started"));

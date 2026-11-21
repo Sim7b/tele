@@ -264,6 +264,19 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(response.data["released"], ["live:abc:tv"])
         self.assertEqual((bad.status_code, refused.status_code), (400, 403))
 
+    def test_streams_are_sorted_from_the_tele_page_by_admins_only(self):
+        done = {"at": 1.0, "channels": 4, "changed": 2, "playing": 0, "outcome": "done"}
+        with mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch("tele_api.streamsort.run", return_value=done) as run, \
+                mock.patch("tele_api.streamsort.last", return_value=done):
+            shown = self.call(views.AdminStreamSortView, who=user(level=10))
+            sorted_now = self.call(views.AdminStreamSortView, "post", who=user(level=10))
+            refused = self.call(views.AdminStreamSortView, "post", who=user())
+        self.assertEqual((shown.data["last"]["changed"], shown.data["enabled"]), (2, True))
+        self.assertEqual(sorted_now.data["last"]["channels"], 4)
+        self.assertEqual(refused.status_code, 403)
+        run.assert_called_once()
+
     def test_tmdb_ids_and_key_for_admins(self):
         with mock.patch("tele_api.tmdb.ids", return_value={"5": "438631"}):
             response = self.call(views.TmdbIdsView, path="/?kind=movie", who=user())

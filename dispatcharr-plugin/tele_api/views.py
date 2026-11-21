@@ -961,6 +961,28 @@ class AdminProbesView(AdminView):
         )
 
 
+class AdminStreamSortView(AdminView):
+    """Sort of the streams of the channels (streamsort.py): the last run and the setting; POST sorts them now."""
+
+    def _answer(self, client, last):
+        return Response({"api": core.API_VERSION, "enabled": bool(self.setting("sort_streams", True)), "last": last})
+
+    def get(self, request):
+        from . import streamsort
+
+        client = data.redis_client()
+        return self._answer(client, streamsort.last(client))
+
+    def post(self, request):
+        from . import streamsort
+
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        done = streamsort.run(client)
+        return self._answer(client, done if done["outcome"] == "running" else streamsort.last(client) or done)
+
+
 class AdminProbeRunView(AdminView):
     def post(self, request):
         from . import runner

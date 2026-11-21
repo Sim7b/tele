@@ -1,6 +1,6 @@
 {
   "name": "Télé API",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "Endpoints and a page for the Télé Android TV player, open to standard users: channels with the current program in one call, free provider connections, playback sessions, and the audio and subtitle languages of the VOD measured with ffprobe.",
   "author": "Télé",
   "help_url": "/api/tele/ui/",
@@ -38,6 +38,13 @@
       "type": "boolean",
       "default": false,
       "help_text": "Off: standard users only get the numbers of free connections; admins always see the names."
+    },
+    {
+      "id": "sort_streams",
+      "label": "Sort the streams of the channels",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Every 30 minutes, the streams of each channel enabled in a channel profile are put in order: the available ones first (not failing lately, provider account active, still in the playlist), then the best quality (the resolution Dispatcharr measured, else the one of the name). A channel being watched is sorted at the next run. Also from the Télé page."
     },
     {
       "id": "tv_message",
@@ -189,6 +196,13 @@
         "channel_buffering",
         "channel_start"
       ]
+    },
+    {
+      "id": "sort_streams",
+      "label": "Sort the streams now",
+      "description": "Puts the streams of every enabled channel in order now: the available ones first, then the best quality.",
+      "button_label": "Sort",
+      "button_variant": "outline"
     },
     {
       "id": "probe_one",
