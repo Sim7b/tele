@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.37](https://github.com/Sim7b/tele/compare/v0.3.36...v0.3.37) (2026-11-21)
+
+### Bug Fixes
+
+* Dispatcharr channels that never started, and a failing plugin slowing the app ([6337037](https://github.com/Sim7b/tele/commit/63370377154576c202fdd8660f2f3fea737cca56))
+* **dispatcharr-plugin:** quieter loads and probe runs ([9750b87](https://github.com/Sim7b/tele/commit/9750b8794c59de4c8a6d31eadf245f57410705a6))
+
 ## [0.3.36](https://github.com/Sim7b/tele/compare/v0.3.35...v0.3.36) (2026-11-16)
 
 ### Features
