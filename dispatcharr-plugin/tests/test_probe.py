@@ -400,6 +400,44 @@ class RunnerTest(unittest.TestCase):
             thread.join(timeout=2)
         self.assertFalse(thread.is_alive())
 
+    def _running(self, runner, token, settings=None):
+        import sys
+        import threading
+
+        setattr(sys, runner._HOLDER, token)
+        thread = threading.Thread(target=runner._loop, args=(token,), daemon=True)
+        thread.start()
+        return thread
+
+    def test_an_unloaded_plugin_stops_its_runner(self):
+        # Dispatcharr removes the package of a plugin it unloads (disable, update): the runner must not go on
+        import sys
+
+        from tele_api import runner
+
+        with mock.patch.object(runner, "CHECK_WAKE_EVERY", 0.01), mock.patch.object(runner, "_settings", return_value=None), \
+                mock.patch("tele_api.data.redis_client", return_value=FakeRedis()):
+            thread = self._running(runner, object())
+            with mock.patch.dict(sys.modules, {"tele_api": None}):
+                thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+
+    def test_disabling_stops_the_runner_and_a_lost_module_ends_it_quietly(self):
+        from tele_api import runner
+
+        with mock.patch.object(runner, "CHECK_WAKE_EVERY", 0.01), mock.patch.object(runner, "FIRST_DELAY", 0), \
+                mock.patch("tele_api.data.redis_client", return_value=FakeRedis()):
+            thread = self._running(runner, object())
+            runner.stop()
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+
+            with mock.patch.object(runner, "_settings", side_effect=ModuleNotFoundError("_dispatcharr_plugin_tele_api")), \
+                    self.assertNoLogs("apps.tele_api.runner", level="ERROR"):
+                thread = self._running(runner, object())
+                thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+
 
 class SelectionTest(unittest.TestCase):
     def setUp(self):

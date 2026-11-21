@@ -29,7 +29,6 @@ from . import core
 # Under "apps": a logger Dispatcharr sends to its console and log browser
 logger = logging.getLogger("apps.tele_api.probe")
 
-TASK_NAME = "tele_api.probe_vod_languages"
 SCHEDULE_NAME = "Télé API: VOD languages"
 LOCK_KEY = "tele_api:probe:lock"
 # Titles asked for by a sheet of Télé: probed before the categories

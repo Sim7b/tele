@@ -3,7 +3,8 @@
 A Celery worker only knows the task of a plugin installed before it started: without a restart of Dispatcharr,
 the probes would never run. Each web process that loads the plugin starts a background runner (a greenlet
 under the gevent of uWSGI); the Redis lock of probe.run lets one run at a time on the whole server, the other
-runners finding the lock taken. A newer load of the plugin (update, reload) stops the runners of the older one.
+runners finding the lock taken. A newer load of the plugin (update, reload) stops the runners of the older one, and a runner stops once
+Dispatcharr unloaded the plugin (disabled, updated, removed).
 """
 
 from __future__ import annotations
@@ -39,12 +40,26 @@ def _settings():
     return plugin_settings()
 
 
+def _current(token: object) -> bool:
+    """Whether this runner is still the one of the plugin loaded: not after a newer load, nor once Dispatcharr
+    unloaded the plugin (disabled, updated, removed: its package is gone, its modules cannot be imported)."""
+    return getattr(sys, _HOLDER, None) is token and sys.modules.get(__package__) is not None
+
+
+def stop() -> None:
+    """Stops the runner of this process (the plugin is disabled here)."""
+    if hasattr(sys, _HOLDER):
+        setattr(sys, _HOLDER, None)
+
+
 def _loop(token: object) -> None:
     from . import data
 
     next_run = time.monotonic() + FIRST_DELAY
-    while getattr(sys, _HOLDER, None) is token:
+    while _current(token):
         time.sleep(CHECK_WAKE_EVERY)
+        if not _current(token):
+            break
         try:
             client = data.redis_client()
             woken = bool(client is not None and client.delete(WAKE_KEY))
@@ -61,11 +76,14 @@ def _loop(token: object) -> None:
             probe.run(settings)
             from . import tmdb
 
-            tmdb.run(settings, client, lambda: getattr(sys, _HOLDER, None) is not token)
+            tmdb.run(settings, client, lambda: not _current(token))
             if settings.get("prefetch_episodes", True):
                 from . import prefetch
 
-                prefetch.run(client, lambda: getattr(sys, _HOLDER, None) is not token)
+                prefetch.run(client, lambda: not _current(token))
+        except ModuleNotFoundError:
+            # The plugin was unloaded meanwhile: this runner is of no use any more
+            break
         except Exception:
             logger.exception("Télé API: probe runner error")
         finally:
@@ -75,7 +93,7 @@ def _loop(token: object) -> None:
                 close_old_connections()
             except Exception:
                 pass
-    logger.info("Télé API: probe runner of an older load stopped")
+    logger.info("Télé API: probe runner of an older or unloaded plugin stopped")
 
 
 def start() -> bool:
