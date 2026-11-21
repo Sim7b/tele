@@ -34,6 +34,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
   - **guide grid** (Guide button of the home screen): the channels in rows and the next 30 hours in columns, by category (favorites, all, each category); ← / → go from program to program, ↑ / ↓ change channel at the same time, the focused program is detailed at the top, OK watches the channel and Back returns to now, then closes the grid. CH+ / CH− skip a page and the digits go to a channel number;
   - **reminders**: OK on a coming program (grid or channel panel) sets a reminder; a minute before it starts, a message offers to switch to the channel;
+  - **match alerts** (**Settings → Appearance**, with followed teams and competitions): the coming matches of the day get a reminder by themselves, once each (one removed is not set again);
   - **replay** (Xtream accounts with catch-up): the programs of the past day kept by the provider are marked REPLAY in the grid and the channel panel, and OK plays them again with the movie player (seek, pause).
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.
 - **Quick start guide** on the first launch: the main remote gestures in four pages, available again in **Settings → System**.

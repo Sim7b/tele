@@ -185,6 +185,7 @@ fun SettingsScreen(
     val previewDelay by repository.previewDelay.collectAsState()
     val homeLayout by repository.homeLayout.collectAsState()
     val followedSport by repository.followedSport.collectAsState()
+    val sportAlerts by repository.sportAlerts.collectAsState()
     val matchFrameRate by repository.matchFrameRate.collectAsState()
     val audioPassthrough by repository.audioPassthrough.collectAsState()
     val bufferSize by repository.bufferSize.collectAsState()
@@ -721,6 +722,14 @@ fun SettingsScreen(
                                         label = stringResource(R.string.settings_followed_sport),
                                         value = followedSportLabel(followedSport).ifEmpty { stringResource(R.string.settings_followed_sport_none) },
                                         onClick = { editingSport = true }
+                                    )
+                                }
+                                if (followedSport.isNotEmpty()) item {
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_sport_alerts),
+                                        description = stringResource(R.string.settings_sport_alerts_description),
+                                        toggle = sportAlerts,
+                                        onClick = { repository.setSportAlerts(!sportAlerts) }
                                     )
                                 }
                                 if (homeLayout.style == HomeStyle.IMMERSIVE) item {

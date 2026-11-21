@@ -984,4 +984,6 @@
     <string name="handoff_resume_here">Resume here</string>
     <string name="handoff_dismiss">Not now</string>
     <string name="options_send_to_tv">Send to another TV</string>
+    <string name="settings_sport_alerts">Match alerts</string>
+    <string name="settings_sport_alerts_description">A reminder is set by itself for the coming matches of the followed teams and competitions: a minute before, a notification opens the channel</string>
 </resources>

@@ -998,4 +998,6 @@
     <string name="handoff_resume_here">Reprendre ici</string>
     <string name="handoff_dismiss">Pas maintenant</string>
     <string name="options_send_to_tv">Envoyer sur une autre TV</string>
+    <string name="settings_sport_alerts">Alertes des matchs</string>
+    <string name="settings_sport_alerts_description">Un rappel est posé tout seul pour les prochains matchs des équipes et compétitions suivies : une minute avant, une notification ouvre la chaîne</string>
 </resources>

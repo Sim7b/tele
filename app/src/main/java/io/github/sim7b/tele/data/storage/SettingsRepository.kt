@@ -194,6 +194,10 @@ class SettingsRepository(context: Context) {
     val vodEnabled: StateFlow<Boolean> = _vodEnabled.asStateFlow()
 
     // Screen switched to the frame rate of the video (50 Hz for the European channels, 24 Hz for movies)
+    private val _sportAlerts = MutableStateFlow(true)
+    /** The coming matches of the followed teams and competitions get a reminder by themselves. */
+    val sportAlerts: StateFlow<Boolean> = _sportAlerts.asStateFlow()
+
     private val _matchFrameRate = MutableStateFlow(true)
     val matchFrameRate: StateFlow<Boolean> = _matchFrameRate.asStateFlow()
     // Same loudness from one channel to the next, or night mode
@@ -295,6 +299,7 @@ class SettingsRepository(context: Context) {
         _styleChosen.value = prefs.getBoolean(KEY_STYLE_CHOSEN, prefs.contains(KEY_HOME_LAYOUT) || _guideSeen.value)
         _vodEnabled.value = prefs.getBoolean(KEY_VOD_ENABLED, false)
         _matchFrameRate.value = prefs.getBoolean(KEY_MATCH_FRAME_RATE, true)
+        _sportAlerts.value = prefs.getBoolean(KEY_SPORT_ALERTS, true)
         _audioLeveling.value = AudioLeveling.entries.firstOrNull { it.name == prefs.getString(KEY_AUDIO_LEVELING, null) } ?: AudioLeveling.OFF
         _timeshift.value = prefs.getBoolean(KEY_TIMESHIFT, true)
         _audioPassthrough.value = prefs.getBoolean(KEY_AUDIO_PASSTHROUGH, true)
@@ -496,6 +501,11 @@ class SettingsRepository(context: Context) {
     fun setVodDisplay(display: VodDisplay) {
         prefs.edit().putString(KEY_VOD_DISPLAY, display.toJson().toString()).apply()
         _vodDisplay.value = display
+    }
+
+    fun setSportAlerts(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_SPORT_ALERTS, enabled) }
+        _sportAlerts.value = enabled
     }
 
     fun setMatchFrameRate(enabled: Boolean) {
@@ -928,6 +938,7 @@ class SettingsRepository(context: Context) {
         _audioLanguage.value?.let { put("audioLanguage", it) }
         put("vodEnabled", _vodEnabled.value)
         put("matchFrameRate", _matchFrameRate.value)
+        put("sportAlerts", _sportAlerts.value)
         put("audioLeveling", _audioLeveling.value.name)
         put("timeshift", _timeshift.value)
         put("audioPassthrough", _audioPassthrough.value)
@@ -997,6 +1008,7 @@ class SettingsRepository(context: Context) {
         setAudioLanguage(json.optStringOrNull("audioLanguage"))
         if (json.has("vodEnabled")) setVodEnabled(json.optBoolean("vodEnabled", false))
         if (json.has("matchFrameRate")) setMatchFrameRate(json.optBoolean("matchFrameRate", true))
+        if (json.has("sportAlerts")) setSportAlerts(json.optBoolean("sportAlerts", true))
         AudioLeveling.entries.firstOrNull { it.name == json.optString("audioLeveling") }?.let { setAudioLeveling(it) }
         if (json.has("timeshift")) setTimeshift(json.optBoolean("timeshift", true))
         if (json.has("audioPassthrough")) setAudioPassthrough(json.optBoolean("audioPassthrough", true))
@@ -1070,6 +1082,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_PREVIEW_DELAY = "home_preview_delay"
         private const val KEY_VOD_ENABLED = "vod_enabled"
         private const val KEY_MATCH_FRAME_RATE = "match_frame_rate"
+        private const val KEY_SPORT_ALERTS = "sport_alerts"
         private const val KEY_AUDIO_LEVELING = "audio_leveling"
         private const val KEY_TIMESHIFT = "timeshift"
         private const val KEY_AUDIO_PASSTHROUGH = "audio_passthrough"

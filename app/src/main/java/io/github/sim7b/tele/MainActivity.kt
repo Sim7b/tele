@@ -532,6 +532,16 @@ class MainActivity : ComponentActivity() {
             val reminders by viewModel.guideStore.reminders.collectAsState()
             // The alarm of the next one, for when the app is not on screen
             LaunchedEffect(reminders) { withContext(Dispatchers.IO) { ReminderAlarms.schedule(applicationContext, reminders) } }
+            // Sport alerts: the coming matches of the followed teams get a reminder by themselves, each one once
+            val sportAlerts by configRepository.sportAlerts.collectAsState()
+            LaunchedEffect(sportEvents, sportAlerts) {
+                if (!sportAlerts) return@LaunchedEffect
+                val store = viewModel.guideStore
+                val alerts = SportEvents.alerts(sportEvents, store.reminders.value, store.sportAlerted.value, System.currentTimeMillis())
+                if (alerts.isEmpty()) return@LaunchedEffect
+                withContext(Dispatchers.IO) { store.addSportAlerts(alerts) }
+                askNotificationsIfNeeded()
+            }
             fun guideActions(returnTo: CurrentScreen) = GuideActions(
                 reminders = reminders,
                 toggleReminder = { channel, program ->
