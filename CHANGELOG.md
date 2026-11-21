@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.39](https://github.com/Sim7b/tele/compare/v0.3.38...v0.3.39) (2026-11-21)
+
+### Features
+
+* **dispatcharr-plugin:** streams of the channels sorted by availability then quality ([394ab31](https://github.com/Sim7b/tele/commit/394ab31c69d025a7c0da2ffda4dd2af3c20751dd))
+
+### Bug Fixes
+
+* healthy streams first when the first stream of a Dispatcharr channel fails ([39d40c2](https://github.com/Sim7b/tele/commit/39d40c2036055dcd63b2a3b5c88bd4d00e2ddace))
+
 ## [0.3.38](https://github.com/Sim7b/tele/compare/v0.3.37...v0.3.38) (2026-11-21)
 
 ### Bug Fixes
