@@ -56,6 +56,30 @@ class StoreTest(unittest.TestCase):
                 fh.write("{broken")
             self.assertEqual(sync.load(7)["favorites"], {})
 
+    def test_each_profile_has_its_own_items_eight_per_user(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        with mock.patch.object(probe, "data_dir", return_value=folder.name):
+            sync.merge(7, {"favorites": {"main": {"v": 0, "t": 5}}})
+            sync.merge(7, {"favorites": {"kid": {"v": 0, "t": 5}}}, "lea")
+            self.assertEqual(list(sync.load(7)["favorites"]), ["main"])
+            self.assertEqual(list(sync.load(7, "lea")["favorites"]), ["kid"])
+            self.assertEqual(sync.load(8, "lea")["favorites"], {})
+            for index in range(sync.MAX_PROFILES - 1):
+                self.assertTrue(sync.profile_allowed(7, f"p{index}"))
+                sync.merge(7, {"favorites": {"x": {"v": 0, "t": 5}}}, f"p{index}")
+            self.assertFalse(sync.profile_allowed(7, "onemore"))
+            self.assertTrue(sync.profile_allowed(7, "lea"))
+            self.assertTrue(sync.profile_allowed(7, None))
+            self.assertTrue(sync.profile_allowed(8, "onemore"))
+
+    def test_profile_names(self):
+        self.assertIsNone(core.sync_profile(None))
+        self.assertIsNone(core.sync_profile(""))
+        self.assertEqual("lea", core.sync_profile("lea"))
+        for bad in ("Léa", "../x", "a" * 25, "a-b", "a b"):
+            self.assertIs(core.sync_profile(bad), False)
+
 
 if __name__ == "__main__":
     unittest.main()

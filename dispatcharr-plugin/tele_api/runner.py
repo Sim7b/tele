@@ -62,6 +62,14 @@ def _loop(token: object) -> None:
             break
         try:
             client = data.redis_client()
+            if client is not None:
+                # Connections held for paused TVs past their time: given back within 15 s
+                from . import holds
+
+                try:
+                    holds.expire(client)
+                except Exception:
+                    logger.debug("Télé API: held connections not checked", exc_info=True)
             woken = bool(client is not None and client.delete(WAKE_KEY))
             if not woken and time.monotonic() < next_run:
                 continue

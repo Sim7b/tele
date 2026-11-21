@@ -264,6 +264,50 @@ class VodLanguagesViewTest(ViewTest):
         self.assertEqual(response.data["released"], ["live:abc:tv"])
         self.assertEqual((bad.status_code, refused.status_code), (400, 403))
 
+    def test_start_state_of_a_channel_the_user_may_watch(self):
+        class Channels:
+            def __init__(self, found):
+                self.found = found
+
+            def filter(self, *args, **kwargs):
+                return self
+
+            def exists(self):
+                return self.found
+
+        class Redis:
+            def hgetall(self, key):
+                return {"state": "initializing", "state_changed_at": "10"} if key == "live:channel:c9af2342-5b82-4871-9780-98a07230f594:metadata" else {}
+
+            def get(self, key):
+                return None
+
+        path = "/?key=c9af2342-5b82-4871-9780-98a07230f594"
+        with mock.patch.object(views.data, "redis_client", return_value=Redis()), \
+                mock.patch.object(views.data, "visible_channels", return_value=Channels(True)):
+            starting = self.call(views.ChannelStateView, path=path, who=user())
+            by_hash = self.call(views.ChannelStateView, path="/?key=0123abcdef99", who=user())
+            bad = self.call(views.ChannelStateView, path="/?key=../etc", who=user())
+        with mock.patch.object(views.data, "visible_channels", return_value=Channels(False)):
+            hidden = self.call(views.ChannelStateView, path=path, who=user())
+        self.assertEqual(starting.data["state"], "initializing")
+        self.assertIsNone(by_hash.data["state"])
+        self.assertEqual((bad.status_code, hidden.status_code), (400, 404))
+
+    def test_a_paused_tv_holds_its_vod_connection(self):
+        with mock.patch.object(views.data, "redis_client", return_value=object()), \
+                mock.patch("tele_api.holds.hold", return_value={"held": True, "until": 5.0}) as hold, \
+                mock.patch("tele_api.holds.release", return_value=True) as release:
+            with mock.patch.object(views.core, "device_id", return_value="1f2cdea2a0bf"):
+                held = self.call(views.VodHoldView, "post", who=user(), body={"hold": True})
+                given = self.call(views.VodHoldView, "post", who=user(), body={"hold": False})
+            unknown = self.call(views.VodHoldView, "post", who=user(), body={"hold": True})
+        self.assertTrue(held.data["held"])
+        self.assertEqual(hold.call_args.args[1:], ("1f2cdea2a0bf", 7, 30))
+        self.assertTrue(given.data["released"])
+        release.assert_called_once()
+        self.assertEqual(unknown.status_code, 400)
+
     def test_streams_are_sorted_from_the_tele_page_by_admins_only(self):
         done = {"at": 1.0, "channels": 4, "changed": 2, "playing": 0, "outcome": "done"}
         with mock.patch.object(views.data, "redis_client", return_value=object()), \

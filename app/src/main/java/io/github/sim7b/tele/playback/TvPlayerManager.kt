@@ -123,7 +123,14 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     private var exoPlayer: ExoPlayer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val _playingUrl = MutableStateFlow<String?>(null)
+    /** Address being played or started (the next stream after a failure): what the server says of it while it starts. */
+    val playingUrl: StateFlow<String?> = _playingUrl.asStateFlow()
     private var currentUrl: String? = null
+        set(value) {
+            field = value
+            _playingUrl.value = value
+        }
     // Next streams to try when the current one fails for good (automatic choice by quality)
     private val fallbackUrls = ArrayDeque<String>()
     private var currentUserAgent: String? = null
@@ -445,6 +452,9 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
                 if (audioPassthrough) {
                     super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
                 } else {
+                    // Decoded by the TV (PCM): the capabilities of a sink without passthrough, as Media3 has no
+                    // other way to refuse the passthrough the device offers
+                    @Suppress("DEPRECATION")
                     DefaultAudioSink.Builder(context).setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES).build()
                 }
         }

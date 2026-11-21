@@ -960,4 +960,10 @@
     <string name="profile_delete_description">Ses favoris, reprises, ma liste et collections sont supprimés</string>
     <string name="profile_kids_nothing_locked">Rien n\'est encore verrouillé</string>
     <string name="profile_kids_nothing_locked_description">Choisissez ce que verrouille le contrôle parental : catégories, films et séries</string>
+    <string name="player_start_preparing">Le serveur prépare la chaîne…</string>
+    <string name="player_start_connecting">Connexion au fournisseur…</string>
+    <string name="player_start_provider_slow">Le fournisseur tarde à envoyer l\'image…</string>
+    <string name="player_start_switching">Ce flux ne répond pas, essai du suivant…</string>
+    <string name="player_start_starting">Démarrage de la lecture…</string>
+    <string name="player_start_waiting">Le serveur met du temps à répondre…</string>
 </resources>

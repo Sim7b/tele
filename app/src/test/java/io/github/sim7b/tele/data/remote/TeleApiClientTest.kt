@@ -199,6 +199,75 @@ class TeleApiClientTest {
     }
 
     @Test
+    fun `the start state of a channel is asked with the key of its proxy address`() = runBlocking {
+        var asked: String? = null
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"plugin": "tele_api", "api": 1, "features": ["channel_state"]}""")
+                TeleApi.CHANNEL_STATE_PATH -> {
+                    asked = request.url.queryParameter("key")
+                    json("""{"api": 1, "state": "connecting", "since": 5.5, "stream": 153212, "chunks": 0}""")
+                }
+                else -> null
+            }
+        }
+
+        val client = client()
+        val state = client.getChannelState(client.proxyStreamUrl("c9af2342-5b82-4871-9780-98a07230f594"))
+        assertEquals(ChannelStartState("connecting", 5.5, 153212, 0), state)
+        assertEquals("c9af2342-5b82-4871-9780-98a07230f594", asked)
+        // Not an address of this server: not asked
+        assertNull(client.getChannelState("https://provider.example/live/u/p/1.ts"))
+    }
+
+    @Test
+    fun `a profile other than the main one syncs its own items, on plugins that keep them`() = runBlocking {
+        var features = """["sync", "sync_profiles"]"""
+        val asked = mutableListOf<String?>()
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"plugin": "tele_api", "api": 1, "features": $features}""")
+                TeleApi.SYNC_PATH -> {
+                    asked.add(request.url.queryParameter("profile"))
+                    json("""{"api": 1, "items": {}, "kept": 0}""")
+                }
+                else -> null
+            }
+        }
+
+        val client = client()
+        assertTrue(client.syncTvs(JSONObject(), "lea") != null)
+        assertTrue(client.syncTvs(JSONObject()) != null)
+        assertEquals(listOf("lea", null), asked)
+        // An older plugin: the items of the main profile only
+        features = """["sync"]"""
+        client.clearCaches()
+        assertNull(client.syncTvs(JSONObject(), "lea"))
+        assertEquals(2, asked.size)
+    }
+
+    @Test
+    fun `a paused movie keeps its provider connection through the plugin`() = runBlocking {
+        val bodies = mutableListOf<String>()
+        serve { request ->
+            when (request.url.encodedPath) {
+                TeleApi.INFO_PATH -> json("""{"plugin": "tele_api", "api": 1, "features": ["vod_hold"]}""")
+                TeleApi.VOD_HOLD_PATH -> {
+                    val body = request.body?.utf8().orEmpty()
+                    synchronized(bodies) { bodies.add(body) }
+                    if ("true" in body) json("""{"api": 1, "held": true, "until": 5.0}""") else json("""{"api": 1, "held": false, "released": true}""")
+                }
+                else -> null
+            }
+        }
+
+        val client = client()
+        assertTrue(client.holdVod(true))
+        assertTrue(client.holdVod(false))
+        assertEquals(listOf(true, false), bodies.map { JSONObject(it).getBoolean("hold") })
+    }
+
+    @Test
     fun `admin stats refused to a standard key are not asked again`() = runBlocking {
         serve { request ->
             when (request.url.encodedPath) {

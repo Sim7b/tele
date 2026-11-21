@@ -74,4 +74,14 @@ class TvSyncTest {
         assertEquals(kept, TvSync.fromJson(TvSync.toJson(kept)).filterValues { it.isNotEmpty() })
         assertTrue(TvSync.fromJson("{broken").isEmpty())
     }
+
+    @Test
+    fun `profiles named the same on several TVs share a key`() {
+        assertEquals("lea", TvSync.profileKey("Léa"))
+        assertEquals("lea", TvSync.profileKey("  LÉA "))
+        assertEquals("jeanpierre2", TvSync.profileKey("Jean-Pierre 2"))
+        assertEquals(24, TvSync.profileKey("a".repeat(40))?.length)
+        assertEquals(null, TvSync.profileKey("日本"))
+        assertEquals(null, TvSync.profileKey(""))
+    }
 }

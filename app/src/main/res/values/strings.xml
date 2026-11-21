@@ -946,4 +946,10 @@
     <string name="profile_delete_description">Its favorites, positions, my list and collections are deleted</string>
     <string name="profile_kids_nothing_locked">Nothing is locked yet</string>
     <string name="profile_kids_nothing_locked_description">Choose what the parental control locks: categories, movies and series</string>
+    <string name="player_start_preparing">The server is preparing the channel…</string>
+    <string name="player_start_connecting">Connecting to the provider…</string>
+    <string name="player_start_provider_slow">The provider is slow to send the picture…</string>
+    <string name="player_start_switching">This stream does not answer, trying the next one…</string>
+    <string name="player_start_starting">Starting playback…</string>
+    <string name="player_start_waiting">The server is slow to answer…</string>
 </resources>

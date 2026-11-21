@@ -109,7 +109,7 @@ import io.github.sim7b.tele.ui.components.touchClick
 import io.github.sim7b.tele.ui.components.trackLabel
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import io.github.sim7b.tele.ui.theme.AccentCyan
@@ -150,7 +150,9 @@ fun VodPlayerScreen(
     // Intro and end credits from TheIntroDB, when known: they come before the learned ones
     segments: VodSegments? = null,
     // Tracks to start with when none was chosen for the title (dubbed, or original with subtitles)
-    defaultTracks: io.github.sim7b.tele.data.vod.DefaultTracks? = null
+    defaultTracks: io.github.sim7b.tele.data.vod.DefaultTracks? = null,
+    // Keeps the provider connection of a paused title for its resume (true), gives it back (false)
+    onPauseHold: (Boolean) -> Unit = {}
 ) {
     val isLoading by playerManager.isLoading.collectAsState()
     val error by playerManager.error.collectAsState()
@@ -171,6 +173,22 @@ fun VodPlayerScreen(
     var durationMs by remember(request) { mutableLongStateOf(0L) }
     var bufferedMs by remember(request) { mutableLongStateOf(0L) }
     var paused by remember(request) { mutableStateOf(false) }
+    // A pause of a few seconds keeps the provider connection for the resume: given back at the resume or when leaving
+    val currentPauseHold by rememberUpdatedState(onPauseHold)
+    var holding by remember(request) { mutableStateOf(false) }
+    LaunchedEffect(request, paused) {
+        if (paused) {
+            delay(PAUSE_HOLD_AFTER_MS)
+            currentPauseHold(true)
+            holding = true
+        } else if (holding) {
+            currentPauseHold(false)
+            holding = false
+        }
+    }
+    DisposableEffect(request) {
+        onDispose { if (holding) currentPauseHold(false) }
+    }
     var speed by remember(request) { mutableFloatStateOf(1f) }
 
     var showControls by remember(request) { mutableStateOf(true) }
@@ -808,7 +826,7 @@ private fun Controls(
         ) {
             if (Device.isTouch) {
                 RoundButton(onClick = onBack, label = stringResource(R.string.settings_back), size = 44) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(22.dp))
                 }
                 Spacer(modifier = Modifier.width(14.dp))
             }
@@ -1227,3 +1245,6 @@ private const val CONTROLS_TIMEOUT_MS = 5_000L
 private const val SEEK_BAR_TIMEOUT_MS = 2_500L
 internal const val UP_NEXT_COUNTDOWN_S = 15
 private const val SUBTITLES_ABOVE_CONTROLS = 0.3f
+
+// A pause shorter than this keeps its connection by itself (the player still reads)
+private const val PAUSE_HOLD_AFTER_MS = 5_000L

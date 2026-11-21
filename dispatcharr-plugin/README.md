@@ -17,6 +17,14 @@ no admin key needed:
   measure in place of what the category name tells.
 - **Sync between TVs**: the favorites, movie and episode positions, my list, collections and reminders of a
   Dispatcharr user, shared by all their Télé TVs (the most recent change wins, item by item).
+  Each profile of the TVs other than their main one has its own items (`?profile=`, the same name on every
+  TV, 8 per user at most).
+- **Start of a channel explained**: while a TV waits for a channel, it reads what Dispatcharr is doing with it
+  (preparing, waiting for the provider, switching to the next stream) and tells it under the spinner.
+- **Paused movies keep their connection**: a movie or an episode paused for a few seconds on a TV keeps its
+  provider connection (setting *Keep the provider connection of a paused movie*, 30 minutes by default):
+  Dispatcharr frees it as soon as the paused stream closes, and another viewer could take it before the resume. It
+  is given back at the resume, when the TV leaves the player, or after that time.
 - **Stream health**: the failures of each provider stream (errors, failovers, buffering) are counted from
   the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
   marks them in its stream picker.

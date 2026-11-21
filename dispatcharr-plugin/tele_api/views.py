@@ -26,7 +26,7 @@ logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog", "vod_segments")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog", "vod_segments", "channel_state", "sync_profiles", "vod_hold")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -230,7 +230,8 @@ class SyncView(TeleView):
     """Favorites, VOD positions, my list, collections and reminders of the caller, shared by their TVs.
 
     GET: every item; POST {"changes": {collection: {key: {"v", "t", "d"}}}}: merged item by item (the most recent
-    change wins), answers every item. Turned off by the plugin setting allow_sync.
+    change wins), answers every item. ?profile=<name>: the items of that profile of the TVs (8 per user at most).
+    Turned off by the plugin setting allow_sync.
     """
 
     MAX_BODY = 2 * 1024 * 1024
@@ -240,7 +241,10 @@ class SyncView(TeleView):
 
         if not self.setting("allow_sync", True):
             return Response({"error": "sync_disabled"}, status=status.HTTP_403_FORBIDDEN)
-        return Response({"api": core.API_VERSION, "items": sync.load(request.user.pk)})
+        profile = core.sync_profile(request.query_params.get("profile"))
+        if profile is False:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"api": core.API_VERSION, "items": sync.load(request.user.pk, profile)})
 
     def post(self, request):
         from . import sync
@@ -249,8 +253,14 @@ class SyncView(TeleView):
             return Response({"error": "sync_disabled"}, status=status.HTTP_403_FORBIDDEN)
         if int(request.META.get("CONTENT_LENGTH") or 0) > self.MAX_BODY:
             return Response({"error": "too_large"}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        # A profile of the TVs other than the main one: its own items (?profile=, the same name on every TV)
+        profile = core.sync_profile(request.query_params.get("profile"))
+        if profile is False:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        if not sync.profile_allowed(request.user.pk, profile):
+            return Response({"error": "too_many_profiles"}, status=status.HTTP_409_CONFLICT)
         body = request.data if isinstance(request.data, dict) else {}
-        items, kept = sync.merge(request.user.pk, body.get("changes"))
+        items, kept = sync.merge(request.user.pk, body.get("changes"), profile)
         return Response({"api": core.API_VERSION, "items": items, "kept": kept})
 
 
@@ -364,6 +374,59 @@ class StreamHealthView(TeleView):
         if client is None:
             return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response({"api": core.API_VERSION, "streams": health.scores(client, ids)})
+
+
+class ChannelStateView(TeleView):
+    """What Dispatcharr is doing with a channel a TV is starting (?key=channel uuid or stream hash of the proxy
+    address): {"state", "since", "stream", "chunks"}, state null when the channel is not running. Only for a channel
+    the user may watch; no name nor address."""
+
+    def get(self, request):
+        import uuid as uuidlib
+
+        from django.db.models import Q
+
+        key = core.proxy_key(request.query_params.get("key"))
+        if key is None:
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            channel_uuid = str(uuidlib.UUID(key))
+            allowed = Q(uuid=channel_uuid)
+        except ValueError:
+            allowed = Q(streams__stream_hash=key)
+        if not data.visible_channels(request.user).filter(allowed).exists():
+            return Response({"error": "not_found"}, status=status.HTTP_404_NOT_FOUND)
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        metadata = client.hgetall(f"live:channel:{key}:metadata")
+        chunks = client.get(f"live:channel:{key}:input:buffer:index")
+        return Response({"api": core.API_VERSION, **core.channel_state(metadata, chunks, time.time())})
+
+
+class VodHoldView(TeleView):
+    """Provider connection of the movie or episode a TV paused, kept for its resume (holds.py).
+
+    POST {"hold": true}: held (again) for the setting vod_pause_hold_minutes; {"hold": false}: given back. The TV is
+    told by its User-Agent (install id); 0 minutes in the settings turn it off.
+    """
+
+    def post(self, request):
+        from . import holds
+
+        device = core.device_id(request.headers.get("User-Agent"))
+        if device is None:
+            return Response({"error": "unknown_device"}, status=status.HTTP_400_BAD_REQUEST)
+        client = data.redis_client()
+        if client is None:
+            return Response({"error": "redis_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        body = request.data if isinstance(request.data, dict) else {}
+        if body.get("hold") is not True:
+            return Response({"api": core.API_VERSION, "held": False, "released": holds.release(client, device)})
+        minutes = core.query_int(self.setting("vod_pause_hold_minutes", holds.DEFAULT_MINUTES), holds.DEFAULT_MINUTES, 0, holds.MAX_MINUTES)
+        if minutes <= 0:
+            return Response({"api": core.API_VERSION, "held": False})
+        return Response({"api": core.API_VERSION, **holds.hold(client, device, request.user.pk, minutes)})
 
 
 class VodLanguagesView(TeleView):

@@ -12,6 +12,13 @@ import org.json.JSONObject
  * replace several calls of the standard API (channels with their group and guide key in one list) or need
  * an admin key there (free provider connections). Pure parsing, every value of the server is untrusted.
  */
+/**
+ * What Dispatcharr is doing with a channel a TV is starting: its [state] ("initializing", "connecting",
+ * "waiting_for_clients", "active", "buffering"...; null when it is not running), for how long, the [stream] it plays
+ * (a change: the previous one failed) and the [chunks] received from the provider.
+ */
+data class ChannelStartState(val state: String?, val sinceS: Double?, val stream: Long?, val chunks: Int)
+
 object TeleApi {
     const val API_VERSION = 1
     const val ROOT_PATH = "/api/tele/"
@@ -32,6 +39,8 @@ object TeleApi {
     const val VOD_POSTER_PATH = "/api/tele/v1/vod/poster/"
     const val VOD_SEGMENTS_PATH = "/api/tele/v1/vod/segments/"
     const val VOD_RELATED_PATH = "/api/tele/v1/vod/related/"
+    const val CHANNEL_STATE_PATH = "/api/tele/v1/channels/state/"
+    const val VOD_HOLD_PATH = "/api/tele/v1/vod/hold/"
 
     /** TMDB ids of an answer of [VOD_RELATED_PATH] (or a TMDB list), in their order; others are skipped. */
     fun relatedIds(answer: JSONObject?): List<String> {
@@ -188,6 +197,18 @@ object TeleApi {
     }
 
     private const val MAX_TITLE = 512
+
+    /** What Dispatcharr is doing with a channel being started, from the answer of [CHANNEL_STATE_PATH]. */
+    fun channelState(answer: JSONObject?): ChannelStartState? {
+        answer ?: return null
+        val state = answer.optStringOrNull("state")?.takeIf { it.length <= 32 }
+        return ChannelStartState(
+            state = state,
+            sinceS = answer.optDouble("since", Double.NaN).takeIf { it.isFinite() && it >= 0 },
+            stream = answer.optLong("stream", 0L).takeIf { it > 0 },
+            chunks = answer.optInt("chunks", 0).coerceAtLeast(0)
+        )
+    }
 
     /** Ids of the streams that failed lately, from the answer of [STREAM_HEALTH_PATH]. */
     fun unhealthyStreams(answer: JSONObject?): Set<String> {
