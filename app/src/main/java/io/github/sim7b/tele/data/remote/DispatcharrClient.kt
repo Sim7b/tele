@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -45,7 +46,26 @@ class DispatcharrClient(
 
             chain.proceed(requestBuilder.build())
         }
+        // A call of the plugin that fails sets it aside for a while ([PluginHealth]); not a call cancelled here
+        .addInterceptor { chain ->
+            val request = chain.request()
+            if (!request.url.encodedPath.startsWith(TeleApi.ROOT_PATH)) return@addInterceptor chain.proceed(request)
+            val response = try {
+                chain.proceed(request)
+            } catch (e: java.io.IOException) {
+                if (!chain.call().isCanceled()) pluginFailed(request)
+                throw e
+            }
+            if (PluginHealth.isFailure(response.code, response.header("Content-Type"))) pluginFailed(request)
+            response
+        }
         .addNetworkInterceptor(apiKeyInterceptor)
+        .build()
+
+    // Short answers of the plugin (its features, the free connections, the health of the streams, the segments of a
+    // movie): a plugin that does not answer must not hold the start, nor a channel, more than a few seconds
+    private val quickClient = client.newBuilder()
+        .callTimeout(QUICK_CALL_S, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     // Without the application interceptor: the key of the active server must not replace the tested one
@@ -59,8 +79,11 @@ class DispatcharrClient(
     @Volatile private var accountsCache: Map<Int, Pair<String, Boolean>>? = null
     // Last guide of the plugin, with its URL and ETag: given again when the server answers 304
     @Volatile private var guideCache: Triple<String, String, List<DispatcharrEpgChannel>>? = null
-    // Features of the Télé API plugin of the server: null until probed, empty when not installed
-    @Volatile private var teleApiFeatures: Set<String>? = null
+    // Features of the Télé API plugin of the server, probed again from time to time, set aside when it fails
+    private val pluginHealth = PluginHealth()
+    private val probeLock = kotlinx.coroutines.sync.Mutex()
+    // The live stats of the server refused this key (admin only): not asked again until a refresh
+    @Volatile private var statsRefused = false
 
     fun setConfig(config: SourceConfig?) {
         if (config != currentConfig) clearCaches()
@@ -72,7 +95,8 @@ class DispatcharrClient(
         groupsCache = null
         epgDataCache = null
         accountsCache = null
-        teleApiFeatures = null
+        pluginHealth.reset()
+        statsRefused = false
         guideCache = null
     }
 
@@ -82,11 +106,28 @@ class DispatcharrClient(
      * (without it, the web interface of Dispatcharr answers the path with an HTML page).
      */
     private suspend fun teleApi(): Set<String> {
-        teleApiFeatures?.let { return it }
+        pluginHealth.current()?.let { return it }
         if (baseUrl.isBlank()) return emptySet()
-        val features = TeleApi.features(getPluginInfo()) ?: emptySet()
-        if (features.isNotEmpty()) Log.i(TAG, "Télé API plugin: $features")
-        return features.also { teleApiFeatures = it }
+        // One probe at a time: the calls made meanwhile wait for its answer
+        return probeLock.withLock {
+            pluginHealth.current() ?: run {
+                val features = TeleApi.features(getPluginInfo()) ?: emptySet()
+                // A probe that failed already set the plugin aside: kept so
+                if (pluginHealth.current() == null) pluginHealth.probed(features)
+                if (features.isNotEmpty()) Log.i(TAG, "Télé API plugin: $features")
+                pluginHealth.known()
+            }
+        }
+    }
+
+    private fun pluginFailed(request: Request) {
+        if (pluginHealth.known().isNotEmpty()) Log.w(TAG, "Télé API plugin set aside after a failure: ${request.url.encodedPath}")
+        pluginHealth.failed()
+    }
+
+    /** A failure while reading an answer (after its headers): the plugin is set aside as for a failed call. */
+    private fun readFailed(request: Request, e: Exception) {
+        if (e !is CancellationException && request.url.encodedPath.startsWith(TeleApi.ROOT_PATH)) pluginFailed(request)
     }
 
     /**
@@ -102,7 +143,7 @@ class DispatcharrClient(
     private suspend fun getPluginInfo(): JSONObject? = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("$baseUrl${TeleApi.INFO_PATH}").get().build()
         try {
-            client.newCall(request).executeCancellable { response ->
+            quickClient.newCall(request).executeCancellable { response ->
                 // Without the plugin, the web interface of Dispatcharr answers with its HTML page: not an error
                 if (!response.isSuccessful) null
                 else runCatching { JSONObject(HttpClients.jsonString(response.body)) }.getOrNull()
@@ -189,6 +230,7 @@ class DispatcharrClient(
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
+            readFailed(request, e)
             // Exception type only: parsing errors may carry part of the response
             Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
             false
@@ -551,7 +593,7 @@ class DispatcharrClient(
     private suspend fun withHealth(streams: List<StreamSource>): List<StreamSource> {
         val ids = streams.mapNotNull { it.id?.takeIf { id -> id.toIntOrNull() != null } }.take(TeleApi.MAX_HEALTH_IDS)
         if (ids.isEmpty() || "stream_health" !in teleApi()) return streams
-        val failing = TeleApi.unhealthyStreams(getObject("$baseUrl${TeleApi.STREAM_HEALTH_PATH}?ids=${ids.joinToString(",")}"))
+        val failing = TeleApi.unhealthyStreams(getObject("$baseUrl${TeleApi.STREAM_HEALTH_PATH}?ids=${ids.joinToString(",")}", quick = true))
         if (failing.isEmpty()) return streams
         return streams.map { if (it.id in failing) it.copy(recentFailures = true) else it }
     }
@@ -607,16 +649,20 @@ class DispatcharrClient(
     /** A VOD object (provider information of a movie or a series), null when unavailable. */
     suspend fun getVodObject(path: String): JSONObject? = getObject("$baseUrl/api/vod/$path")
 
-    /** A JSON object of the server, null when unavailable (no admin rights, older server, error). */
-    private suspend fun getObject(url: String): JSONObject? = withContext(Dispatchers.IO) {
+    /**
+     * A JSON object of the server, null when unavailable (no admin rights, older server, error). [quick]: a short
+     * answer of the plugin, given up after a few seconds.
+     */
+    private suspend fun getObject(url: String, quick: Boolean = false): JSONObject? = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).get().build()
         try {
-            client.newCall(request).executeCancellable { response ->
+            (if (quick) quickClient else client).newCall(request).executeCancellable { response ->
                 if (!response.isSuccessful) return@executeCancellable null
                 JSONObject(HttpClients.jsonString(response.body))
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
+            readFailed(request, e)
             Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
             null
         }
@@ -627,7 +673,7 @@ class DispatcharrClient(
      * it does, else the cached image of Dispatcharr. Both are served without authentication.
      */
     fun posterUrl(logoId: String): String =
-        if (teleApiFeatures?.contains("vod_posters") == true) "$baseUrl${TeleApi.VOD_POSTER_PATH}$logoId/?w=${TeleApi.POSTER_WIDTH}"
+        if ("vod_posters" in pluginHealth.known()) "$baseUrl${TeleApi.VOD_POSTER_PATH}$logoId/?w=${TeleApi.POSTER_WIDTH}"
         else vodImageUrl("vodlogos/$logoId/cache/")
 
     /** Artwork of a VOD object ("movies/12/image/"), served without authentication. */
@@ -651,14 +697,32 @@ class DispatcharrClient(
         if (baseUrl.isBlank()) return@withContext null
         // The plugin reads the counters the server checks itself, with a standard user key
         if ("slots" in teleApi()) {
-            getObject("$baseUrl${TeleApi.SLOTS_PATH}")?.let { return@withContext TeleApi.parseSlots(it) }
+            getObject("$baseUrl${TeleApi.SLOTS_PATH}", quick = true)?.let { return@withContext TeleApi.parseSlots(it) }
         }
+        // Connections in use: only the live stats of the server are right (admin rights needed); the profiles
+        // of the accounts keep a count the server does not update. Without them, no count rather than a wrong one.
+        // Refused once (a standard user key): not asked again until a refresh
+        if (statsRefused) return@withContext null
+        val stats = getAdminStats() ?: return@withContext null
         val accounts = mutableListOf<JSONObject>()
         if (!fetchObjects("$baseUrl/api/m3u/accounts/") { accounts.add(it) }) return@withContext null
-        // Connections in use: only the live stats of the server are right (admin rights needed); the profiles
-        // of the accounts keep a count the server does not update. Without them, no count rather than a wrong one
-        val stats = getObject("$baseUrl/proxy/stats/") ?: return@withContext null
         StreamSlots.fromAccounts(accounts, stats)
+    }
+
+    /** The live stats of the server (admin only); a refusal is remembered ([statsRefused]). */
+    private suspend fun getAdminStats(): JSONObject? = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("$baseUrl/proxy/stats/").get().build()
+        try {
+            client.newCall(request).executeCancellable { response ->
+                if (response.code == 401 || response.code == 403) statsRefused = true
+                if (!response.isSuccessful) return@executeCancellable null
+                JSONObject(HttpClients.jsonString(response.body))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
+            null
+        }
     }
 
     /**
@@ -752,13 +816,13 @@ class DispatcharrClient(
                 url.addQueryParameter("season", season.toString())
                 url.addQueryParameter("episode", episode.toString())
             }
-            getObject(url.build().toString())?.let { io.github.sim7b.tele.data.vod.VodSegments.parse(it.optJSONObject("segments")) }
+            getObject(url.build().toString(), quick = true)?.let { io.github.sim7b.tele.data.vod.VodSegments.parse(it.optJSONObject("segments")) }
         }
 
     /** TMDB ids of the titles that may also please, looked up by the plugin with its TMDB key; null without it. */
     suspend fun getVodRelated(kind: String, tmdbId: String): List<String>? = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank() || "vod_related" !in teleApi()) return@withContext null
-        getObject("$baseUrl${TeleApi.VOD_RELATED_PATH}?kind=$kind&tmdb_id=$tmdbId")?.let { TeleApi.relatedIds(it) }
+        getObject("$baseUrl${TeleApi.VOD_RELATED_PATH}?kind=$kind&tmdb_id=$tmdbId", quick = true)?.let { TeleApi.relatedIds(it) }
     }
 
     /** Whether the plugin serves the VOD catalog ready for Télé ([forEachCatalogItem]). */
@@ -785,6 +849,7 @@ class DispatcharrClient(
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
+            readFailed(request, e)
             Log.w(TAG, "Request failed: ${request.url.encodedPath} (${e.javaClass.simpleName})")
             null
         }
@@ -889,6 +954,7 @@ class DispatcharrClient(
         private const val MAX_SUBTITLE_BYTES = 4L * 1024 * 1024
         private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "ttml")
         private const val TAG = "Dispatcharr"
+        private const val QUICK_CALL_S = 6L
         const val DEFAULT_USER_AGENT = HttpClients.DEFAULT_USER_AGENT
         private const val ARTWORK_PAGE_SIZE = 500
         private const val MAX_ARTWORK_PAGES = 6
