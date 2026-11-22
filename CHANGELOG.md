@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.44](https://github.com/Sim7b/tele/compare/v0.3.43...v0.3.44) (2026-11-22)
+
+### Features
+
+* ultra light mode for small devices ([#75](https://github.com/Sim7b/tele/issues/75)) ([09ce4df](https://github.com/Sim7b/tele/commit/09ce4dfadec49b61b4c2bcf0eb3ff59fd9f1ae57))
+
 ## [0.3.43](https://github.com/Sim7b/tele/compare/v0.3.42...v0.3.43) (2026-11-22)
 
 ### Features
