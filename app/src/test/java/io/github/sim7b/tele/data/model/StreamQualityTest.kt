@@ -1,7 +1,9 @@
 package io.github.sim7b.tele.data.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StreamQualityTest {
@@ -92,5 +94,15 @@ class StreamQualityTest {
         now += QualityCap.CAP_MS
         assertNull(cap.current())
         assertEquals(streams, cap.apply(streams))
+    }
+
+    @Test
+    fun `a channel ordered on the server is played at once`() {
+        assertTrue(QualityPreference.BEST.followsServerOrder(serverOrders = true, capped = false))
+        assertTrue(QualityPreference.SERVER_ORDER.followsServerOrder(serverOrders = true, capped = false))
+        // Another quality order, a weak connection, or a server that does not order the streams: they are read first
+        assertFalse(QualityPreference.HD_MAX.followsServerOrder(serverOrders = true, capped = false))
+        assertFalse(QualityPreference.BEST.followsServerOrder(serverOrders = true, capped = true))
+        assertFalse(QualityPreference.BEST.followsServerOrder(serverOrders = false, capped = false))
     }
 }

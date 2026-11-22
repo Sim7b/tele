@@ -165,7 +165,9 @@ class InfoView(TeleView):
                 "api": core.API_VERSION,
                 "features": list(FEATURES) + (["subtitles"] if vault.opensubtitles_key() else [])
                 + (["vod_posters"] if _posters_available() else [])
-                + (["vod_related"] if vault.tmdb_key() else []),
+                + (["vod_related"] if vault.tmdb_key() else [])
+                # The streams of each channel kept in order on the server: the TVs play the channel as it is
+                + (["stream_order"] if self.setting("sort_streams", True) else []),
                 "server_time": data.server_time(),
                 "user": {"username": user.username, "admin": is_admin(user), "hide_adult": hides_adult(user)},
                 "release_allowed": bool(self.setting("allow_release", True)),
@@ -977,6 +979,24 @@ class AdminIntroDbView(AdminView):
         vault.set_introdb_key(key)
         logger.info("Télé API: TheIntroDB key set by an admin")
         return Response({"api": core.API_VERSION, "key_set": True})
+
+
+class AdminStartsView(AdminView):
+    """How long the channels took to start lately (starts.py): medians, slowest channels, time by stream profile,
+    advice, and the last starts."""
+
+    def get(self, request):
+        from . import starts
+
+        found = starts.recent(data.redis_client())
+        names = {}
+        try:
+            from core.models import StreamProfile
+
+            names = {profile.id: profile.name for profile in StreamProfile.objects.all().only("id", "name")}
+        except Exception:
+            pass
+        return Response({"api": core.API_VERSION, **starts.summary(found, names), "last": found[:20]})
 
 
 class AdminSportsDbView(AdminView):

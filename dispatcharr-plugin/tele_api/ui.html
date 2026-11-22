@@ -163,6 +163,11 @@
           <div id="overview-days" class="chart"></div>
         </section>
       </div>
+      <section class="card" aria-labelledby="starts-title">
+        <div class="spread"><h2 id="starts-title">Channel start time, last 24 hours</h2><span class="muted small" id="starts-count"></span></div>
+        <div class="muted small">From the start of a channel to the first picture it can give: the provider's answer, then the time Dispatcharr fills its buffer (about 1 MB of the stream, and ffmpeg's start when the stream profile uses it). A TV adds about a second to show the picture.</div>
+        <div id="starts-result"></div>
+      </section>
       <section class="card" aria-labelledby="sort-title">
         <div class="spread"><h2 id="sort-title">Streams of the channels</h2><span class="muted small" id="sort-last"></span></div>
         <div class="muted small">The available streams first (not failing lately, provider account active, still in the playlist), then the best quality. Dispatcharr plays the first one: a dead stream in first place delays every start.</div>
@@ -1430,6 +1435,37 @@
 
   // ---------- Loading
   var loading = false;
+  function seconds(ms) { return ms == null ? "–" : (ms / 1000).toFixed(1) + " s"; }
+  var START_ADVICE = {
+    dns: "The provider answers after about 5 s on almost every start: the usual sign of a DNS lookup that waits for a timeout in the Dispatcharr container (an IPv6 or unreachable resolver). Set REDIS_HOST=127.0.0.1 in an all-in-one container, or fix /etc/resolv.conf / the dns: entries of the compose file.",
+    provider: "The provider is slow to answer: try another provider account or stream (the sort puts the failing ones last), or ask the provider.",
+    ffmpeg: "Filling the buffer is slow with an ffmpeg stream profile: the Proxy profile (Dispatcharr reads the stream itself, no ffmpeg) usually starts faster, if your streams do not need ffmpeg.",
+    buffer: "Filling the buffer is slow: the provider sends the stream slowly at first (low bitrate, slow server)."
+  };
+  function showStarts(data) {
+    var box = $("starts-result");
+    box.textContent = "";
+    text("starts-count", data.starts ? fmt(data.starts) + " starts" : "");
+    if (!data.starts) {
+      box.appendChild(el("div", { class: "muted small", text: "No channel started since the plugin measures them." }));
+      return;
+    }
+    box.appendChild(el("div", { class: "small", text: "Median " + seconds(data.median_ms) + " (9 starts out of 10 under " + seconds(data.p90_ms) + "): provider " + seconds(data.provider_median_ms) + ", buffer " + seconds(data.buffer_median_ms) }));
+    (data.advice || []).forEach(function (key) {
+      if (START_ADVICE[key]) box.appendChild(el("div", { class: "small warn", text: START_ADVICE[key] }));
+    });
+    if (data.profiles && data.profiles.length) {
+      box.appendChild(el("div", { class: "muted small", text: "Buffer by stream profile: " + data.profiles.map(function (p) {
+        return p.profile + " " + seconds(p.buffer_median_ms) + " (" + fmt(p.starts) + ")";
+      }).join(" · ") }));
+    }
+    if (data.slowest && data.slowest.length) {
+      box.appendChild(el("div", { class: "muted small", text: "Slowest: " + data.slowest.slice(0, 5).map(function (c) {
+        return c.channel + " " + seconds(c.median_ms);
+      }).join(" · ") }));
+    }
+  }
+
   function showSort(data) {
     var last = data.last;
     text("sort-auto", data.enabled ? "Sorted by itself every 30 minutes" : "Automatic sort off (plugin settings)");
@@ -1458,6 +1494,7 @@
         call("admin/devices/").then(function (data) { state.latestApp = data.latest_app || null; showDevices(data.devices || []); return loadMessages(); }),
         call("admin/stats/?days=14").then(showOverviewDays).catch(function () { showOverviewDays({}); }),
         call("admin/streams/sort/").then(showSort).catch(function () { showSort({}); }),
+        call("admin/starts/").then(showStarts).catch(function () { showStarts({}); }),
         loadStats(state.statsDays),
         call("admin/tmdb/").then(showTmdb),
         loadSubtitles(),

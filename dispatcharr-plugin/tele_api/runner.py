@@ -70,6 +70,13 @@ def _loop(token: object) -> None:
                     holds.expire(client)
                 except Exception:
                     logger.debug("Télé API: held connections not checked", exc_info=True)
+                # Starts of the channels (Télé page): kept once each, read from the metadata of Dispatcharr
+                from . import starts
+
+                try:
+                    starts.observe(client)
+                except Exception:
+                    logger.debug("Télé API: channel starts not read", exc_info=True)
             woken = bool(client is not None and client.delete(WAKE_KEY))
             if not woken and time.monotonic() < next_run:
                 continue

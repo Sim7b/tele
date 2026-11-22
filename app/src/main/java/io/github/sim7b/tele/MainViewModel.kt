@@ -561,6 +561,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // weak connection
         if (channel.memberIds.size > 1) return qualityCap.apply(preference.sort(channel.availableStreams)).map { it.url }
         val client = sourceOf(channel)?.dispatcharr ?: return emptyList()
+        // Already in this order on the server (Télé API plugin): the channel at once, Dispatcharr fails over
+        if (preference.followsServerOrder(client.ordersStreams(), cap != null)) return emptyList()
         // Server order: the streams are only read when the plugin tells which ones fail, or for a weak connection
         if (!preference.reordersStreams && !client.knowsStreamHealth() && cap == null) return emptyList()
         val serverId = channel.serverId ?: return emptyList()

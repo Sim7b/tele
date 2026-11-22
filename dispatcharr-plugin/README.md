@@ -35,6 +35,10 @@ no admin key needed:
 - **Sport**: the calendars, scores and standings of the competitions the TVs follow (Ligue 1, Premier League, Top 14,
   F1, NBA…), read by this server from ESPN (no key) and TheSportsDB (Pro D2, MotoGP, Betclic Élite, Starligue; free key,
   or yours on the Télé page) and kept 15 minutes (2 during a match) for every TV.
+- **Channel start time**: the Télé page shows how long the channels took to start in the last 24 hours (median and
+  90th percentile), split into the provider's answer and the time Dispatcharr fills its buffer (by stream profile),
+  the slowest channels, and advice (a DNS lookup that times out, a slow provider, an ffmpeg profile). Read every 15
+  seconds from the metadata Dispatcharr writes for each running channel.
 - **Stream health**: the failures of each provider stream (errors, failovers, buffering) are counted from
   the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
   marks them in its stream picker.

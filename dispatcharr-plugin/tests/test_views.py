@@ -94,6 +94,20 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(response.data["api"], core.API_VERSION)
         self.assertFalse(response.data["user"]["admin"])
 
+    def test_the_plugin_tells_the_tvs_it_orders_the_streams(self):
+        self.assertIn("stream_order", self.call(views.InfoView, who=user()).data["features"])
+        with mock.patch.object(views.TeleView, "setting", side_effect=lambda name, default=None: False if name == "sort_streams" else default):
+            self.assertNotIn("stream_order", self.call(views.InfoView, who=user()).data["features"])
+
+    def test_channel_starts_for_the_admins(self):
+        found = [{"key": "a", "at": 1.0, "channel": "TF1", "profile": None, "provider_ms": 900, "buffer_ms": 1500, "total_ms": 2400}]
+        with mock.patch.object(views.data, "redis_client", return_value=None), \
+                mock.patch("tele_api.starts.recent", return_value=found):
+            response = self.call(views.AdminStartsView, who=user(level=10))
+            refused = self.call(views.AdminStartsView, who=user())
+        self.assertEqual((response.data["starts"], response.data["median_ms"], response.data["last"]), (1, 2400, found))
+        self.assertEqual(refused.status_code, 403)
+
     def test_guide_answers_304_while_unchanged(self):
         programs = [{"uuid": "u1", "programs": [{"id": "1", "title": "Journal", "start": "s", "end": "e"}]}]
         with mock.patch.object(views.data, "guide", return_value=programs), \
