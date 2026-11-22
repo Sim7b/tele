@@ -157,7 +157,7 @@ dependencies {
     testImplementation("org.json:json:20260814")
     testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.1")
     // Android runtime on the JVM: the ViewModel is built as at app startup
-    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("org.robolectric:robolectric:4.18")
     // Main dispatcher of the tests: runs coroutines at once, as Dispatchers.Main.immediate on the device
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     // Compose UI tests on the JVM (Robolectric): focus and remote navigation of the screens
