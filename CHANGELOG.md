@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.43](https://github.com/Sim7b/tele/compare/v0.3.42...v0.3.43) (2026-11-22)
+
+### Features
+
+* Sport section with the calendars, scores and standings of the followed competitions ([e922de3](https://github.com/Sim7b/tele/commit/e922de35ed94788f5a1956d13a9b215e6c58d4bb))
+
 ## [0.3.42](https://github.com/Sim7b/tele/compare/v0.3.41...v0.3.42) (2026-11-22)
 
 ### Features
