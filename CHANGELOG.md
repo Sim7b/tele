@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.46](https://github.com/Sim7b/tele/compare/v0.3.45...v0.3.46) (2026-11-22)
+
+### Performance Improvements
+
+* start Dispatcharr channels at once, measure channel starts on the server ([43a537a](https://github.com/Sim7b/tele/commit/43a537a14b144b8d633478282cb734e92d4b4cfc))
+
 ## [0.3.45](https://github.com/Sim7b/tele/compare/v0.3.44...v0.3.45) (2026-11-22)
 
 ### Bug Fixes
