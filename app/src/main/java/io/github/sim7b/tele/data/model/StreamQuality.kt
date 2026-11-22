@@ -63,6 +63,14 @@ enum class QualityPreference(
     val reordersStreams: Boolean get() = order != null
 
     /**
+     * The channel is played as it is, without reading its streams first (up to 2 s before every new channel): the
+     * Télé API plugin keeps them in order on the server ([serverOrders]: available first, then the best quality),
+     * which is this preference too, and no weak connection limits the quality ([capped]).
+     */
+    fun followsServerOrder(serverOrders: Boolean, capped: Boolean): Boolean =
+        serverOrders && !capped && (this == SERVER_ORDER || this == BEST)
+
+    /**
      * Streams of a Dispatcharr channel to play one after the other in automatic mode, the ones that failed lately
      * (Télé API plugin) last; null to play the channel itself (Dispatcharr picks the stream and fails over). In
      * server order, only when the first stream of the server failed lately: Dispatcharr would try it first again,
