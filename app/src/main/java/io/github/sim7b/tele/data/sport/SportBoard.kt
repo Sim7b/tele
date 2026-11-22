@@ -180,14 +180,6 @@ object SportBoard {
         }
     }
 
-    /** The logos of the two teams of the match [event] shows, when a followed competition lists it; else none. */
-    fun logosFor(event: SportEvent, competitions: List<SportCompetition>): List<String> {
-        val fixture = competitions.asSequence().flatMap { it.fixtures.asSequence() }
-            .firstOrNull { it.home?.logo != null && it.away?.logo != null && programFor(it, listOf(event)) != null }
-            ?: return emptyList()
-        return listOfNotNull(fixture.home?.logo, fixture.away?.logo)
-    }
-
     const val MATCH_WINDOW_MS = 45 * 60_000L
 
     // Words of team names too common to tell a team ("FC Nantes": "nantes" tells it, "fc" does not)

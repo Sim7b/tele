@@ -52,15 +52,31 @@ internal fun isSmallDevice(context: Context): Boolean {
 
 private const val SMALL_MEMORY_CLASS_MB = 192
 
+/** The styles offered at the first launch: the two homes, and the ultra light mode (the classic home, lightened more). */
+enum class FirstStyle(val home: HomeStyle, val ultraLight: Boolean) {
+    IMMERSIVE(HomeStyle.IMMERSIVE, false),
+    CLASSIC(HomeStyle.CLASSIC, false),
+    ULTRA_LIGHT(HomeStyle.CLASSIC, true);
+
+    companion object {
+        /** The style advised: ultra light on a device short of memory, classic on a small one, else immersive. */
+        fun advised(lowEnd: Boolean, small: Boolean): FirstStyle = when {
+            lowEnd -> ULTRA_LIGHT
+            small -> CLASSIC
+            else -> IMMERSIVE
+        }
+    }
+}
+
 /**
  * Choice of the style of the app at the first launch: immersive (the program or title in focus over the whole
- * screen), or classic, the light one for small devices. Advised by the memory of the device; changed later in the
- * settings.
+ * screen), classic, the light one for small devices, or ultra light for the smallest ones. Advised by the memory
+ * of the device; changed later in the settings.
  */
 @Composable
-fun StyleChoice(onChoose: (HomeStyle) -> Unit) {
+fun StyleChoice(onChoose: (FirstStyle) -> Unit) {
     val context = LocalContext.current
-    val advised = remember { if (isSmallDevice(context)) HomeStyle.CLASSIC else HomeStyle.IMMERSIVE }
+    val advised = remember { FirstStyle.advised(io.github.sim7b.tele.ui.components.Device.isLowEnd, isSmallDevice(context)) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocusWithRetry() }
 
@@ -69,7 +85,7 @@ fun StyleChoice(onChoose: (HomeStyle) -> Unit) {
             contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxSize().background(LocalAppColors.current.background)
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 900.dp).padding(24.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 920.dp).padding(24.dp)) {
                 Text(
                     text = stringResource(R.string.style_choice_title),
                     fontSize = 28.sp,
@@ -85,7 +101,7 @@ fun StyleChoice(onChoose: (HomeStyle) -> Unit) {
                     modifier = Modifier.padding(top = 8.dp, bottom = 28.dp)
                 )
                 val cards: @Composable (Modifier) -> Unit = { cardModifier ->
-                    listOf(HomeStyle.IMMERSIVE, HomeStyle.CLASSIC).forEach { style ->
+                    FirstStyle.entries.forEach { style ->
                         StyleCard(
                             style = style,
                             advised = style == advised,
@@ -97,7 +113,7 @@ fun StyleChoice(onChoose: (HomeStyle) -> Unit) {
                 if (LocalScreen.current.compact) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { cards(Modifier) }
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) { cards(Modifier.width(380.dp)) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { cards(Modifier.width(280.dp)) }
                 }
                 Text(
                     text = stringResource(R.string.style_choice_later),
@@ -112,7 +128,7 @@ fun StyleChoice(onChoose: (HomeStyle) -> Unit) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun StyleCard(style: HomeStyle, advised: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun StyleCard(style: FirstStyle, advised: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val accent = LocalAppColors.current.accent
@@ -130,7 +146,13 @@ private fun StyleCard(style: HomeStyle, advised: Boolean, onClick: () -> Unit, m
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Text(
-                text = stringResource(if (style == HomeStyle.IMMERSIVE) R.string.style_choice_immersive else R.string.style_choice_classic),
+                text = stringResource(
+                    when (style) {
+                        FirstStyle.IMMERSIVE -> R.string.style_choice_immersive
+                        FirstStyle.CLASSIC -> R.string.style_choice_classic
+                        FirstStyle.ULTRA_LIGHT -> R.string.style_choice_ultra_light
+                    }
+                ),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
@@ -146,7 +168,11 @@ private fun StyleCard(style: HomeStyle, advised: Boolean, onClick: () -> Unit, m
             }
             Text(
                 text = stringResource(
-                    if (style == HomeStyle.IMMERSIVE) R.string.style_choice_immersive_description else R.string.style_choice_classic_description
+                    when (style) {
+                        FirstStyle.IMMERSIVE -> R.string.style_choice_immersive_description
+                        FirstStyle.CLASSIC -> R.string.style_choice_classic_description
+                        FirstStyle.ULTRA_LIGHT -> R.string.style_choice_ultra_light_description
+                    }
                 ),
                 fontSize = 14.sp,
                 color = TextSecondary,

@@ -89,9 +89,5 @@ class SportBoardTest {
         // A race: the program at its time
         val race = SportFixture("r", start, SportFixture.State.UPCOMING, "Abu Dhabi Grand Prix", session = "Race")
         assertEquals(other, SportBoard.programFor(race, listOf(later, other)))
-        // The logos of the match on the card of its program
-        val ligue1 = SportCompetition("football/france/ligue1", "Ligue 1", null, listOf(match), emptyList())
-        assertEquals(listOf("https://x/ol.png", "https://x/asm.png"), SportBoard.logosFor(lyon, listOf(ligue1)))
-        assertEquals(emptyList<String>(), SportBoard.logosFor(later, listOf(ligue1)))
     }
 }

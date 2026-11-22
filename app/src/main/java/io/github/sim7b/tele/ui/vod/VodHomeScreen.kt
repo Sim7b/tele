@@ -518,7 +518,8 @@ fun VodHomeScreen(
                             onRecordings = nav.onRecordings,
                             onSearch = onOpenSearch,
                             onSettings = onOpenSettings,
-                            updateAvailable = nav.updateAvailable
+                            updateAvailable = nav.updateAvailable,
+                            onSport = nav.onSport
                         ),
                         current = when (tab) {
                             VodTab.MOVIES -> NavSection.MOVIES

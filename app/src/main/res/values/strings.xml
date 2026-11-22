@@ -782,7 +782,7 @@
     <string name="style_choice_classic">Classic</string>
     <string name="style_choice_classic_description">A light, fast app: plain lists, no full-screen images or fades, no preview while browsing. For small devices and sticks.</string>
     <string name="style_choice_advised">Advised for this device</string>
-    <string name="style_choice_later">Settings → Home to change it later</string>
+    <string name="style_choice_later">To change it later: Settings → Appearance for the style, System for the ultra light mode</string>
     <string name="settings_vod_version_order_title">File played first</string>
     <string name="settings_vod_version_order_description">When a movie or an episode has several files and none is chosen</string>
     <string name="settings_vod_version_order_language">Language of the TV, then quality</string>
@@ -1007,7 +1007,6 @@
     <string name="sport_points_short">Pts</string>
     <string name="sport_reminder_set">Reminder set</string>
     <string name="sport_reminder_hint">OK: reminder</string>
-    <string name="sport_see_all">See all</string>
     <string name="settings_ultra_light">Ultra light mode</string>
     <string name="settings_ultra_light_auto">Automatic</string>
     <string name="settings_ultra_light_on">Always</string>
@@ -1015,4 +1014,6 @@
     <string name="settings_ultra_light_description">For small devices: classic home, no artwork (logos and posters stay), no fades, no preview, no timeshift, small buffer, nothing in the background (TMDB index, Google TV row, sport, other TVs). Automatic: on when the device is short of memory.</string>
     <string name="settings_ultra_light_state_on">On now (this device: %1$s GB of memory)</string>
     <string name="settings_ultra_light_state_off">Off now (this device: %1$s GB of memory)</string>
+    <string name="style_choice_ultra_light">Ultra light</string>
+    <string name="style_choice_ultra_light_description">The classic style, lightened even more for the smallest boxes and sticks: no artwork (logos and posters stay), no preview, no timeshift, nothing in the background.</string>
 </resources>
