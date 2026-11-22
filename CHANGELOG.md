@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.42](https://github.com/Sim7b/tele/compare/v0.3.41...v0.3.42) (2026-11-22)
+
+### Features
+
+* resume live TV after a network cut, start over the program on air, plugin repository for Dispatcharr ([89bce35](https://github.com/Sim7b/tele/commit/89bce3565a8592991ebe394d83cb0439db304005))
+
+### Performance Improvements
+
+* open the movies and series tabs at once ([40199df](https://github.com/Sim7b/tele/commit/40199df4342a538a5f392fb4fff8558f40b8c0fc))
+
 ## [0.3.41](https://github.com/Sim7b/tele/compare/v0.3.40...v0.3.41) (2026-11-21)
 
 ### Features
