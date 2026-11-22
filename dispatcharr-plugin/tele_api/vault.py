@@ -1,4 +1,4 @@
-"""Secrets of the plugin (the TMDB, OpenSubtitles and TheIntroDB keys, an OpenSubtitles account), kept in a file of the data folder readable by the server only.
+"""Secrets of the plugin (the TMDB, OpenSubtitles, TheIntroDB and TheSportsDB keys, an OpenSubtitles account), kept in a file of the data folder readable by the server only.
 
 Not in the plugin settings: Dispatcharr gives those to every standard user (the list of the plugins). The key is
 never sent back: the admin page only learns whether one is set.
@@ -63,6 +63,15 @@ def introdb_key() -> Optional[str]:
 
 def set_introdb_key(key: Optional[str]) -> None:
     _set("introdb_key", key.strip() if key else None)
+
+
+def sportsdb_key() -> Optional[str]:
+    key = _read().get("sportsdb_key")
+    return key if isinstance(key, str) and key.strip() else None
+
+
+def set_sportsdb_key(key: Optional[str]) -> None:
+    _set("sportsdb_key", key.strip() if key else None)
 
 
 def _set(name: str, value) -> None:

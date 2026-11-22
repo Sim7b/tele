@@ -45,6 +45,8 @@ import io.github.sim7b.tele.data.storage.Reminders
 import io.github.sim7b.tele.data.storage.ReminderAlarms
 import io.github.sim7b.tele.data.sport.SportEvent
 import io.github.sim7b.tele.data.sport.SportEvents
+import io.github.sim7b.tele.data.sport.SportBoard
+import io.github.sim7b.tele.ui.screens.SportScreen
 import io.github.sim7b.tele.data.trakt.Trakt
 import io.github.sim7b.tele.data.trakt.TraktItem
 import io.github.sim7b.tele.data.trakt.TraktMatch
@@ -163,6 +165,9 @@ sealed class CurrentScreen {
     /** Programs recorded on the device and the ones planned. */
     object Recordings : CurrentScreen()
 
+    /** The followed competitions: calendars and standings. */
+    object Sport : CurrentScreen()
+
     /** Playback; Back returns to [returnTo] (the home screen, or the search the channel was opened from). */
     data class Player(val channel: Channel, val returnTo: CurrentScreen = Home) : CurrentScreen()
 
@@ -189,6 +194,8 @@ private const val WATCH_NEXT_DELAY_MS = 3_000L
 // The favorites row of the TV home follows the programs, at most this often (they change every few minutes)
 private const val FAVORITES_ROW_DELAY_MS = 5_000L
 private const val HANDOFF_EVERY_MS = 30_000L
+// The Sport section asks the view model again this often (it reads the server only when its answer is old)
+private const val SPORT_CHECK_MS = 60_000L
 private const val WELCOME_MAX_MS = 15_000L
 // Sheet whose file is being measured on the server: built again every 20 s, 4 times at most
 private const val MEDIA_REFRESH_DELAY_MS = 20_000L
@@ -475,6 +482,18 @@ class MainActivity : ComponentActivity() {
                     delay(SPORT_REFRESH_MS)
                 }
             }
+            // Sport section: the competitions of the followed teams, their calendars and standings (Télé API plugin)
+            val sportTopics = remember(followedSport) { SportBoard.competitionsFor(followedSport) }
+            val sportTeams = remember(followedSport) { SportBoard.followedTeams(followedSport) }
+            val sportState by viewModel.sport.collectAsState()
+            val showSport = followedSport.isNotEmpty()
+            LaunchedEffect(sportTopics, enabledConfigs) {
+                while (true) {
+                    viewModel.refreshSport(sportTopics)
+                    delay(SPORT_CHECK_MS)
+                }
+            }
+            val sportLogos: (SportEvent) -> List<String> = { event -> SportBoard.logosFor(event, sportState.competitions) }
             // Trakt: the watchlist (immersive home), read again every half hour; the access refreshed when needed
             val traktApp by configRepository.traktApp.collectAsState()
             val traktSession by configRepository.traktSession.collectAsState()
@@ -710,7 +729,8 @@ class MainActivity : ComponentActivity() {
                             onRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
                             onSearch = { currentScreen = CurrentScreen.Search(startWithVoice = false) },
                             onSettings = { currentScreen = CurrentScreen.Settings() },
-                            updateAvailable = updateState.release != null && updateState !is UpdateState.Failed
+                            updateAvailable = updateState.release != null && updateState !is UpdateState.Failed,
+                            onSport = if (showSport) ({ currentScreen = CurrentScreen.Sport }) else null
                         )
                     } else {
                         null
@@ -757,6 +777,8 @@ class MainActivity : ComponentActivity() {
                                             else -> currentScreen = CurrentScreen.Player(event.channel)
                                         }
                                     },
+                                    onOpenSportSection = if (showSport) ({ currentScreen = CurrentScreen.Sport }) else null,
+                                    sportLogos = sportLogos,
                                     watchlist = if (vodEnabled && !vodHidden) traktWatchlist else emptyList(),
                                     guideActions = homeActions,
                                     onOpenTitle = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) },
@@ -837,6 +859,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenVod = if (vodEnabled) ({ kind -> openVodSection(kind) }) else null,
                                     onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
                                     onOpenRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
+                                    onOpenSport = if (showSport) ({ currentScreen = CurrentScreen.Sport }) else null,
                                     // Not on a phone / tablet: the focus does not follow the eyes there, a tap opens the channel
                                     previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide && !Device.isTouch },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
@@ -916,6 +939,28 @@ class MainActivity : ComponentActivity() {
                                     findPoster = { title -> viewModel.vod.posterFor(title) }
                                 )
                             }
+                        }
+                        is CurrentScreen.Sport -> {
+                            if (!showSport) LaunchedEffect(Unit) { currentScreen = CurrentScreen.Home }
+                            val sportActions = guideActions(returnTo = CurrentScreen.Sport)
+                            SportScreen(
+                                competitions = sportState.competitions,
+                                loading = sportState.loading && sportState.competitions.isEmpty(),
+                                available = sportState.available,
+                                guideEvents = sportEvents,
+                                followedTeams = sportTeams,
+                                hasReminder = { event -> sportActions.hasReminder(event.channel, event.program) },
+                                onOpenEvent = { event ->
+                                    val now = System.currentTimeMillis()
+                                    when {
+                                        event.program.endMillis <= now -> sportActions.replay?.invoke(event.channel, event.program)
+                                        event.program.startMillis > now -> sportActions.toggleReminder(event.channel, event.program)
+                                        else -> currentScreen = CurrentScreen.Player(event.channel, returnTo = CurrentScreen.Sport)
+                                    }
+                                },
+                                onBack = { currentScreen = CurrentScreen.Home },
+                                nav = screenNav
+                            )
                         }
                         is CurrentScreen.Guide -> {
                             val schedules by viewModel.schedules.collectAsState()

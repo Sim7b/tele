@@ -990,4 +990,22 @@
     <string name="start_over_title">From the start</string>
     <string name="start_over_action">Watch “%1$s” from the start</string>
     <string name="start_over_hint">Through the replay of the provider; Back returns to live</string>
+    <string name="sport_title">Sport</string>
+    <string name="sport_loading">Loading the calendars and standings…</string>
+    <string name="sport_needs_plugin">Official calendars, scores and standings come from the Télé API plugin of a Dispatcharr server (version 0.3.16 or later). Meanwhile, the followed matches found in the guide are listed.</string>
+    <string name="sport_no_data">No calendar or standing could be read for the followed competitions right now.</string>
+    <string name="sport_live">Live</string>
+    <string name="sport_coming">Coming</string>
+    <string name="sport_results">Results</string>
+    <string name="sport_standings">Standings</string>
+    <string name="sport_no_fixture">No match in the coming weeks.</string>
+    <string name="sport_no_standings">No standings for this competition.</string>
+    <string name="sport_in_guide">In the guide</string>
+    <string name="sport_team">Team</string>
+    <string name="sport_played_short">P</string>
+    <string name="sport_record_short">W-D-L</string>
+    <string name="sport_points_short">Pts</string>
+    <string name="sport_reminder_set">Reminder set</string>
+    <string name="sport_reminder_hint">OK: reminder</string>
+    <string name="sport_see_all">See all</string>
 </resources>

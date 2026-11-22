@@ -1004,4 +1004,22 @@
     <string name="start_over_title">Depuis le début</string>
     <string name="start_over_action">Revoir « %1$s » depuis le début</string>
     <string name="start_over_hint">Par le replay du fournisseur ; Retour revient au direct</string>
+    <string name="sport_title">Sport</string>
+    <string name="sport_loading">Chargement des calendriers et classements…</string>
+    <string name="sport_needs_plugin">Les calendriers, scores et classements officiels viennent du plugin Télé API d\'un serveur Dispatcharr (version 0.3.16 ou plus). En attendant, voici les matchs suivis trouvés dans le guide.</string>
+    <string name="sport_no_data">Aucun calendrier ni classement n\'a pu être lu pour les compétitions suivies pour le moment.</string>
+    <string name="sport_live">En direct</string>
+    <string name="sport_coming">À venir</string>
+    <string name="sport_results">Résultats</string>
+    <string name="sport_standings">Classement</string>
+    <string name="sport_no_fixture">Aucun match dans les prochaines semaines.</string>
+    <string name="sport_no_standings">Pas de classement pour cette compétition.</string>
+    <string name="sport_in_guide">Dans le guide</string>
+    <string name="sport_team">Équipe</string>
+    <string name="sport_played_short">J</string>
+    <string name="sport_record_short">V-N-D</string>
+    <string name="sport_points_short">Pts</string>
+    <string name="sport_reminder_set">Rappel posé</string>
+    <string name="sport_reminder_hint">OK : rappel</string>
+    <string name="sport_see_all">Tout voir</string>
 </resources>

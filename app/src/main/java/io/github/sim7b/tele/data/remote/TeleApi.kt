@@ -43,6 +43,7 @@ object TeleApi {
     const val VOD_HOLD_PATH = "/api/tele/v1/vod/hold/"
     const val VOD_FRESH_PATH = "/api/tele/v1/vod/fresh/"
     const val DEVICES_NOW_PATH = "/api/tele/v1/devices/now/"
+    const val SPORT_PATH = "/api/tele/v1/sport/"
     const val DEVICES_SEND_PATH = "/api/tele/v1/devices/send/"
 
     /** TMDB ids of an answer of [VOD_RELATED_PATH] (or a TMDB list), in their order; others are skipped. */

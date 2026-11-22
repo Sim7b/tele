@@ -205,6 +205,47 @@ class ReadmeScreenshots {
         }
     }
 
+    @Test
+    fun sport() {
+        val at = CLOCK.millis()
+        val hour = 3_600_000L
+        fun side(name: String, short: String, score: String? = null) = io.github.sim7b.tele.data.sport.SportSide(name, short, null, score)
+        fun row(rank: Int, name: String, played: String, record: String, points: String) =
+            io.github.sim7b.tele.data.sport.SportStanding(rank, name, null, null, played, points, record, null)
+        val ligue1 = io.github.sim7b.tele.data.sport.SportCompetition(
+            "football/france/ligue1", "Ligue 1", null,
+            listOf(
+                io.github.sim7b.tele.data.sport.SportFixture("1", at - hour / 2, io.github.sim7b.tele.data.sport.SportFixture.State.LIVE, null, side("Paris Saint-Germain", "PSG", "2"), side("Marseille", "OM", "1")),
+                io.github.sim7b.tele.data.sport.SportFixture("2", at + 22 * hour, io.github.sim7b.tele.data.sport.SportFixture.State.UPCOMING, null, side("Lyon", "OL"), side("AS Monaco", "ASM")),
+                io.github.sim7b.tele.data.sport.SportFixture("3", at + 44 * hour, io.github.sim7b.tele.data.sport.SportFixture.State.UPCOMING, null, side("Lille", "LOSC"), side("Lens", "RCL")),
+                io.github.sim7b.tele.data.sport.SportFixture("4", at - 26 * hour, io.github.sim7b.tele.data.sport.SportFixture.State.FINISHED, null, side("Nice", "OGCN", "0"), side("Rennes", "SRFC", "2"))
+            ),
+            listOf(io.github.sim7b.tele.data.sport.SportTable(null, listOf(
+                row(1, "Paris Saint-Germain", "13", "10-1-2", "31"), row(2, "Marseille", "13", "8-3-2", "27"),
+                row(3, "AS Monaco", "13", "7-4-2", "25"), row(4, "Lille", "13", "7-2-4", "23"), row(5, "Lens", "13", "6-4-3", "22"),
+                row(6, "Lyon", "13", "6-3-4", "21"), row(7, "Nice", "13", "5-4-4", "19"), row(8, "Rennes", "13", "5-3-5", "18")
+            )))
+        )
+        val f1 = io.github.sim7b.tele.data.sport.SportCompetition("motorsport/f1", "F1", null, emptyList(), emptyList())
+        val top14 = io.github.sim7b.tele.data.sport.SportCompetition("rugby/top14", "Top 14", null, emptyList(), emptyList())
+        val live = io.github.sim7b.tele.data.sport.SportEvent(channels[3],
+            io.github.sim7b.tele.data.model.GuideProgram("p", "4", "Ligue 1 : Paris SG - Marseille", startTimeIso = "", endTimeIso = "", startMillis = at - hour / 2, endMillis = at + 90 * 60_000L))
+        val coming = io.github.sim7b.tele.data.sport.SportEvent(channels[2],
+            io.github.sim7b.tele.data.model.GuideProgram("q", "3", "Lyon - Monaco", startTimeIso = "", endTimeIso = "", startMillis = at + 22 * hour, endMillis = at + 24 * hour))
+        shoot("sport") {
+            io.github.sim7b.tele.ui.screens.SportScreen(
+                competitions = listOf(ligue1, f1, top14),
+                loading = false,
+                available = true,
+                guideEvents = listOf(live, coming),
+                followedTeams = io.github.sim7b.tele.data.sport.SportBoard.followedTeams(listOf("@football/france/ligue1/olympique-de-marseille")),
+                hasReminder = { it == coming },
+                onOpenEvent = {},
+                onBack = {}
+            )
+        }
+    }
+
     private companion object {
         val CLOCK: Clock = ZonedDateTime.of(2026, 11, 16, 20, 35, 0, 0, ZoneId.of("Europe/Paris"))
             .let { Clock.fixed(it.toInstant(), it.zone) }

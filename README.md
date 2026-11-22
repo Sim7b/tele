@@ -35,6 +35,10 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
   - Xtream / M3U: XMLTV guide read as a stream (`.xml`, `.gz`, `.zip`), including the one announced by the playlist (`url-tvg`).
   - **guide grid** (Guide button of the home screen): the channels in rows and the next 30 hours in columns, by category (favorites, all, each category); ← / → go from program to program, ↑ / ↓ change channel at the same time, the focused program is detailed at the top, OK watches the channel and Back returns to now, then closes the grid. CH+ / CH− skip a page and the digits go to a channel number;
   - **reminders**: OK on a coming program (grid or channel panel) sets a reminder; a minute before it starts, a message offers to switch to the channel;
+  - **Sport section** (with followed teams or competitions; a tab of the glass bar, a button of the classic home, a row of the immersive home ending with *See all*): a tab per competition with its logo, its calendar (live, coming, results, the channel of the guide showing each match: OK watches it or sets a reminder) and its standings (conferences, drivers and constructors), the followed teams marked. Calendars, scores and standings come from the Télé API plugin (0.3.16 or later); without it, the followed matches of the guide.
+
+    ![Sport](docs/screenshots/sport.png)
+
   - **match alerts** (**Settings → Appearance**, with followed teams and competitions): the coming matches of the day get a reminder by themselves, once each (one removed is not set again);
   - **replay** (Xtream accounts with catch-up): the programs of the past day kept by the provider are marked REPLAY in the grid and the channel panel, and OK plays them again with the movie player (seek, pause). The program on air can be **watched again from its start** too (playback options, → or Menu): Back returns to live.
 - **Welcome screen** "Good morning / Good evening" with the account first name, shown while loading.

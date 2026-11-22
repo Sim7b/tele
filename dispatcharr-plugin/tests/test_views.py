@@ -330,6 +330,18 @@ class VodLanguagesViewTest(ViewTest):
         follow.assert_any_call(None, [12, 13])
         self.assertEqual((bad.status_code, plain.data["episodes"]), (400, {}))
 
+    def test_the_sport_of_the_tvs(self):
+        board = [{"topic": "motorsport/f1", "name": "F1", "events": [], "standings": []}]
+        with mock.patch.object(views.data, "redis_client", return_value=None), \
+                mock.patch("tele_api.sport.board", return_value=board) as find:
+            answer = self.call(views.SportView, path="/?topics=motorsport/f1,football/france/ligue1", who=user())
+            unsafe = self.call(views.SportView, path="/?topics=../../etc/passwd%3F", who=user())
+            empty = self.call(views.SportView, path="/", who=user())
+        self.assertEqual(board, answer.data["competitions"])
+        find.assert_called_once_with(None, ["motorsport/f1", "football/france/ligue1"])
+        self.assertEqual((unsafe.status_code, empty.status_code), (400, 400))
+        self.assertIn("sport", views.FEATURES)
+
     def test_a_paused_tv_holds_its_vod_connection(self):
         with mock.patch.object(views.data, "redis_client", return_value=object()), \
                 mock.patch("tele_api.holds.hold", return_value={"held": True, "until": 5.0}) as hold, \
