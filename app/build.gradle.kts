@@ -172,6 +172,12 @@ baselineProfile {
     mergeIntoMain = true
 }
 
+// JVM unit tests: Conscrypt from Robolectric (conscrypt-openjdk-uber, with its Linux library), not the Android one
+// of the app, whose native library only exists on Android (Robolectric installs Conscrypt before every test)
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    exclude(group = "org.conscrypt", module = "conscrypt-android")
+}
+
 configurations.configureEach {
     if (name == "compileClasspath" || name == "runtimeClasspath"
             || name.endsWith("CompileClasspath") || name.endsWith("RuntimeClasspath")) {
