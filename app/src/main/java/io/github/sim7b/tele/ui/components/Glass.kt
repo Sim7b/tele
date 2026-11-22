@@ -61,7 +61,7 @@ val GlassInk = Color(0xFF0B0D12)
 val LocalImmersive = staticCompositionLocalOf { false }
 
 /** Section shown, marked in the glass bar. */
-enum class NavSection { HOME, GUIDE, MOVIES, SERIES }
+enum class NavSection { HOME, GUIDE, MOVIES, SERIES, SPORT }
 
 /**
  * The screens reachable from the glass bar at the top of the immersive screens (home, guide, movies and series):
@@ -74,7 +74,9 @@ class ScreenNav(
     val onRecordings: (() -> Unit)?,
     val onSearch: () -> Unit,
     val onSettings: () -> Unit,
-    val updateAvailable: Boolean = false
+    val updateAvailable: Boolean = false,
+    // The Sport section, shown while teams or competitions are followed
+    val onSport: (() -> Unit)? = null
 )
 
 /** Glass of the tabs, buttons and panels: a light veil with a bright edge (the picture behind stays visible). */
@@ -109,6 +111,7 @@ fun GlassNavBar(
             GlassTab(label = stringResource(R.string.vod_tab_movies), selected = current == NavSection.MOVIES, onClick = { openVod(VodKind.MOVIE) }, modifier = at(NavSection.MOVIES))
             GlassTab(label = stringResource(R.string.vod_tab_series), selected = current == NavSection.SERIES, onClick = { openVod(VodKind.SERIES) }, modifier = at(NavSection.SERIES))
         }
+        nav.onSport?.let { GlassTab(label = stringResource(R.string.sport_title), selected = current == NavSection.SPORT, onClick = it, modifier = at(NavSection.SPORT)) }
         extra()
         nav.onRecordings?.let { GlassTab(label = stringResource(R.string.recordings_screen_title), onClick = it) }
         GlassTab(icon = Icons.Filled.Search, label = stringResource(R.string.home_search), onClick = nav.onSearch)

@@ -128,6 +128,8 @@ fun HomeScreen(
     onOpenGuide: (() -> Unit)? = null,
     // Programs recorded or planned (shown when there is one)
     onOpenRecordings: (() -> Unit)? = null,
+    // The Sport section (teams or competitions followed)
+    onOpenSport: (() -> Unit)? = null,
     // Muted preview of the focused card: focus time before it starts (null: no preview), start / stop (null), video surface
     previewDelayMs: Long? = null,
     onPreviewChannel: (Channel?) -> Unit = {},
@@ -365,6 +367,7 @@ fun HomeScreen(
                 onOpenGuide = onOpenGuide,
                 onOpenVod = onOpenVod,
                 onOpenRecordings = onOpenRecordings,
+                onOpenSport = onOpenSport,
                 onOpenSearch = onOpenSearch,
                 onOpenSettings = onOpenSettings,
                 castButton = castButton
@@ -416,6 +419,11 @@ fun HomeScreen(
                     VodChip(label = stringResource(R.string.vod_tab_movies), selected = false, onClick = { openVod(VodKind.MOVIE) })
                     Spacer(modifier = Modifier.width(10.dp))
                     VodChip(label = stringResource(R.string.vod_tab_series), selected = false, onClick = { openVod(VodKind.SERIES) })
+                    Spacer(modifier = Modifier.width(10.dp))
+                }
+
+                onOpenSport?.let { openSport ->
+                    VodChip(label = stringResource(R.string.sport_title), selected = false, onClick = openSport)
                     Spacer(modifier = Modifier.width(10.dp))
                 }
 
@@ -766,6 +774,7 @@ private fun CompactHomeHeader(
     onOpenGuide: (() -> Unit)?,
     onOpenVod: ((VodKind) -> Unit)?,
     onOpenRecordings: (() -> Unit)?,
+    onOpenSport: (() -> Unit)?,
     onOpenSearch: (voice: Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     castButton: @Composable () -> Unit
@@ -793,7 +802,7 @@ private fun CompactHomeHeader(
         val openGuide = onOpenGuide?.takeIf { hasContent }
         val syncing = isLoading && hasContent
         val error = loadError?.takeIf { hasContent }
-        if (openGuide != null || onOpenVod != null || onOpenRecordings != null || syncing || error != null) {
+        if (openGuide != null || onOpenVod != null || onOpenRecordings != null || onOpenSport != null || syncing || error != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -804,6 +813,7 @@ private fun CompactHomeHeader(
                     VodChip(label = stringResource(R.string.vod_tab_movies), selected = false, onClick = { openVod(VodKind.MOVIE) })
                     VodChip(label = stringResource(R.string.vod_tab_series), selected = false, onClick = { openVod(VodKind.SERIES) })
                 }
+                onOpenSport?.let { VodChip(label = stringResource(R.string.sport_title), selected = false, onClick = it) }
                 onOpenRecordings?.let { VodChip(label = stringResource(R.string.recordings_screen_title), selected = false, onClick = it) }
                 if (syncing) {
                     CircularProgressIndicator(color = TextSecondary, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))

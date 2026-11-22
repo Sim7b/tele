@@ -27,7 +27,7 @@ logger = logging.getLogger("apps.tele_api.views")
 
 PLUGIN_KEY = os.path.basename(os.path.dirname(os.path.abspath(__file__))).lower().replace(" ", "_")
 
-FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog", "vod_segments", "channel_state", "sync_profiles", "vod_hold", "vod_fresh", "handoff")
+FEATURES = ("channels", "slots", "sessions", "vod_languages", "vod_media", "stream_health", "guide", "sync", "tmdb_ids", "vod_groups", "vod_popular", "vod_facts", "vod_catalog", "vod_segments", "channel_state", "sync_profiles", "vod_hold", "vod_fresh", "handoff", "sport")
 MAX_RELEASED = 50
 _ENABLED_TTL = 5.0
 ADMIN_LEVEL = 10
@@ -419,6 +419,25 @@ class VodFreshView(TeleView):
             return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
         fresh.follow(data.redis_client(), ids)
         answer = {"api": core.API_VERSION, "days": days, "added": fresh.added(days), "episodes": fresh.latest_episodes(ids) if ids else {}}
+        tag = core.etag(answer)
+        if core.etag_matches(request.headers.get("If-None-Match"), tag):
+            return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
+        return Response(answer, headers={"ETag": tag})
+
+
+class SportView(TeleView):
+    """Calendars, scores and standings of the competitions of ?topics=football/france/ligue1,motorsport/f1 (ids of
+    the sport catalog of the TVs, 8 at most, sport.py): {"competitions": [{"topic", "name", "logo", "events",
+    "standings"}]}, the ones known and read."""
+
+    def get(self, request):
+        from . import sport
+
+        raw = core.to_text(request.query_params.get("topics")) or ""
+        topics = [t for t in (part.strip() for part in raw.split(",")) if t][: sport.MAX_TOPICS]
+        if not topics or any(len(t) > 80 or not re.fullmatch(r"[a-z0-9/_-]+", t) for t in topics):
+            return Response({"error": "invalid_request"}, status=status.HTTP_400_BAD_REQUEST)
+        answer = {"api": core.API_VERSION, "competitions": sport.board(data.redis_client(), topics)}
         tag = core.etag(answer)
         if core.etag_matches(request.headers.get("If-None-Match"), tag):
             return Response(status=status.HTTP_304_NOT_MODIFIED, headers={"ETag": tag})
@@ -957,6 +976,31 @@ class AdminIntroDbView(AdminView):
             return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
         vault.set_introdb_key(key)
         logger.info("Télé API: TheIntroDB key set by an admin")
+        return Response({"api": core.API_VERSION, "key_set": True})
+
+
+class AdminSportsDbView(AdminView):
+    """TheSportsDB key of the plugin (optional: the free key is used without one): GET whether one is set (never the
+    key); POST {"key"} sets it after TheSportsDB accepted it, {"key": null} removes it."""
+
+    def get(self, request):
+        return Response({"api": core.API_VERSION, "key_set": vault.sportsdb_key() is not None})
+
+    def post(self, request):
+        from . import sport
+
+        body = request.data if isinstance(request.data, dict) else {}
+        key = body.get("key")
+        if key is None:
+            vault.set_sportsdb_key(None)
+            return Response({"api": core.API_VERSION, "key_set": False})
+        key = (core.to_text(key) or "").strip()
+        if not 3 <= len(key) <= 128 or not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+            return Response({"error": "invalid_key"}, status=status.HTTP_400_BAD_REQUEST)
+        if not sport.test_sportsdb_key(key):
+            return Response({"error": "key_refused"}, status=status.HTTP_400_BAD_REQUEST)
+        vault.set_sportsdb_key(key)
+        logger.info("Télé API: TheSportsDB key set by an admin")
         return Response({"api": core.API_VERSION, "key_set": True})
 
 

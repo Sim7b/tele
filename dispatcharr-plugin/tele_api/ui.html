@@ -400,6 +400,20 @@
           </div>
         </details>
       </section>
+      <section class="card">
+        <details class="key" id="sportsdb-box">
+          <summary><h2>TheSportsDB</h2><span class="state set" id="sportsdb-state">Free key (optional)</span></summary>
+          <div>
+            <div class="muted small">Calendars and standings of the competitions ESPN does not cover (Pro D2, MotoGP, Betclic Élite, Starligue) for the Sport section of the TVs, kept 15 minutes. Without a key, the free one limits the events listed; a Patreon key gives every event and standing. Key: thesportsdb.com → account.</div>
+            <form id="sportsdb-form" class="row" autocomplete="off">
+              <label for="sportsdb-key" class="muted small">API key</label>
+              <input id="sportsdb-key" type="password" autocomplete="new-password" spellcheck="false" style="width:320px">
+              <button class="primary" type="submit">Save</button>
+              <button class="danger" type="button" id="sportsdb-remove">Remove</button>
+            </form>
+          </div>
+        </details>
+      </section>
     </div>
 
     <!-- Statistics -->
@@ -1326,6 +1340,23 @@
     if (!window.confirm("Remove the TheIntroDB key? The server goes back to 5,000 requests a day.")) return;
     post("admin/introdb/", { key: null }).then(function () { say("Key removed"); return loadIntroDb(); }).catch(fail("Not done"));
   });
+  function showSportsDb(data) {
+    $("sportsdb-state").textContent = data.key_set ? "Key saved ✓" : "Free key (optional)";
+    $("sportsdb-remove").disabled = !data.key_set;
+  }
+  function loadSportsDb() { return call("admin/sportsdb/").then(showSportsDb).catch(function () {}); }
+  $("sportsdb-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var input = $("sportsdb-key"), key = input.value.trim();
+    if (!key) return;
+    post("admin/sportsdb/", { key: key }).then(function () {
+      input.value = ""; $("sportsdb-box").open = false; say("TheSportsDB key saved"); return loadSportsDb();
+    }).catch(function () { say("TheSportsDB refused this key"); });
+  });
+  $("sportsdb-remove").addEventListener("click", function () {
+    if (!window.confirm("Remove the TheSportsDB key? The free key is used again.")) return;
+    post("admin/sportsdb/", { key: null }).then(function () { say("Key removed"); return loadSportsDb(); }).catch(fail("Not done"));
+  });
   function loadSubtitles() { return call("admin/subtitles/").then(showSubtitles).catch(function () {}); }
   $("os-key-form").addEventListener("submit", function (event) {
     event.preventDefault();
@@ -1431,6 +1462,7 @@
         call("admin/tmdb/").then(showTmdb),
         loadSubtitles(),
         loadIntroDb(),
+        loadSportsDb(),
         loadCategories()
       ]);
     }).catch(function (error) {

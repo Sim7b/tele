@@ -353,6 +353,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** What the other TVs of the user play, and what one of them sent here (null: no server passes it). */
     suspend fun handoff(): io.github.sim7b.tele.data.remote.HandoffState? = handoffClient()?.getHandoff()
 
+    /** The Sport section: the competitions asked for, their calendars and standings, and whether a server gives them. */
+    data class SportState(
+        val topics: List<String> = emptyList(),
+        val competitions: List<io.github.sim7b.tele.data.sport.SportCompetition> = emptyList(),
+        val loading: Boolean = false,
+        // False: no source has the Télé API plugin with the sport (the section shows the guide only)
+        val available: Boolean = true,
+        val at: Long = 0L
+    )
+
+    private val _sport = MutableStateFlow(SportState())
+    val sport: StateFlow<SportState> = _sport.asStateFlow()
+
+    /**
+     * Reads the competitions of [topics] again when they changed, or when the last answer is older than a while
+     * (shorter with a match on); [force] always.
+     */
+    fun refreshSport(topics: List<String>, force: Boolean = false) {
+        val current = _sport.value
+        if (topics.isEmpty()) {
+            if (current.topics.isNotEmpty()) _sport.value = SportState()
+            return
+        }
+        val live = current.competitions.any { c -> c.fixtures.any { it.state == io.github.sim7b.tele.data.sport.SportFixture.State.LIVE } }
+        val maxAge = if (live) SPORT_LIVE_REFRESH_MS else SPORT_REFRESH_MS
+        if (current.loading || (!force && current.topics == topics && System.currentTimeMillis() - current.at < maxAge)) return
+        _sport.value = current.copy(loading = true)
+        viewModelScope.launch {
+            var found: List<io.github.sim7b.tele.data.sport.SportCompetition>? = null
+            for (client in sources.mapNotNull { it.dispatcharr }) {
+                found = client.getSport(topics)
+                if (found != null) break
+            }
+            val kept = current.competitions.takeIf { current.topics == topics }.orEmpty()
+            _sport.value = SportState(topics, found ?: kept, loading = false, available = found != null || kept.isNotEmpty(), at = System.currentTimeMillis())
+        }
+    }
+
     /** Sends [item] to another TV of the user. */
     fun sendTo(device: String, item: io.github.sim7b.tele.data.remote.HandoffItem) {
         viewModelScope.launch { handoffClient()?.sendTo(device, item) }
@@ -1016,6 +1054,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     companion object {
+        private const val SPORT_REFRESH_MS = 10 * 60_000L
+        private const val SPORT_LIVE_REFRESH_MS = 2 * 60_000L
         private const val EPG_TICK_MS = 30_000L
         private const val ARTWORK_WINDOW_MS = 4 * 60 * 60 * 1000L
         private const val ARTWORK_REFRESH_TICKS = 120 // every hour

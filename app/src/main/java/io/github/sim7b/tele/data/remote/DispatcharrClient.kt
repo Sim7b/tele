@@ -185,6 +185,18 @@ class DispatcharrClient(
     }
 
     /**
+     * Calendars, scores and standings of the competitions of [topics] (ids of [SportCatalog]), read by the Télé API
+     * plugin for every TV; null without the plugin or on error.
+     */
+    suspend fun getSport(topics: List<String>): List<io.github.sim7b.tele.data.sport.SportCompetition>? = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank() || topics.isEmpty() || "sport" !in teleApi()) return@withContext null
+        val url = "$baseUrl${TeleApi.SPORT_PATH}".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("topics", topics.take(io.github.sim7b.tele.data.sport.SportBoard.MAX_COMPETITIONS).joinToString(","))
+            ?.build() ?: return@withContext null
+        getObject(url.toString())?.let { io.github.sim7b.tele.data.sport.SportBoard.fromJson(it) }
+    }
+
+    /**
      * Keeps ([hold]) or gives back the provider connection of the movie or episode this TV paused (Télé API plugin):
      * Dispatcharr frees it as soon as the paused stream closes. True when the server did it.
      */

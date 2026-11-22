@@ -32,6 +32,9 @@ no admin key needed:
   other TVs of the same user offer to resume it, and a player can send what it plays to one of them (*Send to
   another TV* in its options). Only between the TVs of one user; what a TV plays is forgotten 90 seconds after it
   stops telling it.
+- **Sport**: the calendars, scores and standings of the competitions the TVs follow (Ligue 1, Premier League, Top 14,
+  F1, NBA…), read by this server from ESPN (no key) and TheSportsDB (Pro D2, MotoGP, Betclic Élite, Starligue; free key,
+  or yours on the Télé page) and kept 15 minutes (2 during a match) for every TV.
 - **Stream health**: the failures of each provider stream (errors, failovers, buffering) are counted from
   the Dispatcharr events and fade away in a few hours; Télé tries the streams that failed lately last, and
   marks them in its stream picker.

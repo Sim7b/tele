@@ -228,6 +228,10 @@ fun ImmersiveHomeScreen(
     // Followed sport found in the guide, and what OK does on one (the channel, a reminder, the replay)
     sport: List<SportEvent> = emptyList(),
     onOpenSport: (SportEvent) -> Unit = {},
+    // The Sport section (teams or competitions followed): its own row ending with "See all", the logos of the teams
+    // of a match shown on its card
+    onOpenSportSection: (() -> Unit)? = null,
+    sportLogos: (SportEvent) -> List<String> = { emptyList() },
     // Trakt watchlist found in the library
     watchlist: List<VodTitle> = emptyList(),
     onOpenTitle: (VodTitle) -> Unit = {},
@@ -242,6 +246,8 @@ fun ImmersiveHomeScreen(
 
     // The featured items and the rows
     val upNextName = stringResource(R.string.home_row_up_next)
+    val sportName = stringResource(R.string.sport_title)
+    val seeAllName = stringResource(R.string.sport_see_all)
     val favoritesName = stringResource(R.string.home_favorites)
     val traktName = stringResource(R.string.home_row_trakt)
     val upNext = remember(resume, sport, rows) {
@@ -250,7 +256,14 @@ fun ImmersiveHomeScreen(
     val featured = remember(favorites, upNext, channels) { HomeFeed.featured(favorites, upNext, channels) }
     val shelves = remember(upNext, favorites, watchlist, channels, categoryOrder, channelLists, rows) {
         buildList {
-            if (upNext.isNotEmpty()) add(Shelf("upnext", upNextName, upNext))
+            val sportRow = onOpenSportSection != null && HomeRow.SPORT in rows
+            // With the Sport section, the matches have their own row (the featured items keep them)
+            val upNextShown = if (sportRow) upNext.filter { it !is HomeItem.Event } else upNext
+            if (upNextShown.isNotEmpty()) add(Shelf("upnext", upNextName, upNextShown))
+            if (sportRow) {
+                val matches = sport.filter { it.program.endMillis > now }.sortedBy { it.program.startMillis }.take(SPORT_ROW_SIZE)
+                add(Shelf("sport", sportName, matches.map { HomeItem.Event(it) } + HomeItem.More("sport", seeAllName)))
+            }
             if (favorites.isNotEmpty()) add(Shelf("favorites", favoritesName, favorites.map { HomeItem.Live(it) }))
             if (HomeRow.TRAKT in rows && watchlist.isNotEmpty()) add(Shelf("trakt", traktName, watchlist.map { HomeItem.Title(it) }))
             if (HomeRow.CATEGORIES in rows) {
@@ -524,12 +537,14 @@ fun ImmersiveHomeScreen(
                             val cardKey = "${shelf.key}|${item.key}"
                             HomeCard(
                                 item = item,
+                                logos = (item as? HomeItem.Event)?.let { sportLogos(it.event) }.orEmpty(),
                                 now = now,
                                 onClick = {
                                     when (item) {
                                         is HomeItem.Live -> onChannelSelected(item.channel)
                                         is HomeItem.Title -> if (item.progress != null) onOpenResume(item.title) else onOpenTitle(item.title)
                                         is HomeItem.Event -> onOpenSport(item.event)
+                                        is HomeItem.More -> onOpenSportSection?.invoke()
                                     }
                                 },
                                 onLongClick = {
@@ -537,6 +552,7 @@ fun ImmersiveHomeScreen(
                                         is HomeItem.Live -> menuChannel = item.channel
                                         is HomeItem.Title -> if (resumeActions != null) menuTitle = item
                                         is HomeItem.Event -> menuChannel = item.event.channel
+                                        is HomeItem.More -> Unit
                                     }
                                 },
                                 modifier = (if (cardKey == lastFocusedKey) Modifier.focusRequester(cardFocus) else Modifier)
@@ -633,9 +649,14 @@ fun ImmersiveHomeScreen(
     }
 }
 
+// Matches of the Sport row of the home, before its "See all"
+private const val SPORT_ROW_SIZE = 12
+
 /** What the screen shows for [item]. */
 @Composable
-private fun spotlightOf(item: HomeItem, now: Long): Spotlight = when (item) {
+private fun spotlightOf(item: HomeItem, now: Long): Spotlight? = when (item) {
+    // "See all": the item shown before stays
+    is HomeItem.More -> null
     is HomeItem.Live -> {
         val channel = item.channel
         val program = channel.currentProgram
@@ -729,6 +750,7 @@ private fun heroButtons(
     val watch = stringResource(R.string.reminder_watch)
     // Watching only: adding to the favorites and recording stay in the guide
     return when (item) {
+        is HomeItem.More -> emptyList()
         is HomeItem.Live -> listOf(HeroButton(watch, Icons.Filled.PlayArrow, primary = true) { onChannel(item.channel) })
         is HomeItem.Title -> {
             val title = item.title
@@ -851,25 +873,34 @@ private fun SpotlightText(shown: Spotlight, compact: Boolean, live: Boolean) {
 /** A landscape card: the program or title artwork (else the channel logo), its channel, its progress; it lifts when focused. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun HomeCard(
+    item: HomeItem,
+    now: Long,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    // A match: the logos of its teams, over the artwork
+    logos: List<String> = emptyList()
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val channel = when (item) {
         is HomeItem.Live -> item.channel
         is HomeItem.Event -> item.event.channel
-        is HomeItem.Title -> null
+        is HomeItem.Title, is HomeItem.More -> null
     }
     val program = (item as? HomeItem.Live)?.channel?.currentProgram
     val event = (item as? HomeItem.Event)?.event?.program
     val onAir = when (item) {
         is HomeItem.Live -> program != null
         is HomeItem.Event -> event!!.startMillis <= now && event.endMillis > now
-        is HomeItem.Title -> false
+        is HomeItem.Title, is HomeItem.More -> false
     }
     val progress = when (item) {
         is HomeItem.Live -> program?.progress
         is HomeItem.Event -> if (onAir) ((now - event!!.startMillis).toFloat() / (event.endMillis - event.startMillis)).coerceIn(0f, 1f) else null
         is HomeItem.Title -> item.progress?.fraction
+        is HomeItem.More -> null
     }
     val lookup = program?.title ?: event?.title
     val guideImage = program?.posterUrl ?: event?.posterUrl
@@ -892,13 +923,32 @@ private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick
             colors = ClickableSurfaceDefaults.colors(containerColor = SurfaceCard, focusedContainerColor = SurfaceCard)
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                if (!image.isNullOrBlank()) {
+                if (item is HomeItem.More) {
+                    Text(
+                        text = item.label + " →",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                } else if (logos.size >= 2) {
+                    // A match: the logos of its two teams on a plain background (the artworks of the guides are rare)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.Center)
+                    ) {
+                        logos.take(2).forEach { logo ->
+                            FadeInImage(url = logo, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.size(52.dp))
+                        }
+                    }
+                } else if (!image.isNullOrBlank()) {
                     FadeInImage(url = image, contentDescription = null, modifier = Modifier.fillMaxSize())
                 } else if (channel != null) {
                     // No artwork: the logo of the channel
                     LogoPlate(logoUrl = channel.logoUrl, name = channel.name, corner = 8.dp, padding = 6.dp, modifier = Modifier.align(Alignment.Center).size(width = 76.dp, height = 50.dp))
                 }
-                if (channel != null && !image.isNullOrBlank()) {
+                if (channel != null && (!image.isNullOrBlank() || logos.size >= 2)) {
                     LogoPlate(
                         logoUrl = channel.logoUrl,
                         name = channel.name,
@@ -924,6 +974,7 @@ private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick
                 is HomeItem.Live -> program?.title ?: item.channel.name
                 is HomeItem.Title -> item.title.title
                 is HomeItem.Event -> item.event.program.title
+                is HomeItem.More -> item.label
             },
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
@@ -940,6 +991,7 @@ private fun HomeCard(item: HomeItem, now: Long, onClick: () -> Unit, onLongClick
                     if (left > 0) stringResource(R.string.home_time_left, durationLabel(left)) else null
                 } ?: item.title.year?.toString().orEmpty()
                 is HomeItem.Event -> "${eventWhen(item.event.program, now)} · ${item.event.channel.name}"
+                is HomeItem.More -> ""
             },
             fontSize = 11.sp,
             color = Color.White.copy(alpha = 0.6f),

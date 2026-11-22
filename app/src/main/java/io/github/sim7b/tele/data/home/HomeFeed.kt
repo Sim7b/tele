@@ -17,6 +17,11 @@ sealed interface HomeItem {
         override val key: String get() = "vod:${title.key}"
     }
 
+    /** The last card of a row opening a whole section ("See all" of the sport). */
+    data class More(val section: String, val label: String) : HomeItem {
+        override val key: String get() = "more:$section"
+    }
+
     data class Event(val event: SportEvent) : HomeItem {
         override val key: String get() = "ev:${event.channel.id}:${event.program.startMillis}"
     }
