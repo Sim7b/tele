@@ -480,6 +480,8 @@ class VodRepository(
             }
         }
         indexJob?.cancel()
+        // Ultra light: no TMDB index in the background (the facts already kept, and the ones of the server, stay)
+        if (io.github.sim7b.tele.data.model.UltraLight.active) return
         val titles = _library.value.titles
         indexJob = scope.launch { index.index(titles, key) }
     }

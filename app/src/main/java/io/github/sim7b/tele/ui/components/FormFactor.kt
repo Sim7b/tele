@@ -43,8 +43,22 @@ object Device {
     var isTouch: Boolean = false
         private set
 
+    /** A device short of memory (see UltraLight.isLowEnd): the ultra light mode is on by itself there. */
+    var isLowEnd: Boolean = false
+        private set
+
+    // The memory of the device, for the settings ("1.0 GB")
+    var totalMemoryBytes: Long = 0L
+        private set
+
     fun init(context: Context) {
         isTouch = !isTelevision(context)
+        val activities = context.getSystemService(android.app.ActivityManager::class.java)
+        val memory = android.app.ActivityManager.MemoryInfo().also { activities?.getMemoryInfo(it) }
+        totalMemoryBytes = memory.totalMem
+        isLowEnd = io.github.sim7b.tele.data.model.UltraLight.isLowEnd(
+            memory.totalMem, activities?.memoryClass ?: 0, activities?.isLowRamDevice == true
+        )
     }
 
     private fun isTelevision(context: Context): Boolean =

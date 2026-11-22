@@ -34,6 +34,13 @@ class TeleApplication : Application(), ImageLoaderFactory {
         // The light posters of the Télé API plugin fall back to the images of Dispatcharr
         .okHttpClient { HttpClients.base.newBuilder().addInterceptor(PosterFallback).build() }
         .respectCacheHeaders(false)
+        // Small devices: images in half the memory, and a smaller share of the memory for them
+        .apply {
+            if (io.github.sim7b.tele.ui.components.Device.isLowEnd) {
+                allowRgb565(true)
+                memoryCache { coil.memory.MemoryCache.Builder(this@TeleApplication).maxSizePercent(LOW_END_IMAGE_MEMORY).build() }
+            }
+        }
         .diskCache {
             val dir = cacheDir.resolve("images")
             val used = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -44,3 +51,6 @@ class TeleApplication : Application(), ImageLoaderFactory {
         }
         .build()
 }
+
+// Share of the app memory for the images on a small device (Coil takes a quarter by default)
+private const val LOW_END_IMAGE_MEMORY = 0.12

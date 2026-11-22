@@ -51,6 +51,7 @@ import io.github.sim7b.tele.data.sport.SportFixture
 import io.github.sim7b.tele.data.sport.SportSide
 import io.github.sim7b.tele.data.sport.SportStanding
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.ImageKind
 import io.github.sim7b.tele.ui.components.GlassClock
 import io.github.sim7b.tele.ui.components.GlassNavBar
 import io.github.sim7b.tele.ui.components.LocalClock
@@ -166,7 +167,7 @@ private fun CompetitionTab(competition: SportCompetition, selected: Boolean, onC
 
 @Composable
 private fun Logo(url: String, name: String?, size: Int) {
-    FadeInImage(url = url, contentDescription = name, contentScale = ContentScale.Fit, modifier = Modifier.size(size.dp))
+    FadeInImage(url = url, contentDescription = name, contentScale = ContentScale.Fit, modifier = Modifier.size(size.dp), kind = ImageKind.LOGO)
 }
 
 @Composable

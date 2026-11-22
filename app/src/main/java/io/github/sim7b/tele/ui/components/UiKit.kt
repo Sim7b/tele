@@ -79,8 +79,11 @@ fun FadeInImage(
     contentScale: ContentScale = ContentScale.Crop,
     alpha: Float = 1f,
     // The picture could not be loaded (missing on the server)
-    onError: (() -> Unit)? = null
+    onError: (() -> Unit)? = null,
+    kind: ImageKind = ImageKind.ARTWORK
 ) {
+    // Ultra light: the artworks of the programs and titles are left out (the logos and posters stay)
+    if (kind == ImageKind.ARTWORK && LocalUltraLight.current) return
     val context = LocalContext.current
     val lite = LocalLite.current
     val request = remember(url, lite) {

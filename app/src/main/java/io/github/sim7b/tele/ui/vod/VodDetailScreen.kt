@@ -74,6 +74,7 @@ import io.github.sim7b.tele.ui.components.glass
 import io.github.sim7b.tele.ui.components.LocalImmersive
 import io.github.sim7b.tele.ui.components.AdaptiveButtonRow
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.ImageKind
 import io.github.sim7b.tele.ui.components.LocalScreen
 import io.github.sim7b.tele.ui.components.MenuRow
 import io.github.sim7b.tele.ui.components.SelectionDot
@@ -215,7 +216,7 @@ fun VodDetailScreen(
                             .clip(RoundedCornerShape(10.dp))
                             .background(SurfaceCard)
                     ) {
-                        FadeInImage(url = shown.posterUrl, contentDescription = shown.title, modifier = Modifier.fillMaxSize())
+                        FadeInImage(url = shown.posterUrl, contentDescription = shown.title, modifier = Modifier.fillMaxSize(), kind = ImageKind.POSTER)
                     }
                     Spacer(modifier = Modifier.width(if (compact) 16.dp else 26.dp))
                     Column(modifier = Modifier.weight(1f)) {

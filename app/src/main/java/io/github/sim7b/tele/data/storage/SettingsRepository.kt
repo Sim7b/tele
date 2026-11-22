@@ -194,6 +194,10 @@ class SettingsRepository(context: Context) {
     val vodEnabled: StateFlow<Boolean> = _vodEnabled.asStateFlow()
 
     // Screen switched to the frame rate of the video (50 Hz for the European channels, 24 Hz for movies)
+    private val _ultraLight = MutableStateFlow(io.github.sim7b.tele.data.model.UltraLightMode.AUTO)
+    /** Ultra light mode (see UltraLight): by itself on small devices, always, or never. */
+    val ultraLight: StateFlow<io.github.sim7b.tele.data.model.UltraLightMode> = _ultraLight.asStateFlow()
+
     private val _sportAlerts = MutableStateFlow(true)
     /** The coming matches of the followed teams and competitions get a reminder by themselves. */
     val sportAlerts: StateFlow<Boolean> = _sportAlerts.asStateFlow()
@@ -300,6 +304,7 @@ class SettingsRepository(context: Context) {
         _vodEnabled.value = prefs.getBoolean(KEY_VOD_ENABLED, false)
         _matchFrameRate.value = prefs.getBoolean(KEY_MATCH_FRAME_RATE, true)
         _sportAlerts.value = prefs.getBoolean(KEY_SPORT_ALERTS, true)
+        _ultraLight.value = io.github.sim7b.tele.data.model.UltraLightMode.of(prefs.getString(KEY_ULTRA_LIGHT, null))
         _audioLeveling.value = AudioLeveling.entries.firstOrNull { it.name == prefs.getString(KEY_AUDIO_LEVELING, null) } ?: AudioLeveling.OFF
         _timeshift.value = prefs.getBoolean(KEY_TIMESHIFT, true)
         _audioPassthrough.value = prefs.getBoolean(KEY_AUDIO_PASSTHROUGH, true)
@@ -501,6 +506,11 @@ class SettingsRepository(context: Context) {
     fun setVodDisplay(display: VodDisplay) {
         prefs.edit().putString(KEY_VOD_DISPLAY, display.toJson().toString()).apply()
         _vodDisplay.value = display
+    }
+
+    fun setUltraLight(mode: io.github.sim7b.tele.data.model.UltraLightMode) {
+        prefs.edit { putString(KEY_ULTRA_LIGHT, mode.name) }
+        _ultraLight.value = mode
     }
 
     fun setSportAlerts(enabled: Boolean) {
@@ -939,6 +949,7 @@ class SettingsRepository(context: Context) {
         put("vodEnabled", _vodEnabled.value)
         put("matchFrameRate", _matchFrameRate.value)
         put("sportAlerts", _sportAlerts.value)
+        put("ultraLight", _ultraLight.value.name)
         put("audioLeveling", _audioLeveling.value.name)
         put("timeshift", _timeshift.value)
         put("audioPassthrough", _audioPassthrough.value)
@@ -1009,6 +1020,7 @@ class SettingsRepository(context: Context) {
         if (json.has("vodEnabled")) setVodEnabled(json.optBoolean("vodEnabled", false))
         if (json.has("matchFrameRate")) setMatchFrameRate(json.optBoolean("matchFrameRate", true))
         if (json.has("sportAlerts")) setSportAlerts(json.optBoolean("sportAlerts", true))
+        if (json.has("ultraLight")) setUltraLight(io.github.sim7b.tele.data.model.UltraLightMode.of(json.optString("ultraLight")))
         AudioLeveling.entries.firstOrNull { it.name == json.optString("audioLeveling") }?.let { setAudioLeveling(it) }
         if (json.has("timeshift")) setTimeshift(json.optBoolean("timeshift", true))
         if (json.has("audioPassthrough")) setAudioPassthrough(json.optBoolean("audioPassthrough", true))
@@ -1083,6 +1095,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_VOD_ENABLED = "vod_enabled"
         private const val KEY_MATCH_FRAME_RATE = "match_frame_rate"
         private const val KEY_SPORT_ALERTS = "sport_alerts"
+        private const val KEY_ULTRA_LIGHT = "ultra_light"
         private const val KEY_AUDIO_LEVELING = "audio_leveling"
         private const val KEY_TIMESHIFT = "timeshift"
         private const val KEY_AUDIO_PASSTHROUGH = "audio_passthrough"
