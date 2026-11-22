@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.45](https://github.com/Sim7b/tele/compare/v0.3.44...v0.3.45) (2026-11-22)
+
+### Bug Fixes
+
+* Sport tab and server message in the immersive style, ultra light choice at the first launch ([05e2842](https://github.com/Sim7b/tele/commit/05e2842612d58edb4b0e4ea943e6a1ab7a2dceb7))
+
 ## [0.3.44](https://github.com/Sim7b/tele/compare/v0.3.43...v0.3.44) (2026-11-22)
 
 ### Features
