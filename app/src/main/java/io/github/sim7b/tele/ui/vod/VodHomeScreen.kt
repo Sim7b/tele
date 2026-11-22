@@ -72,6 +72,7 @@ import io.github.sim7b.tele.data.vod.RankedItem
 import io.github.sim7b.tele.data.vod.Ranking
 import io.github.sim7b.tele.data.vod.TmdbFacts
 import io.github.sim7b.tele.data.vod.VodBrowse
+import io.github.sim7b.tele.data.vod.VodBrowseView
 import io.github.sim7b.tele.data.vod.VodFilter
 import io.github.sim7b.tele.data.vod.VodFilterOptions
 import io.github.sim7b.tele.data.vod.VodIndexProgress
@@ -182,7 +183,19 @@ fun VodHomeScreen(
     matcherFor: (List<VodTitle>, Map<Ranking, List<RankedItem>>) -> VodRankings.Matcher? = { titles, ranked ->
         if (ranked.isEmpty()) null else VodRankings.Matcher(titles, facts())
     },
-    onRows: (List<VodRow>) -> Unit = {},
+    // The rows of the home for these inputs (kept between openings by the library), and the Movies and Series
+    // tabs, prepared once and kept (the one already prepared is shown at the first frame)
+    buildRows: suspend (Map<String, VodProgress>, List<String>, List<VodCollection>, Set<VodRow.Kind>) -> List<VodRow> = { p, m, c, h ->
+        withContext(Dispatchers.Default) { VodRows.build(library.titles, p, m, c, rankings, matcherFor(library.titles, rankings), h, serverPopular) }
+    },
+    browse: suspend (VodKind, VodFilter) -> VodBrowseView = { kind, filter ->
+        withContext(Dispatchers.Default) {
+            val known = facts()
+            val listed = VodBrowse.filter(library.titles, kind, filter, known)
+            VodBrowseView(listed, VodBrowse.shelves(listed, known), VodBrowse.options(library.titles, kind, known))
+        }
+    },
+    cachedBrowse: (VodKind, VodFilter) -> VodBrowseView? = { _, _ -> null },
     // New categories suggested (source name, count), to choose or dismiss
     newCategories: Pair<String, Int>? = null,
     onChooseNewCategories: () -> Unit = {},
@@ -284,10 +297,7 @@ fun VodHomeScreen(
     // Built off the main thread: libraries hold tens of thousands of titles
     // The rows last built first (the home opens with them), then the ones of the current state
     val rows by produceState(initialRows, library.titles, progress, myList, collections, rankings, indexVersion, hiddenRows, serverPopular) {
-        value = withContext(Dispatchers.Default) {
-            VodRows.build(library.titles, progress, myList, collections, rankings, matcherFor(library.titles, rankings), hiddenRows, serverPopular)
-        }
-        onRows(value)
+        value = buildRows(progress, myList, collections, hiddenRows)
     }
     // The rows of the movies or the series (no filter chosen): continue watching, my list, collections, rankings;
     // the genres come from the shelves below
@@ -380,17 +390,20 @@ fun VodHomeScreen(
             firstFocus.requestFocusWithRetry(attempts = 40)
         }
     }
-    val listed by produceState(emptyList<VodTitle>(), library.titles, kind, filter, indexVersion) {
-        value = if (kind == null) emptyList() else withContext(Dispatchers.Default) { VodBrowse.filter(library.titles, kind, filter, facts()) }
+    // Movies and Series tabs: rows (latest releases, best rated, genres) of the filtered titles, or all of them in a
+    // grid, and the values of the filters. Prepared by the library in the background: shown at once when ready
+    val view by produceState(kind?.let { cachedBrowse(it, filter) } ?: VodBrowseView(), library.titles, kind, filter, indexVersion) {
+        if (kind == null) {
+            value = VodBrowseView()
+            return@produceState
+        }
+        cachedBrowse(kind, filter)?.let { value = it }
+        value = browse(kind, filter)
     }
-    // Movies and Series tabs: rows (latest releases, best rated, genres) of the filtered titles, or all of them in a grid
+    val listed = view.listed
+    val shelves = view.shelves
+    val options = view.options
     var gridView by rememberSaveable { mutableStateOf(false) }
-    val shelves by produceState(emptyList<VodShelf>(), listed, indexVersion) {
-        value = if (listed.isEmpty()) emptyList() else withContext(Dispatchers.Default) { VodBrowse.shelves(listed, facts()) }
-    }
-    val options by produceState(VodFilterOptions(), library.titles, kind, indexVersion) {
-        value = if (kind == null) VodFilterOptions() else withContext(Dispatchers.Default) { VodBrowse.options(library.titles, kind, facts()) }
-    }
     val hero = focusedKey?.let { library.byKey[it] } ?: library.featured
     val progressByTitle = remember(progress) {
         progress.values.filter { !it.finished }.groupBy { it.titleKey }.mapValues { (_, list) -> list.maxBy { it.updatedAt }.fraction }

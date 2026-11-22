@@ -12,9 +12,12 @@ import io.github.sim7b.tele.data.storage.CachedVodCatalog
 import io.github.sim7b.tele.data.storage.SettingsRepository
 import io.github.sim7b.tele.data.toUiText
 import io.github.sim7b.tele.R
+import io.github.sim7b.tele.data.storage.VodCollection
+import io.github.sim7b.tele.data.storage.VodProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
@@ -854,6 +857,93 @@ class VodRepository(
     @Volatile
     var lastRows: List<VodRow> = emptyList()
 
+    // What [lastRows] were built from: built again only when one of them changed
+    private var lastRowsInputs: RowsInputs? = null
+
+    // The library and the rankings compared by identity (tens of thousands of titles), the rest by value (small)
+    private class RowsInputs(val titles: List<VodTitle>, val rankings: Map<Ranking, List<RankedItem>>, val rest: List<Any?>) {
+        fun same(other: RowsInputs) = titles === other.titles && rankings === other.rankings && rest == other.rest
+    }
+
+    /**
+     * Rows of the home for the current library: the ones last built when nothing changed since (opening the
+     * movies or series again, back from a sheet), else built off the main thread and kept.
+     */
+    suspend fun rows(
+        progress: Map<String, VodProgress>,
+        myList: List<String>,
+        collections: List<VodCollection>,
+        hidden: Set<VodRow.Kind>
+    ): List<VodRow> {
+        val titles = _library.value.titles
+        val rankings = _rankings.value
+        val popular = _serverPopular.value
+        val added = serverAdded
+        val episodes = newEpisodes
+        val inputs = RowsInputs(titles, rankings, listOf(progress, myList, collections, hidden, index.version.value, popular, added, episodes))
+        synchronized(this) { if (lastRowsInputs?.same(inputs) == true) return lastRows }
+        return withContext(Dispatchers.Default) {
+            VodRows.build(titles, progress, myList, collections, rankings, matcher(titles, rankings), hidden, popular, added, episodes)
+                .also { built ->
+                    synchronized(this@VodRepository) {
+                        lastRows = built
+                        lastRowsInputs = inputs
+                    }
+                }
+        }
+    }
+
+    // The Movies and Series tabs (their titles filtered, rows and filter values), kept for the same library,
+    // tab, filter and index version: they open at once again, even back from a sheet
+    private class BrowseKey(val titles: List<VodTitle>, val kind: VodKind, val filter: VodFilter, val version: Int) {
+        override fun equals(other: Any?) =
+            other is BrowseKey && other.titles === titles && other.kind == kind && other.filter == filter && other.version == version
+
+        override fun hashCode() = ((System.identityHashCode(titles) * 31 + kind.hashCode()) * 31 + filter.hashCode()) * 31 + version
+    }
+
+    private val browseLock = Any()
+    private val browseViews = object : LinkedHashMap<BrowseKey, VodBrowseView>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<BrowseKey, VodBrowseView>?) = size > MAX_BROWSE_VIEWS
+    }
+    private val browsePending = HashMap<BrowseKey, Deferred<VodBrowseView>>()
+
+    private fun browseKey(kind: VodKind, filter: VodFilter) = BrowseKey(_library.value.titles, kind, filter, index.version.value)
+
+    /** The tab of [kind] with [filter] when already prepared, else null (see [browse]). */
+    fun cachedBrowse(kind: VodKind, filter: VodFilter): VodBrowseView? = synchronized(browseLock) { browseViews[browseKey(kind, filter)] }
+
+    /**
+     * The tab of [kind] with [filter]: prepared once in the background (it goes on when the screen is left, for
+     * when it comes back), then kept.
+     */
+    suspend fun browse(kind: VodKind, filter: VodFilter): VodBrowseView {
+        val key = browseKey(kind, filter)
+        if (key.titles.isEmpty()) return VodBrowseView()
+        val job = synchronized(browseLock) {
+            browseViews[key]?.let { return it }
+            browsePending.getOrPut(key) {
+                scope.async(Dispatchers.Default) {
+                    try {
+                        val facts = index.all()
+                        val listed = VodBrowse.filter(key.titles, kind, filter, facts)
+                        VodBrowseView(listed, VodBrowse.shelves(listed, facts), VodBrowse.options(key.titles, kind, facts))
+                            .also { view ->
+                                synchronized(browseLock) {
+                                    // A library loaded again, or new facts: the tabs built before are of no use any more
+                                    browseViews.keys.removeAll { it.titles !== key.titles || it.version != key.version }
+                                    browseViews[key] = view
+                                }
+                            }
+                    } finally {
+                        synchronized(browseLock) { browsePending.remove(key) }
+                    }
+                }
+            }
+        }
+        return job.await()
+    }
+
     @Synchronized
     fun matcher(titles: List<VodTitle>, rankings: Map<Ranking, List<RankedItem>>): VodRankings.Matcher? {
         if (rankings.isEmpty() || titles.isEmpty()) return null
@@ -872,15 +962,13 @@ class VodRepository(
         scope.launch(Dispatchers.Default) {
             val titles = _library.value.titles
             if (titles.isEmpty()) return@launch
-            val rankings = _rankings.value
             val store = settings.vodStore
-            lastRows = VodRows.build(
-                titles, store.progress.value, store.myList.value, store.collections.value, rankings,
-                matcher(titles, rankings), settings.vodDisplay.value.hiddenRows, _serverPopular.value,
-                serverAdded, newEpisodes
-            )
+            val display = settings.vodDisplay.value
+            val rows = rows(store.progress.value, store.myList.value, store.collections.value, display.hiddenRows)
             // Kept: the next start shows them before its library is ready
-            withContext(Dispatchers.IO) { settings.vodSnapshots.saveRows(lastRows) }
+            withContext(Dispatchers.IO) { settings.vodSnapshots.saveRows(rows) }
+            // The Movies and Series tabs with their default filters, ready before they are opened
+            VodKind.entries.forEach { kind -> browse(kind, display.defaults[kind] ?: VodFilter()) }
         }
     }
 
@@ -1038,6 +1126,8 @@ class VodRepository(
         private const val ADDED_MARGIN_MS = 60 * 60 * 1000L
         private const val DETAILS_TIMEOUT_MS = 15_000L
         private const val MAX_DETAILS = 40
+        // Tabs kept: movies and series, with a few filters each
+        private const val MAX_BROWSE_VIEWS = 8
         private const val MAX_POSTERS = 3_000
         // Sheets kept on the device: shown up to a week, built again in the background past a day
         private const val DETAILS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L

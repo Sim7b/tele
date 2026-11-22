@@ -50,6 +50,10 @@ class GuideActions(
     fun canReplay(channel: Channel, program: GuideProgram, now: Long): Boolean =
         replay != null && Catchup.isReplayable(channel, program, now)
 
+    /** [program] is on air and can be watched again from its start (through [replay], see [Catchup.canStartOver]). */
+    fun canStartOver(channel: Channel, program: GuideProgram, now: Long): Boolean =
+        replay != null && Catchup.canStartOver(channel, program, now)
+
     /** [program] can be recorded: not over, on a stream written as it comes (see [RecordingRules.canRecord]). */
     fun canRecord(channel: Channel, program: GuideProgram, now: Long): Boolean =
         toggleRecording != null && program.endMillis > now && RecordingRules.canRecord(channel.selectedStreamUrl ?: channel.streamUrl)

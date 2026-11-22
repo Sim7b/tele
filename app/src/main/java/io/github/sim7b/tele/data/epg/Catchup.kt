@@ -31,6 +31,16 @@ object Catchup {
             program.startMillis >= now - channel.catchupDays * 24L * 60 * 60 * 1000
 
     /**
+     * [program] of [channel] is on air and the provider keeps it from its start: it can be watched again from
+     * there ("start over"), its replay growing as it goes. Not in its first minute (live is as good).
+     */
+    fun canStartOver(channel: Channel, program: GuideProgram, now: Long): Boolean =
+        channel.catchupDays > 0 && program.startMillis <= now - START_OVER_MIN_MS && program.endMillis > now &&
+            program.startMillis >= now - channel.catchupDays * 24L * 60 * 60 * 1000
+
+    const val START_OVER_MIN_MS = 60_000L
+
+    /**
      * Timeshift URL of a program from the live URL of an Xtream channel
      * (`…/live/user/password/1234.ts` → `…/timeshift/user/password/<minutes>/<yyyy-MM-dd:HH-mm>/1234.ts`).
      * The start is written in the time zone of the server ([zone], else the device's one). Null when the

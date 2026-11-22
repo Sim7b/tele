@@ -16,6 +16,15 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 
+/** Rules of the timeshift recording, kept apart to be tested. */
+object Timeshift {
+    /** A channel cut for longer goes back to live: what was kept is too far in the past to go on from it. */
+    const val RESUME_MAX_MS = 30 * 60_000L
+
+    /** Whether a channel stopped by a cut [behindMs] ago goes on from there (else from live). */
+    fun resumable(behindMs: Long): Boolean = behindMs in 0..RESUME_MAX_MS
+}
+
 /** Where the live channel is: how much is kept, how far behind live it plays, paused or not. */
 data class TimeshiftState(val windowMs: Long, val behindMs: Long, val paused: Boolean)
 
@@ -30,7 +39,7 @@ data class TimeshiftState(val windowMs: Long, val behindMs: Long, val paused: Bo
 class TimeshiftBuffer(
     private val dir: File,
     private val upstream: DataSource,
-    private val uri: Uri,
+    val uri: Uri,
     private val maxDurationMs: Long = MAX_DURATION_MS,
     private val maxBytes: Long = MAX_BYTES,
     private val reserveBytes: Long = RESERVE_BYTES,
@@ -140,6 +149,9 @@ class TimeshiftBuffer(
             chunk = Chunk(end, File(dir, "${end}.ts"))
             chunks.addLast(chunk)
             output = FileOutputStream(chunk.file)
+        } else if (output == null) {
+            // Recording again after a cut (see restart): the last file goes on
+            output = FileOutputStream(chunk.file, true)
         }
         if (marks.isEmpty() || now - marks.last().timeMs >= MARK_INTERVAL_MS) marks.addLast(Mark(now, end))
         output!!.write(data, 0, length)
@@ -161,6 +173,25 @@ class TimeshiftBuffer(
             val start = chunks.first().start
             while (marks.size > 1 && marks[1].offset <= start) marks.removeFirst()
         }
+    }
+
+    /** The recording stopped on a failure (network cut, refusal): what it holds can still be read. */
+    fun hasFailed(): Boolean = synchronized(lock) { finished && failure != null && !closed }
+
+    /** When the last bytes came, null before any. */
+    fun lastWriteMs(): Long? = synchronized(lock) { chunks.lastOrNull()?.lastWriteMs?.takeIf { it > 0 } }
+
+    /**
+     * Records again after a failure (the connection back): the channel is added after what was kept, so the
+     * player goes on from where the cut stopped it, behind live by the time of the cut. False when closed.
+     */
+    fun restart(): Boolean = synchronized(lock) {
+        if (closed) return false
+        if (!finished) return true
+        failure = null
+        finished = false
+        start()
+        true
     }
 
     /** First byte still kept. */

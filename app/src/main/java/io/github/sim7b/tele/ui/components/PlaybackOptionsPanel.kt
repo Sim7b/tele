@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -76,6 +77,9 @@ fun PlaybackOptionsPanel(
     onTimeshiftSeek: (deltaMs: Long) -> Unit = {},
     onTimeshiftLive: () -> Unit = {},
     // Program on air that can be recorded on the device (null: none), and whether it is
+    // The program on air, when it can be watched again from its start (null: no replay of it)
+    startOverTitle: String? = null,
+    onStartOver: () -> Unit = {},
     recordTitle: String? = null,
     recording: Boolean = false,
     onToggleRecording: () -> Unit = {},
@@ -218,6 +222,17 @@ fun PlaybackOptionsPanel(
             item { OptionsHeader(R.string.options_picture) }
             items(PictureFormat.entries) { format ->
                 ChoiceRow(label = stringResource(format.labelRes), selected = format == pictureFormat) { onSelectPictureFormat(format) }
+            }
+            if (startOverTitle != null) {
+                item {
+                    OptionsHeader(R.string.start_over_title)
+                    MenuRow(
+                        label = stringResource(R.string.start_over_action, startOverTitle),
+                        subtitle = stringResource(R.string.start_over_hint),
+                        icon = Icons.Filled.Refresh,
+                        onClick = onStartOver
+                    )
+                }
             }
             if (recordTitle != null) {
                 item {

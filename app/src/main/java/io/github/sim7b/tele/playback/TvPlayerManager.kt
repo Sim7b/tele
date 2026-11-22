@@ -583,6 +583,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
 
         val maxAttempts = ReconnectPolicy.maxAttempts(hasPlayed)
         if (!isDefinitive && !noFreeConnection && retryCount < maxAttempts && currentUrl != null) {
+            keepTimeshiftForResume(player)
             val delayMs = ReconnectPolicy.delayMs(retryCount)
             retryCount++
             _isLoading.value = true
@@ -826,6 +827,7 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     /** New series of attempts on the current stream (OK on the error message, network back). */
     fun retry() {
         if (currentUrl == null) return
+        exoPlayer?.let { keepTimeshiftForResume(it) }
         retryCount = 0
         noFreeConnectionRetried = false
         mainHandler.removeCallbacks(retryRunnable)
@@ -835,7 +837,11 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     }
 
     private fun prepareCurrent() {
-        closeTimeshift()
+        // After a cut: the recording kept goes on from where the player stopped, else a new one at live
+        val resume = resumeAt
+        resumeAt = null
+        val kept = resume?.let { from -> timeshift?.takeIf { it.uri.toString() == currentUrl && it.restart() }?.let { it to from } }
+        if (kept == null) closeTimeshift()
         val url = currentUrl ?: return
         val remote = remotePlayer
         if (remote != null && casting) {
@@ -891,7 +897,8 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
                 .createMediaSource(mediaItem)
         } else {
             // A live channel goes through the timeshift recording (to pause it, go back in it), when there is room
-            startTimeshift(url, httpDataSourceFactory)?.let { buffer -> timeshiftSource(buffer, buffer.startOffset()) }
+            kept?.let { (buffer, from) -> timeshiftSource(buffer, from) }
+                ?: startTimeshift(url, httpDataSourceFactory)?.let { buffer -> timeshiftSource(buffer, buffer.startOffset()) }
                 ?: DefaultMediaSourceFactory(httpDataSourceFactory, extractorsFactory).createMediaSource(mediaItem)
         }
 
@@ -1023,9 +1030,37 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
             .setLoadErrorHandlingPolicy(TimeshiftLoadErrorPolicy)
             .createMediaSource(MediaItem.fromUri("timeshift://live/$from"))
 
+    // Byte of the recording kept after a cut where the next attempt goes on (null: a new recording at live)
+    private var resumeAt: Long? = null
+
+    /** Where the channel stopped after a cut: the end of the recording, less what the player had not shown yet. */
+    private val _resumedBehindMs = MutableStateFlow<Long?>(null)
+    /** Set when a channel went on after a cut from where it stopped (how far behind live), null otherwise. */
+    val resumedBehindMs: StateFlow<Long?> = _resumedBehindMs.asStateFlow()
+
+    /**
+     * Before an attempt after a failure: a recording stopped by a network cut is kept, with the spot the player
+     * reached. The next attempt records again after it and plays from there, instead of the live edge.
+     */
+    private fun keepTimeshiftForResume(player: Player) {
+        val buffer = timeshift ?: return
+        if (!hasPlayed || !buffer.hasFailed() || resumeAt != null) return
+        val lastWrite = buffer.lastWriteMs() ?: return
+        val now = SystemClock.elapsedRealtime()
+        val unplayed = (player.bufferedPosition - player.currentPosition).coerceIn(0, MAX_UNPLAYED_MS)
+        val stoppedAt = lastWrite - unplayed
+        if (!Timeshift.resumable(now - stoppedAt)) return
+        resumeAt = buffer.offsetAt(stoppedAt)
+        behindMs = now - stoppedAt
+        pausedAtMs = null
+        _resumedBehindMs.value = behindMs
+    }
+
     private fun closeTimeshift() {
         timeshift?.close()
         timeshift = null
+        resumeAt = null
+        _resumedBehindMs.value = null
         behindMs = 0
         pausedAtMs = null
     }
@@ -1175,6 +1210,8 @@ class TvPlayerManager(private val context: Context, castEnabled: Boolean = false
     }
 
     companion object {
+        // What the player had loaded and not shown yet when a cut stopped it, at most
+        private const val MAX_UNPLAYED_MS = 60_000L
         const val PERF_TAG = "TVPerf"
         private const val PREVIEW_MAX_WIDTH = 1280
         private const val PREVIEW_MAX_HEIGHT = 720
