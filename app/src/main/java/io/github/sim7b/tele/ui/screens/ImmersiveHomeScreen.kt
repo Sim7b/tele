@@ -126,6 +126,7 @@ import io.github.sim7b.tele.data.vod.VodKind
 import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.ui.components.ChannelActionMenuDialog
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.ImageKind
 import io.github.sim7b.tele.ui.components.GlassClock
 import io.github.sim7b.tele.ui.components.GlassNavBar
 import io.github.sim7b.tele.ui.components.ListsMenu
@@ -939,7 +940,7 @@ private fun HomeCard(
                         modifier = Modifier.align(Alignment.Center)
                     ) {
                         logos.take(2).forEach { logo ->
-                            FadeInImage(url = logo, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.size(52.dp))
+                            FadeInImage(url = logo, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.size(52.dp), kind = ImageKind.LOGO)
                         }
                     }
                 } else if (!image.isNullOrBlank()) {

@@ -36,6 +36,7 @@ import io.github.sim7b.tele.ui.vod.countryName
 import io.github.sim7b.tele.ui.vod.languageName
 import io.github.sim7b.tele.ui.vod.sortLabel
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import io.github.sim7b.tele.R
 import io.github.sim7b.tele.data.resolve
@@ -186,6 +187,7 @@ fun SettingsScreen(
     val homeLayout by repository.homeLayout.collectAsState()
     val followedSport by repository.followedSport.collectAsState()
     val sportAlerts by repository.sportAlerts.collectAsState()
+    val ultraLight by repository.ultraLight.collectAsState()
     val matchFrameRate by repository.matchFrameRate.collectAsState()
     val audioPassthrough by repository.audioPassthrough.collectAsState()
     val bufferSize by repository.bufferSize.collectAsState()
@@ -1062,6 +1064,26 @@ fun SettingsScreen(
                                         onCheck = onCheckUpdate,
                                         onInstall = onInstallUpdate,
                                         modifier = Modifier.focusRequester(contentStart)
+                                    )
+                                }
+                                item {
+                                    val lowEnd = io.github.sim7b.tele.ui.components.Device.isLowEnd
+                                    val active = io.github.sim7b.tele.data.model.UltraLight.isActive(ultraLight, lowEnd)
+                                    val memory = io.github.sim7b.tele.ui.components.Device.totalMemoryBytes / (1024.0 * 1024 * 1024)
+                                    SettingRow(
+                                        label = stringResource(R.string.settings_ultra_light),
+                                        value = stringResource(
+                                            when (ultraLight) {
+                                                io.github.sim7b.tele.data.model.UltraLightMode.AUTO -> R.string.settings_ultra_light_auto
+                                                io.github.sim7b.tele.data.model.UltraLightMode.ON -> R.string.settings_ultra_light_on
+                                                io.github.sim7b.tele.data.model.UltraLightMode.OFF -> R.string.settings_ultra_light_off
+                                            }
+                                        ),
+                                        description = stringResource(R.string.settings_ultra_light_description) + "\n" + stringResource(
+                                            if (active) R.string.settings_ultra_light_state_on else R.string.settings_ultra_light_state_off,
+                                            "%.1f".format(LocalConfiguration.current.locales[0], memory)
+                                        ),
+                                        onClick = { repository.setUltraLight(ultraLight.next()) }
                                     )
                                 }
                                 item {

@@ -37,7 +37,8 @@ object ProgramPosterRepository {
      * URL of a landscape artwork (16:9 / backdrop) for a program title.
      */
     suspend fun getPosterUrl(rawTitle: String): String? = withContext(Dispatchers.IO) {
-        if (rawTitle.isBlank()) return@withContext null
+        // Ultra light: no artwork shown, none looked up
+        if (rawTitle.isBlank() || io.github.sim7b.tele.data.model.UltraLight.active) return@withContext null
 
         val cleanTitle = cleanProgramTitle(rawTitle)
         if (cleanTitle.isBlank()) return@withContext null
@@ -136,14 +137,15 @@ object ProgramPosterRepository {
      * A large landscape artwork of a program, for the whole screen: the TMDB backdrop of the movie or the series
      * of that name (1280 px, with a TMDB key), else null. Missing ones are remembered too.
      */
-    suspend fun getBackdropUrl(rawTitle: String): String? = tmdbMatch(rawTitle)?.backdrop
+    suspend fun getBackdropUrl(rawTitle: String): String? =
+        if (io.github.sim7b.tele.data.model.UltraLight.active) null else tmdbMatch(rawTitle)?.backdrop
 
     /**
      * The logo of a title (its name drawn as artwork, in the language of the device, else English, else without
      * text), from TMDB: by its id when known ([tmdbId], [movie]), else by its name. Null without a TMDB key or logo.
      */
     suspend fun getTitleLogoUrl(rawTitle: String, tmdbId: String? = null, movie: Boolean? = null): String? = withContext(Dispatchers.IO) {
-        val key = tmdbKey?.takeIf { it.isNotBlank() } ?: return@withContext null
+        val key = tmdbKey?.takeIf { it.isNotBlank() && !io.github.sim7b.tele.data.model.UltraLight.active } ?: return@withContext null
         val known = tmdbId?.toLongOrNull()?.takeIf { movie != null }?.let { TmdbMatch(if (movie == true) "movie" else "tv", it, null) }
         val match = known ?: tmdbMatch(rawTitle) ?: return@withContext null
         val cacheKey = "${match.type}:${match.id}"

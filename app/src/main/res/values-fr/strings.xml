@@ -1022,4 +1022,11 @@
     <string name="sport_reminder_set">Rappel posé</string>
     <string name="sport_reminder_hint">OK : rappel</string>
     <string name="sport_see_all">Tout voir</string>
+    <string name="settings_ultra_light">Mode ultra léger</string>
+    <string name="settings_ultra_light_auto">Automatique</string>
+    <string name="settings_ultra_light_on">Toujours</string>
+    <string name="settings_ultra_light_off">Jamais</string>
+    <string name="settings_ultra_light_description">Pour les petites box : accueil classique, pas d\'images de fond (logos et affiches gardés), pas de fondus, pas d\'aperçu, pas de différé, petit tampon, rien en arrière-plan (index TMDB, rangée Google TV, sport, autres TV). Automatique : activé quand la box manque de mémoire.</string>
+    <string name="settings_ultra_light_state_on">Activé en ce moment (cette box : %1$s Go de mémoire)</string>
+    <string name="settings_ultra_light_state_off">Désactivé en ce moment (cette box : %1$s Go de mémoire)</string>
 </resources>

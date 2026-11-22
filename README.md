@@ -52,6 +52,7 @@ Channels come from a **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)
 - **Voice**: a channel, a movie, a series or one of its seasons ("season 2 of …") asked to the Google Assistant opens directly.
 - **Weak connection**: when a channel stalls twice in a short while, Télé plays a lower quality stream for 30 minutes and says so.
 - With the Télé API plugin: **Added this week** and **New episodes** rows for movies and series, and **Resume on another TV** (what another TV of the user plays is offered on the home screen; *Send to another TV* in the playback options).
+- **Ultra light mode** (**Settings → System**, automatic on devices short of memory, or always / never): the classic home, no artwork (channel logos, team logos and movie posters stay), no fades, no preview on the home screen, no timeshift on the storage, a small buffer, nothing in the background (TMDB index, Google TV home row, sport, resume on another TV, program artwork lookups), and fewer images kept in memory.
 - **Buffer** (**Settings → Playback**): small to maximum, for a weak connection or a small device.
 - **Language of foreign movies and series** (**Settings → Movies and series**): dubbed in the language of the TV, or the original version with subtitles in it.
 - **Copy to another TV**: the whole configuration (sources, favorites, categories, settings) is sent over the local network, encrypted with an 8-digit code shown on the sending TV.

@@ -46,12 +46,15 @@ import io.github.sim7b.tele.data.storage.ReminderAlarms
 import io.github.sim7b.tele.data.sport.SportEvent
 import io.github.sim7b.tele.data.sport.SportEvents
 import io.github.sim7b.tele.data.sport.SportBoard
+import io.github.sim7b.tele.data.model.UltraLight
+import io.github.sim7b.tele.ui.components.LocalUltraLight
 import io.github.sim7b.tele.ui.screens.SportScreen
 import io.github.sim7b.tele.data.trakt.Trakt
 import io.github.sim7b.tele.data.trakt.TraktItem
 import io.github.sim7b.tele.data.trakt.TraktMatch
 import io.github.sim7b.tele.data.trakt.TraktWatched
 import io.github.sim7b.tele.data.storage.VodProgress
+import io.github.sim7b.tele.data.model.BufferSize
 import io.github.sim7b.tele.data.model.HomeStyle
 import io.github.sim7b.tele.ui.screens.ImmersiveHomeScreen
 import io.github.sim7b.tele.data.record.Recording
@@ -252,6 +255,10 @@ class MainActivity : ComponentActivity() {
             val serverMessage by viewModel.serverMessage.collectAsState()
             val updateState by updateViewModel.state.collectAsState()
             val previewDelay by configRepository.previewDelay.collectAsState()
+            // Ultra light mode (small devices): told at once to the parts outside the screens (repositories, player)
+            val ultraMode by configRepository.ultraLight.collectAsState()
+            val ultra = UltraLight.isActive(ultraMode, Device.isLowEnd)
+            UltraLight.active = ultra
             // Movies and series module (its library and positions are read in its own screens only:
             // their updates must not recompose the live TV ones)
             val vodEnabled by configRepository.vodEnabled.collectAsState()
@@ -279,9 +286,10 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(audioPassthrough) { playerManager.audioPassthrough = audioPassthrough }
             val bufferSize by configRepository.bufferSize.collectAsState()
             val subtitleAppearance by configRepository.subtitleAppearance.collectAsState()
-            LaunchedEffect(bufferSize) { playerManager.bufferSize = bufferSize }
+            LaunchedEffect(bufferSize, ultra) { playerManager.bufferSize = if (ultra) BufferSize.SMALL else bufferSize }
             val timeshiftOn by configRepository.timeshift.collectAsState()
-            LaunchedEffect(timeshiftOn) { playerManager.timeshiftEnabled = timeshiftOn }
+            // Ultra light: no timeshift recording on the storage
+            LaunchedEffect(timeshiftOn, ultra) { playerManager.timeshiftEnabled = timeshiftOn && !ultra }
 
             val userName by viewModel.userName.collectAsState()
             // The guide grid is offered once a guide is loaded (only this flag: the programs are read in its screen)
@@ -466,6 +474,8 @@ class MainActivity : ComponentActivity() {
             val categoryCounts = homeLists.categoryCounts
             // Immersive home: every favorite (the usual home fills 8 tiles), the followed sport of the guide
             val homeLayout by configRepository.homeLayout.collectAsState()
+            // Ultra light: the classic home whatever the style chosen (no artwork over the whole screen)
+            val homeStyle = if (ultra) HomeStyle.CLASSIC else homeLayout.style
             val allFavorites = remember(favoriteIds, unhiddenChannels) {
                 val byId = HashMap<String, Channel>()
                 unhiddenChannels.forEach { channel -> channel.allIds.forEach { byId.putIfAbsent(it, channel) } }
@@ -487,7 +497,10 @@ class MainActivity : ComponentActivity() {
             val sportTeams = remember(followedSport) { SportBoard.followedTeams(followedSport) }
             val sportState by viewModel.sport.collectAsState()
             val showSport = followedSport.isNotEmpty()
-            LaunchedEffect(sportTopics, enabledConfigs) {
+            val onSportScreen = currentScreen is CurrentScreen.Sport
+            LaunchedEffect(sportTopics, enabledConfigs, ultra, onSportScreen) {
+                // Ultra light: read only while the Sport section is open
+                if (ultra && !onSportScreen) return@LaunchedEffect
                 while (true) {
                     viewModel.refreshSport(sportTopics)
                     delay(SPORT_CHECK_MS)
@@ -626,7 +639,9 @@ class MainActivity : ComponentActivity() {
                     ?.let { HandoffItem(HandoffItem.VOD, it.itemKey, it.label) }
                 else -> null
             }
-            LaunchedEffect(playingItem) {
+            LaunchedEffect(playingItem, ultra) {
+                // Ultra light: nothing told to the other TVs in the background
+                if (ultra) return@LaunchedEffect
                 val item = playingItem ?: return@LaunchedEffect viewModel.reportPlaying(deviceName, null)
                 while (true) {
                     val (position, duration) = if (item.kind == HandoffItem.VOD) playerManager.positionAndDuration() else 0L to 0L
@@ -639,8 +654,8 @@ class MainActivity : ComponentActivity() {
             var handoffOffer by remember { mutableStateOf<Triple<HandoffTv, HandoffItem, Boolean>?>(null) }
             val handoffOffered = remember { mutableSetOf<String>() }
             val onHome = currentScreen is CurrentScreen.Home
-            LaunchedEffect(showWelcome) {
-                if (showWelcome) return@LaunchedEffect
+            LaunchedEffect(showWelcome, ultra) {
+                if (showWelcome || ultra) return@LaunchedEffect
                 lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     while (true) {
                         val state = viewModel.handoff()
@@ -698,7 +713,8 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalRatingOf provides remember { { title: VodTitle -> VodBrowse.rating(title, viewModel.vod.index.facts(title.key)) } },
                     // Classic style: the light mode, for small devices
-                    LocalLite provides (homeLayout.style == HomeStyle.CLASSIC)
+                    LocalLite provides (homeStyle == HomeStyle.CLASSIC),
+                    LocalUltraLight provides ultra
                 ) {
                 Box(
                     modifier = Modifier
@@ -721,7 +737,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     // Immersive home chosen (with a remote): the guide, the movies and the series in the same style,
                     // the sections in a glass bar at the top of each
-                    val screenNav = if (homeLayout.style == HomeStyle.IMMERSIVE && !Device.isTouch) {
+                    val screenNav = if (homeStyle == HomeStyle.IMMERSIVE && !Device.isTouch) {
                         ScreenNav(
                             onHome = { currentScreen = CurrentScreen.Home },
                             onGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
@@ -749,7 +765,7 @@ class MainActivity : ComponentActivity() {
                             }
                             // Immersive home (chosen in the settings): with a remote and channels only, the usual home
                             // shows the loading, the errors and the first steps
-                            val immersive = homeLayout.style == HomeStyle.IMMERSIVE && !Device.isTouch && visibleChannels.isNotEmpty()
+                            val immersive = homeStyle == HomeStyle.IMMERSIVE && !Device.isTouch && visibleChannels.isNotEmpty()
                             if (immersive) saveableStateHolder.SaveableStateProvider("home-immersive") {
                                 val homeActions = guideActions(returnTo = CurrentScreen.Home)
                                 ImmersiveHomeScreen(
@@ -797,7 +813,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenVod = if (vodEnabled) ({ kind -> openVodSection(kind) }) else null,
                                     onOpenGuide = if (hasGuide) ({ currentScreen = CurrentScreen.Guide }) else null,
                                     onOpenRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
-                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide },
+                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide && !ultra },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
                                     previewSurface = { PreviewVideo(playerManager) }
                                 )
@@ -861,7 +877,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenRecordings = if (recordings.isNotEmpty()) ({ currentScreen = CurrentScreen.Recordings }) else null,
                                     onOpenSport = if (showSport) ({ currentScreen = CurrentScreen.Sport }) else null,
                                     // Not on a phone / tablet: the focus does not follow the eyes there, a tap opens the channel
-                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide && !Device.isTouch },
+                                    previewDelayMs = previewDelay.millis.takeIf { !showWelcome && !showGuide && !Device.isTouch && !ultra },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
                                     previewSurface = { PreviewVideo(playerManager) },
                                     castButton = { CastButton(playerManager) }
@@ -975,7 +991,7 @@ class MainActivity : ComponentActivity() {
                                     recents = recentChannels,
                                     actions = guideActions(returnTo = CurrentScreen.Guide),
                                     sportChannels = remember(sportEvents) { sportEvents.map { it.channel }.distinctBy { it.id } },
-                                    previewDelayMs = previewDelay.millis.takeIf { !Device.isTouch },
+                                    previewDelayMs = previewDelay.millis.takeIf { !Device.isTouch && !ultra },
                                     onPreviewChannel = { channel -> previewChannel(channel) },
                                     previewSurface = { PreviewVideo(playerManager) },
                                     onWatch = { channel -> currentScreen = CurrentScreen.Player(channel, returnTo = CurrentScreen.Guide) },
@@ -1450,7 +1466,7 @@ class MainActivity : ComponentActivity() {
 
                     // Favorite channels in a row of the TV home, with what they show now (not those locked by the parental
                     // code: that row is outside the app)
-                    if (!Device.isTouch) {
+                    if (!Device.isTouch && !ultra) {
                         val favoritesRow = remember { FavoritesRow(applicationContext) }
                         val lockedGroups by configRepository.parental.lockedGroups.collectAsState()
                         val parentalOn by configRepository.parental.hasPin.collectAsState()

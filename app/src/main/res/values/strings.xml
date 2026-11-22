@@ -1008,4 +1008,11 @@
     <string name="sport_reminder_set">Reminder set</string>
     <string name="sport_reminder_hint">OK: reminder</string>
     <string name="sport_see_all">See all</string>
+    <string name="settings_ultra_light">Ultra light mode</string>
+    <string name="settings_ultra_light_auto">Automatic</string>
+    <string name="settings_ultra_light_on">Always</string>
+    <string name="settings_ultra_light_off">Never</string>
+    <string name="settings_ultra_light_description">For small devices: classic home, no artwork (logos and posters stay), no fades, no preview, no timeshift, small buffer, nothing in the background (TMDB index, Google TV row, sport, other TVs). Automatic: on when the device is short of memory.</string>
+    <string name="settings_ultra_light_state_on">On now (this device: %1$s GB of memory)</string>
+    <string name="settings_ultra_light_state_off">Off now (this device: %1$s GB of memory)</string>
 </resources>

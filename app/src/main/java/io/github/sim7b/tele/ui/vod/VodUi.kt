@@ -47,6 +47,7 @@ import io.github.sim7b.tele.data.vod.VodTitle
 import io.github.sim7b.tele.data.vod.VodLanguages
 import io.github.sim7b.tele.data.vod.VodVersion
 import io.github.sim7b.tele.ui.components.FadeInImage
+import io.github.sim7b.tele.ui.components.ImageKind
 import io.github.sim7b.tele.ui.components.ProgressLine
 import io.github.sim7b.tele.ui.components.focusRing
 import io.github.sim7b.tele.ui.components.touchClick
@@ -129,7 +130,7 @@ internal fun PosterCard(
                             .padding(10.dp)
                     )
                 } else {
-                    FadeInImage(url = poster, contentDescription = title.title, modifier = Modifier.fillMaxSize())
+                    FadeInImage(url = poster, contentDescription = title.title, modifier = Modifier.fillMaxSize(), kind = ImageKind.POSTER)
                 }
                 LocalRatingOf.current(title)?.let { rating ->
                     Row(
