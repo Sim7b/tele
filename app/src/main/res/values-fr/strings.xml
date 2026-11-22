@@ -1000,4 +1000,8 @@
     <string name="options_send_to_tv">Envoyer sur une autre TV</string>
     <string name="settings_sport_alerts">Alertes des matchs</string>
     <string name="settings_sport_alerts_description">Un rappel est posé tout seul pour les prochains matchs des équipes et compétitions suivies : une minute avant, une notification ouvre la chaîne</string>
+    <string name="player_resumed_after_cut">Repris là où la coupure l\'a arrêté, %1$s de retard sur le direct</string>
+    <string name="start_over_title">Depuis le début</string>
+    <string name="start_over_action">Revoir « %1$s » depuis le début</string>
+    <string name="start_over_hint">Par le replay du fournisseur ; Retour revient au direct</string>
 </resources>

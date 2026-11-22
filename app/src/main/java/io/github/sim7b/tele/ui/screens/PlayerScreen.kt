@@ -100,6 +100,7 @@ import kotlinx.coroutines.launch
 private const val ZAP_DEBOUNCE_MS = 300L
 private const val START_POLL_MS = 1_500L
 private const val WEAK_NOTICE_MS = 5_000L
+private const val RESUMED_NOTICE_MS = 8_000L
 
 @Composable
 private fun startStepLabel(step: StartStep): String = stringResource(
@@ -235,6 +236,15 @@ fun PlayerScreen(
         weakNotice = true
         delay(WEAK_NOTICE_MS)
         weakNotice = false
+    }
+    // A cut went on from where it stopped the channel (the recording of the timeshift kept): told for a moment
+    val resumedBehindMs by playerManager.resumedBehindMs.collectAsState()
+    var resumedNotice by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(resumedBehindMs) {
+        val behind = resumedBehindMs ?: return@LaunchedEffect
+        resumedNotice = behind
+        delay(RESUMED_NOTICE_MS)
+        resumedNotice = null
     }
     val scope = rememberCoroutineScope()
 
@@ -583,6 +593,21 @@ fun PlayerScreen(
             }
         }
 
+        val resumed = resumedNotice
+        if (resumed != null && errorMessage == null && !weakNotice) {
+            Text(
+                text = stringResource(R.string.player_resumed_after_cut, clockLabel(resumed)),
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 32.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            )
+        }
+
         if (weakNotice && errorMessage == null) {
             Text(
                 text = stringResource(R.string.player_weak_connection),
@@ -752,6 +777,8 @@ fun PlayerScreen(
                     playerManager.timeshiftToLive()
                     timeshift = playerManager.timeshiftState()
                 },
+                startOverTitle = onAir?.takeIf { guideActions.canStartOver(channel, it, System.currentTimeMillis()) }?.title,
+                onStartOver = { onAir?.let { guideActions.replay?.invoke(channel, it) } },
                 recordTitle = onAir?.takeIf { guideActions.canRecord(channel, it, System.currentTimeMillis()) }?.title,
                 recording = onAir?.let { guideActions.isRecorded(channel, it) } == true,
                 onToggleRecording = { onAir?.let { guideActions.toggleRecording?.invoke(channel, it) } }

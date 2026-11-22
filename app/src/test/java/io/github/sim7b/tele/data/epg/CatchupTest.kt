@@ -50,6 +50,20 @@ class CatchupTest {
     }
 
     @Test
+    fun `a program on air kept by the provider can be started over`() {
+        val channel = Channel(id = "c", name = "TF1", group = "", streamUrl = "", catchupDays = 2)
+        assertTrue(Catchup.canStartOver(channel, program(now - hour, now + hour), now))
+        // Just started: live is as good
+        assertFalse(Catchup.canStartOver(channel, program(now - 30_000, now + hour), now))
+        // Over (a replay), or to come
+        assertFalse(Catchup.canStartOver(channel, program(now - 2 * hour, now - hour), now))
+        assertFalse(Catchup.canStartOver(channel, program(now + hour, now + 2 * hour), now))
+        // Started before what the provider keeps, or no replay on the channel
+        assertFalse(Catchup.canStartOver(channel.copy(catchupDays = 1), program(now - 25 * hour, now + hour), now))
+        assertFalse(Catchup.canStartOver(channel.copy(catchupDays = 0), program(now - hour, now + hour), now))
+    }
+
+    @Test
     fun `xtream archive fields give the days of replay`() {
         assertEquals(7, XtreamClient.catchupDays(JSONObject("""{"tv_archive": 1, "tv_archive_duration": "7"}""")))
         assertEquals(3, XtreamClient.catchupDays(JSONObject("""{"tv_archive": "1", "tv_archive_duration": 3}""")))

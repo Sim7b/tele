@@ -50,6 +50,24 @@ Télé uses the plugin when it is installed and falls back to the standard Dispa
 
 ## Installation
 
+### From the Télé repository (updates shown in Dispatcharr)
+
+1. In Dispatcharr: **Plugins → Browse**, the **Repos** button, then **Add Repository** with this manifest URL:
+
+   ```
+   https://github.com/Sim7b/tele/releases/latest/download/manifest.json
+   ```
+
+2. **Télé API** shows in the list of available plugins: install it, then enable it. A version installed before by
+   import is taken over by the repository.
+3. Restart Dispatcharr once (see below). The new versions then show as updates; each zip is checked against the
+   SHA-256 of the manifest before it is installed. The manifest is not signed: Dispatcharr shows it as unverified.
+
+Each Télé release publishes `manifest.json` (the repository) and `tele_api.json` (the plugin and its versions),
+written by `scripts/build_repo_manifest.py`.
+
+### By import
+
 1. Download `tele_api-<version>.zip` from the latest [Télé release](https://github.com/Sim7b/tele/releases/latest)
    (or the artifact `tele-api-plugin` of a CI run, or `scripts/build_zip.sh`).
 2. In Dispatcharr: **Plugins → Import**, choose the zip, then enable **Télé API**.

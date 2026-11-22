@@ -986,4 +986,8 @@
     <string name="options_send_to_tv">Send to another TV</string>
     <string name="settings_sport_alerts">Match alerts</string>
     <string name="settings_sport_alerts_description">A reminder is set by itself for the coming matches of the followed teams and competitions: a minute before, a notification opens the channel</string>
+    <string name="player_resumed_after_cut">Resumed where the cut stopped it, %1$s behind live</string>
+    <string name="start_over_title">From the start</string>
+    <string name="start_over_action">Watch “%1$s” from the start</string>
+    <string name="start_over_hint">Through the replay of the provider; Back returns to live</string>
 </resources>

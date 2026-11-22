@@ -73,7 +73,7 @@ jobs:
       - name: Build the APK and the plugin zip
         env:
           TAG: ${{ inputs.tag }}
-        run: scripts/build-release-apk.sh "${TAG#v}" && dispatcharr-plugin/scripts/build_zip.sh
+        run: scripts/build-release-apk.sh "${TAG#v}" && dispatcharr-plugin/scripts/build_zip.sh && dispatcharr-plugin/scripts/build_repo_manifest.py "$TAG"
 
       - name: Create the release
         env:
@@ -90,4 +90,6 @@ jobs:
           fi
           plugin_zip=$(ls dispatcharr-plugin/dist/*.zip)
           gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" \
-            "dist/tele-$TAG.apk" "$plugin_zip#Dispatcharr plugin (Télé API)"
+            "dist/tele-$TAG.apk" "$plugin_zip#Dispatcharr plugin (Télé API)" \
+            "dispatcharr-plugin/dist/manifest.json#Dispatcharr plugin repository" \
+            "dispatcharr-plugin/dist/tele_api.json#Dispatcharr plugin manifest"

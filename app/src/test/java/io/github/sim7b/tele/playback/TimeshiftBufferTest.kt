@@ -123,6 +123,47 @@ class TimeshiftBufferTest {
     }
 
     @Test
+    fun `after a cut, the recording starts again after what was kept`() {
+        val stream = FakeStream()
+        val buffer = TimeshiftBuffer(File(dir, "r"), stream, Uri.EMPTY, clock = { now }, freeSpace = { Long.MAX_VALUE }, maxReconnects = 0)
+        buffer.start()
+        now = 1_000
+        stream.send(ByteArray(100) { 1 })
+        stream.fail(IOException("Network down"))
+        assertEquals(100, readAll(buffer, 0, 100).size)
+        try {
+            buffer.read(100, ByteArray(10), 0, 10)
+            fail("The failure is expected")
+        } catch (e: IOException) {
+            assertEquals("Network down", e.message)
+        }
+        assertTrue(buffer.hasFailed())
+        assertEquals(1_000L, buffer.lastWriteMs())
+        // The network back a minute later: what was kept stays, the channel comes after it
+        now = 61_000
+        assertTrue(buffer.restart())
+        assertFalse(buffer.hasFailed())
+        stream.send(ByteArray(50) { 2 })
+        val read = readAll(buffer, 0, 150)
+        assertEquals(150, read.size)
+        assertEquals(1.toByte(), read[99])
+        assertEquals(2.toByte(), read[100])
+        // Where the cut stopped it, and the time it came back
+        assertEquals(0L, buffer.offsetAt(1_000))
+        assertEquals(100L, buffer.offsetAt(61_000))
+        buffer.close()
+        assertFalse(buffer.restart())
+    }
+
+    @Test
+    fun `a channel cut for long goes back to live`() {
+        assertTrue(Timeshift.resumable(0))
+        assertTrue(Timeshift.resumable(Timeshift.RESUME_MAX_MS))
+        assertFalse(Timeshift.resumable(Timeshift.RESUME_MAX_MS + 1))
+        assertFalse(Timeshift.resumable(-1))
+    }
+
+    @Test
     fun `a refusal of the server, or the last reconnection, ends the recording`() {
         val refused = HttpDataSource.InvalidResponseCodeException(
             403, null, null, emptyMap(), DataSpec(Uri.EMPTY), ByteArray(0)
