@@ -157,7 +157,7 @@ dependencies {
     testImplementation("org.json:json:20260814")
     testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.1")
     // Android runtime on the JVM: the ViewModel is built as at app startup
-    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("org.robolectric:robolectric:4.18")
     // Main dispatcher of the tests: runs coroutines at once, as Dispatchers.Main.immediate on the device
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     // Compose UI tests on the JVM (Robolectric): focus and remote navigation of the screens
@@ -170,6 +170,12 @@ baselineProfile {
     automaticGenerationDuringBuild = false
     saveInSrc = true
     mergeIntoMain = true
+}
+
+// JVM unit tests: Conscrypt from Robolectric (conscrypt-openjdk-uber, with its Linux library), not the Android one
+// of the app, whose native library only exists on Android (Robolectric installs Conscrypt before every test)
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    exclude(group = "org.conscrypt", module = "conscrypt-android")
 }
 
 configurations.configureEach {
