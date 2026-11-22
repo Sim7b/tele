@@ -737,7 +737,7 @@ fun SettingsScreen(
                                 if (homeLayout.style == HomeStyle.IMMERSIVE) item {
                                     SettingRow(
                                         label = stringResource(R.string.settings_home_rows),
-                                        value = pluralStringResource(R.plurals.settings_home_rows_count, homeLayout.rows.size + 1, homeLayout.rows.size + 1),
+                                        value = pluralStringResource(R.plurals.settings_home_rows_count, homeLayout.rows.count { it != HomeRow.SPORT } + 1, homeLayout.rows.count { it != HomeRow.SPORT } + 1),
                                         onClick = { open(SettingsPanel.HomeRows) },
                                         modifier = Modifier.focusRequester(focusOf(SettingsPanel.HomeRows))
                                     )
@@ -1231,7 +1231,8 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_home_rows),
                     description = stringResource(R.string.settings_home_rows_description),
                     style = ChoiceStyle.MULTIPLE,
-                    choices = HomeRow.entries.map { row ->
+                    // The sport has its own tab (Sport section), not a row of the home
+                    choices = HomeRow.entries.filter { it != HomeRow.SPORT }.map { row ->
                         Choice(
                             label = stringResource(homeRowLabel(row)),
                             selected = row in homeLayout.rows,

@@ -791,7 +791,7 @@
     <string name="style_choice_classic">Classique</string>
     <string name="style_choice_classic_description">Une app légère et rapide : listes simples, sans images plein écran ni fondus, sans aperçu pendant la navigation. Pour les petits appareils et les clés.</string>
     <string name="style_choice_advised">Conseillé pour cet appareil</string>
-    <string name="style_choice_later">Réglages → Accueil pour le changer plus tard</string>
+    <string name="style_choice_later">Pour changer plus tard : Paramètres → Apparence pour le style, Système pour le mode ultra léger</string>
     <string name="settings_vod_version_order_title">Fichier lu en premier</string>
     <string name="settings_vod_version_order_description">Quand un film ou un épisode a plusieurs fichiers et qu\'aucun n\'est choisi</string>
     <string name="settings_vod_version_order_language">Langue de la TV, puis qualité</string>
@@ -1021,7 +1021,6 @@
     <string name="sport_points_short">Pts</string>
     <string name="sport_reminder_set">Rappel posé</string>
     <string name="sport_reminder_hint">OK : rappel</string>
-    <string name="sport_see_all">Tout voir</string>
     <string name="settings_ultra_light">Mode ultra léger</string>
     <string name="settings_ultra_light_auto">Automatique</string>
     <string name="settings_ultra_light_on">Toujours</string>
@@ -1029,4 +1028,6 @@
     <string name="settings_ultra_light_description">Pour les petites box : accueil classique, pas d\'images de fond (logos et affiches gardés), pas de fondus, pas d\'aperçu, pas de différé, petit tampon, rien en arrière-plan (index TMDB, rangée Google TV, sport, autres TV). Automatique : activé quand la box manque de mémoire.</string>
     <string name="settings_ultra_light_state_on">Activé en ce moment (cette box : %1$s Go de mémoire)</string>
     <string name="settings_ultra_light_state_off">Désactivé en ce moment (cette box : %1$s Go de mémoire)</string>
+    <string name="style_choice_ultra_light">Ultra léger</string>
+    <string name="style_choice_ultra_light_description">Le style classique, encore allégé pour les plus petites box et clés : pas d\'images de fond (logos et affiches gardés), pas d\'aperçu, pas de différé, rien en arrière-plan.</string>
 </resources>

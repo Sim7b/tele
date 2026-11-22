@@ -30,4 +30,15 @@ class UltraLightTest {
         assertEquals(UltraLightMode.AUTO, UltraLightMode.of("broken"))
         assertEquals(UltraLightMode.OFF, UltraLightMode.of("OFF"))
     }
+
+    @Test
+    fun `the first launch advises ultra light on a device short of memory`() {
+        val advised = io.github.sim7b.tele.ui.screens.FirstStyle.Companion::advised
+        assertEquals(io.github.sim7b.tele.ui.screens.FirstStyle.ULTRA_LIGHT, advised(true, true))
+        assertEquals(io.github.sim7b.tele.ui.screens.FirstStyle.CLASSIC, advised(false, true))
+        assertEquals(io.github.sim7b.tele.ui.screens.FirstStyle.IMMERSIVE, advised(false, false))
+        // Ultra light is the classic home, lightened more
+        assertEquals(HomeStyle.CLASSIC, io.github.sim7b.tele.ui.screens.FirstStyle.ULTRA_LIGHT.home)
+        assertTrue(io.github.sim7b.tele.ui.screens.FirstStyle.ULTRA_LIGHT.ultraLight)
+    }
 }

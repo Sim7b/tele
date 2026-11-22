@@ -47,6 +47,7 @@ import io.github.sim7b.tele.data.sport.SportEvent
 import io.github.sim7b.tele.data.sport.SportEvents
 import io.github.sim7b.tele.data.sport.SportBoard
 import io.github.sim7b.tele.data.model.UltraLight
+import io.github.sim7b.tele.data.model.UltraLightMode
 import io.github.sim7b.tele.ui.components.LocalUltraLight
 import io.github.sim7b.tele.ui.screens.SportScreen
 import io.github.sim7b.tele.data.trakt.Trakt
@@ -506,7 +507,6 @@ class MainActivity : ComponentActivity() {
                     delay(SPORT_CHECK_MS)
                 }
             }
-            val sportLogos: (SportEvent) -> List<String> = { event -> SportBoard.logosFor(event, sportState.competitions) }
             // Trakt: the watchlist (immersive home), read again every half hour; the access refreshed when needed
             val traktApp by configRepository.traktApp.collectAsState()
             val traktSession by configRepository.traktSession.collectAsState()
@@ -784,7 +784,8 @@ class MainActivity : ComponentActivity() {
                                     resumeActions = vodActions,
                                     vodMyList = homeMyList,
                                     vodCollections = homeCollections,
-                                    sport = sportEvents,
+                                    // The sport has its own tab: none on the home
+                                    sport = emptyList(),
                                     onOpenSport = { event ->
                                         val now = System.currentTimeMillis()
                                         when {
@@ -794,7 +795,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onOpenSportSection = if (showSport) ({ currentScreen = CurrentScreen.Sport }) else null,
-                                    sportLogos = sportLogos,
+                                    serverMessage = serverMessage,
                                     watchlist = if (vodEnabled && !vodHidden) traktWatchlist else emptyList(),
                                     guideActions = homeActions,
                                     onOpenTitle = { title -> currentScreen = CurrentScreen.VodDetail(title.key, returnTo = CurrentScreen.Home) },
@@ -1540,7 +1541,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (!showWelcome && !styleChosen) {
-                        StyleChoice(onChoose = { style -> configRepository.chooseStyle(style) })
+                        StyleChoice(onChoose = { style ->
+                            // A style chosen by hand: the ultra light mode follows it (on, or off even on a small device)
+                            configRepository.setUltraLight(if (style.ultraLight) UltraLightMode.ON else UltraLightMode.OFF)
+                            configRepository.chooseStyle(style.home)
+                        })
                     }
 
                     // "Who is watching?" once per start, when the TV has several profiles
