@@ -999,7 +999,9 @@ class MainActivity : ComponentActivity() {
                                     platformCatalog = { platform, kind -> viewModel.vod.platformCatalog(platform, kind) },
                                     genreCatalog = { genre, kind -> viewModel.vod.genreCatalog(genre, kind) },
                                     onPrefetchPlatform = { platform, kind -> viewModel.vod.prefetchPlatform(platform, kind) },
-                                    onRows = { built -> viewModel.vod.lastRows = built },
+                                    buildRows = { p, m, c, h -> viewModel.vod.rows(p, m, c, h) },
+                                    browse = { kind, filter -> viewModel.vod.browse(kind, filter) },
+                                    cachedBrowse = { kind, filter -> viewModel.vod.cachedBrowse(kind, filter) },
                                     newCategories = vodLibrary.newCategories.entries.firstOrNull()?.let { (id, added) ->
                                         enabledConfigs.firstOrNull { it.id == id }?.let { it.name to added.size }
                                     },

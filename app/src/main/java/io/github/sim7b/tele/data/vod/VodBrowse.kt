@@ -75,8 +75,10 @@ object VodBrowse {
      */
     fun shelves(titles: List<VodTitle>, facts: Map<String, TmdbFacts>): List<VodShelf> {
         if (titles.isEmpty()) return emptyList()
-        fun ratingOf(title: VodTitle) = rating(title, facts[title.key])
-        val byRating = compareByDescending<VodTitle> { ratingOf(it) ?: 0.0 }.thenByDescending { it.year ?: 0 }
+        // Two sorts for every row (tens of thousands of titles on a TV): the ratings read once, then each row
+        // takes the first titles of its kind in the order by rating
+        val rated = titles.map { title -> Rated(title, rating(title, facts[title.key])) }
+            .sortedWith(compareByDescending<Rated> { it.rating ?: 0.0 }.thenByDescending { it.title.year ?: 0 })
         val shelves = ArrayList<VodShelf>()
         shelves += VodShelf(
             VodShelf.Kind.LATEST,
@@ -84,17 +86,30 @@ object VodBrowse {
                 .sortedWith(compareByDescending<VodTitle> { it.year }.thenByDescending { it.addedAt ?: 0L })
                 .take(SHELF_SIZE)
         )
-        shelves += VodShelf(VodShelf.Kind.TOP_RATED, titles.filter { ratingOf(it) != null }.sortedWith(byRating).take(SHELF_SIZE))
-        titles.asSequence().flatMap { it.genres.asSequence() }
+        shelves += VodShelf(VodShelf.Kind.TOP_RATED, rated.asSequence().filter { it.rating != null }.take(SHELF_SIZE).map { it.title }.toList())
+        val genres = titles.asSequence().flatMap { it.genres.asSequence() }
             .groupingBy { it }.eachCount()
             .filterValues { it >= MIN_GENRE_TITLES }
             .entries.sortedByDescending { it.value }
             .take(MAX_GENRE_SHELVES)
-            .forEach { (genre, _) ->
-                shelves += VodShelf(VodShelf.Kind.GENRE, titles.filter { genre in it.genres }.sortedWith(byRating).take(SHELF_SIZE), genre)
+            .map { it.key }
+        val byGenre = genres.associateWithTo(LinkedHashMap()) { ArrayList<VodTitle>(SHELF_SIZE) }
+        var open = byGenre.size
+        for (item in rated) {
+            if (open == 0) break
+            for (genre in item.title.genres) {
+                val shelf = byGenre[genre] ?: continue
+                if (shelf.size < SHELF_SIZE && (shelf.isEmpty() || shelf.last() !== item.title)) {
+                    shelf += item.title
+                    if (shelf.size == SHELF_SIZE) open--
+                }
             }
+        }
+        byGenre.forEach { (genre, list) -> shelves += VodShelf(VodShelf.Kind.GENRE, list, genre) }
         return shelves.filter { it.titles.isNotEmpty() }
     }
+
+    private class Rated(val title: VodTitle, val rating: Double?)
 
     /**
      * Rows of the screen of a streaming service, from its titles in the library by popularity ([popular]): its own
@@ -146,12 +161,13 @@ object VodBrowse {
             val collator = Collator.getInstance(locale)
             titles.map { collator.getCollationKey(it.title) to it }.sortedBy { it.first }.map { it.second }
         }
-        // Without TMDB facts (no key, not indexed yet), the provider rating
-        VodSort.POPULARITY -> titles.sortedWith(
-            compareByDescending<VodTitle> { facts[it.key]?.popularity ?: 0.0 }.thenByDescending { it.rating ?: 0.0 }
-        )
+        // Without TMDB facts (no key, not indexed yet), the provider rating. The values read once, not at each
+        // comparison
+        VodSort.POPULARITY -> titles.map { Rated(it, facts[it.key]?.popularity ?: 0.0) }
+            .sortedWith(compareByDescending<Rated> { it.rating }.thenByDescending { it.title.rating ?: 0.0 })
+            .map { it.title }
         VodSort.YEAR -> titles.sortedByDescending { it.year ?: 0 }
-        VodSort.RATING -> titles.sortedByDescending { rating(it, facts[it.key]) ?: 0.0 }
+        VodSort.RATING -> titles.map { Rated(it, rating(it, facts[it.key]) ?: 0.0) }.sortedByDescending { it.rating }.map { it.title }
         VodSort.ADDED -> titles.sortedByDescending { it.addedAt ?: 0L }
     }
 
@@ -245,6 +261,13 @@ object VodBrowse {
 
     private const val MAX_PEOPLE = 3
 }
+
+/** A Movies or Series tab: its titles filtered and sorted, its rows, and the values of its filters. */
+data class VodBrowseView(
+    val listed: List<VodTitle> = emptyList(),
+    val shelves: List<VodShelf> = emptyList(),
+    val options: VodFilterOptions = VodFilterOptions()
+)
 
 /** A row of the Movies or Series tab. */
 data class VodShelf(val kind: Kind, val titles: List<VodTitle>, val genre: String? = null) {

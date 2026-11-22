@@ -199,4 +199,35 @@ class VodBrowseTest {
         reloaded.deleteCollection(id)
         assertTrue(reloaded.collections.value.isEmpty())
     }
+
+    @Test
+    fun `the rows of a tab are the ones of a full sort of each row`() {
+        val random = kotlin.random.Random(7)
+        val genres = listOf("Action", "Drame", "Comédie", "Horreur", "Animation")
+        val titles = (0 until 600).map { i ->
+            VodTitle(
+                "movie:$i", VodKind.MOVIE, "T$i", if (i % 7 == 0) null else 1990 + random.nextInt(35), null, null, null,
+                // Sometimes the same genre twice: the title comes once in its row
+                List(1 + random.nextInt(3)) { genres[random.nextInt(genres.size)] }, if (i % 5 == 0) null else random.nextInt(100) / 10.0,
+                null, null, random.nextLong(1_000), emptyList()
+            )
+        }
+        val facts = titles.filter { it.key.hashCode() % 3 == 0 }
+            .associate { it.key to TmdbFacts("1", popularity = random.nextDouble(), vote = random.nextInt(100) / 10.0, votes = random.nextInt(2_000)) }
+        fun ratingOf(title: VodTitle) = VodBrowse.rating(title, facts[title.key])
+        val byRating = compareByDescending<VodTitle> { ratingOf(it) ?: 0.0 }.thenByDescending { it.year ?: 0 }
+        val expectedTop = titles.filter { ratingOf(it) != null }.sortedWith(byRating).take(40)
+        val shelves = VodBrowse.shelves(titles, facts)
+        assertEquals(expectedTop, shelves.first { it.kind == VodShelf.Kind.TOP_RATED }.titles)
+        shelves.filter { it.kind == VodShelf.Kind.GENRE }.forEach { shelf ->
+            assertEquals(titles.filter { shelf.genre in it.genres }.sortedWith(byRating).take(40), shelf.titles)
+        }
+        assertEquals(genres.size, shelves.count { it.kind == VodShelf.Kind.GENRE })
+        // Sorts read each value once, same order as before
+        assertEquals(
+            titles.sortedWith(compareByDescending<VodTitle> { facts[it.key]?.popularity ?: 0.0 }.thenByDescending { it.rating ?: 0.0 }),
+            VodBrowse.sort(titles, VodSort.POPULARITY, facts)
+        )
+        assertEquals(titles.sortedByDescending { ratingOf(it) ?: 0.0 }, VodBrowse.sort(titles, VodSort.RATING, facts))
+    }
 }

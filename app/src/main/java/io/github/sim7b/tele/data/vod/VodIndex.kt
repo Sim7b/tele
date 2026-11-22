@@ -63,8 +63,15 @@ class VodIndex(private val file: File) {
 
     fun facts(titleKey: String): TmdbFacts? = facts[titleKey]
 
-    /** Snapshot for the background computations. */
-    fun all(): Map<String, TmdbFacts> = HashMap(facts)
+    // The last snapshot and the version it was taken at: the same one while no facts were published since
+    @Volatile private var snapshot: Pair<Int, Map<String, TmdbFacts>>? = null
+
+    /** Snapshot for the background computations: copied once per version (tens of thousands of facts). */
+    fun all(): Map<String, TmdbFacts> {
+        val version = _version.value
+        snapshot?.let { (at, kept) -> if (at == version) return kept }
+        return HashMap(facts).also { snapshot = version to it }
+    }
 
     /**
      * Facts looked up by a Dispatcharr server for every TV (Télé API plugin), by "movie:<TMDB id>" /
